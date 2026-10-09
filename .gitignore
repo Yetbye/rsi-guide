@@ -20,8 +20,9 @@ venv/
 
 # --- scratch / verification artifacts ---
 _shot_*.png
+_chk*.png
 _f*.png
-_final*.png
+_.png
 _meander_test*.png
 _*.tmp
 
