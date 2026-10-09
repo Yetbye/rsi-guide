@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E2E TTT 深度解读 | 测试时训练：让模型在推理时继续学习</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  --teal-50:#f0fdfa;--teal-100:#ccfbf1;--teal-200:#99f6e4;--teal-300:#5eead4;--teal-400:#2dd4bf;--teal-500:#14b8a6;--teal-600:#0d9488;--teal-700:#0f766e;--teal-800:#115e59;--teal-900:#134e4a;
+  --amber-100:#fef3c7;--amber-300:#fcd34d;--amber-400:#fbbf24;--amber-500:#f59e0b;--amber-600:#d97706;
+  --rose-100:#ffe4e6;--rose-400:#fb7185;--rose-500:#f43f5e;
+  --ink:#0f172a;--ink-soft:#334155;--ink-muted:#64748b;
+  --paper:#ffffff;--paper-warm:#f8fafc;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;color:var(--ink);background:var(--paper-warm);line-height:1.9;font-size:16.5px}
+h1,h2,h3,h4{font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:900;letter-spacing:-0.02em;color:var(--ink)}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(255,255,255,0.82);backdrop-filter:blur(16px) saturate(1.6);border-bottom:1px solid rgba(13,148,136,0.18);padding:0 24px}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px}
+.nav-logo{font-family:'Noto Serif SC',serif;font-weight:900;font-size:15px;background:linear-gradient(135deg,var(--teal-700),var(--amber-500));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.nav-links{display:flex;gap:10px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--ink-muted);text-decoration:none;letter-spacing:0.5px;transition:color .2s}
+.nav-links a:hover{color:var(--teal-600)}
+.hero{position:relative;min-height:96vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:120px 24px 80px;background:linear-gradient(135deg,#f0fdfa 0%,#ccfbf1 18%,#fef3c7 50%,#fffbeb 100%)}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 520px 320px at 12% 22%,rgba(20,184,166,0.16),transparent 60%),radial-gradient(ellipse 520px 320px at 88% 78%,rgba(245,158,11,0.13),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:820px;text-align:center}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.6);backdrop-filter:blur(12px) saturate(1.5);border:1px solid rgba(20,184,166,0.3);color:var(--teal-700);padding:7px 20px;border-radius:100px;font-size:11px;font-weight:600;letter-spacing:3px;margin-bottom:20px;box-shadow:0 4px 20px rgba(20,184,166,0.12)}
+.hero h1{font-size:clamp(2.4rem,7vw,4.2rem);font-weight:900;letter-spacing:-0.03em;line-height:1.12;margin:12px 0 10px;background:linear-gradient(135deg,var(--ink) 0%,var(--teal-600) 38%,var(--rose-500) 62%,var(--amber-500) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-tagline{font-family:'Noto Serif SC',serif;font-size:clamp(1rem,2.6vw,1.25rem);color:var(--ink-soft);font-weight:700;margin-bottom:8px}
+.hero-desc{font-size:14px;color:var(--ink-muted);max-width:660px;margin:0 auto 26px}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:26px}
+.hstat{background:rgba(255,255,255,0.65);backdrop-filter:blur(8px);border:1px solid rgba(20,184,166,0.18);border-radius:16px;padding:14px 8px}
+.hstat b{display:block;font-family:'Noto Serif SC',serif;font-size:1.5rem;color:var(--teal-700)}
+.hstat span{font-size:11px;color:var(--ink-muted)}
+.scroll-hint{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:3px;color:var(--ink-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.6s infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+main{max-width:860px;margin:0 auto;padding:70px 24px 40px}
+section{margin-bottom:74px}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--teal-600);font-weight:700;margin-bottom:8px}
+h2{font-size:clamp(1.5rem,4vw,2.1rem);margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid var(--teal-100)}
+h3{font-size:1.18rem;margin:28px 0 12px;color:var(--teal-800)}
+h4{font-size:1rem;margin:20px 0 8px}
+p{margin-bottom:14px;color:var(--ink-soft)}
+p strong,li strong{color:var(--ink)}
+ul,ol{margin:0 0 14px 22px;color:var(--ink-soft)}
+li{margin-bottom:6px}
+.sym{background:var(--teal-50);padding:1px 5px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.92em;color:var(--teal-800)}
+figure{margin:26px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid rgba(13,148,136,0.15);box-shadow:0 10px 34px -14px rgba(15,23,42,0.18);background:#fff}
+figcaption{font-size:12.5px;color:var(--ink-muted);margin-top:10px;line-height:1.7}
+figcaption b{color:var(--teal-700)}
+.svgbox{background:#fff;border:1px solid rgba(13,148,136,0.14);border-radius:16px;padding:18px 10px;margin:26px 0;box-shadow:0 8px 28px -16px rgba(15,23,42,0.14)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#ccfbf1,#99f6e4);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid var(--teal-500)}
+.insight-box .tag{background:var(--teal-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.insight-box h4{margin:12px 0 8px;color:#134e4a;font-size:1.05rem}
+.insight-box p{color:#0f766e;margin-bottom:6px}
+.critique-box{background:linear-gradient(135deg,#ffe4e6,#fecdd3);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid var(--rose-500)}
+.critique-box .tag{background:var(--rose-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.critique-box h4{margin:12px 0 8px;color:#881337;font-size:1.05rem}
+.critique-box p{color:#9f1239;margin-bottom:6px}
+.ttt101{background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid var(--amber-500)}
+.ttt101 .tag{background:var(--amber-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.ttt101 h4{margin:12px 0 8px;color:#92400e;font-size:1.05rem}
+.ttt101 p{color:#78350f;margin-bottom:8px}
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:22px 0}
+.ccard{background:#fff;border-radius:14px;padding:18px;border-top:4px solid var(--teal-400);box-shadow:0 6px 22px -14px rgba(15,23,42,0.2)}
+.ccard.a{border-top-color:var(--amber-400)}.ccard.r{border-top-color:var(--rose-400)}
+.ccard h4{font-size:1rem;margin-bottom:8px}
+.ccard p{font-size:13.5px;margin-bottom:6px}
+table{width:100%;border-collapse:collapse;margin:20px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 6px 22px -14px rgba(15,23,42,0.18)}
+th{background:linear-gradient(135deg,var(--teal-600),var(--teal-500));color:#fff;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--teal-50);text-align:center;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+td.hl{background:var(--teal-50);font-weight:700;color:var(--teal-800)}
+td.best{background:#d1fae5;font-weight:800;color:#065f46}
+.mathcard{background:#fff;border:1px solid var(--teal-100);border-left:4px solid var(--teal-500);border-radius:14px;padding:20px 24px;margin:22px 0;overflow-x:auto}
+.mathcard h4{font-size:1rem;color:var(--teal-800);margin-bottom:8px}
+.mathcard .note{font-size:13.5px;color:var(--ink-muted);margin-top:10px}
+footer{background:var(--ink);color:#cbd5e1;padding:50px 24px 60px;margin-top:40px}
+footer .inner{max-width:860px;margin:0 auto}
+footer h3{color:#fff;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.8}
+footer a{color:var(--amber-300);text-decoration:none}
+footer .fin{margin-top:26px;font-size:12px;color:#64748b;border-top:1px solid #1e293b;padding-top:18px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">E2E TTT · 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">TTT入门</a><a href="#s2">问题</a><a href="#s3">核心思想</a><a href="#s4">玩具例子</a>
+    <a href="#s5">元学习</a><a href="#s6">小批量+滑窗</a><a href="#s7">实现细节</a><a href="#s8">实验</a>
+    <a href="#s9">消融</a><a href="#s10">批判</a>
+  </div>
+</div></nav>
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">arXiv:2512.23675 · PREPRINT · DEC 2025</div>
+    <h1>E2E TTT：让模型在推理时继续学习</h1>
+    <p class="hero-tagline">测试时训练 × 端到端 next-token 预测 × 元学习初始化</p>
+    <p class="hero-desc">不换架构、不扩上下文——只用滑动窗口注意力 + 测试时梯度下降，让 3B 模型在 128K 上下文上达到全注意力级别的 loss，同时推理延迟保持常数。本篇从 TTT 的底层逻辑讲起，逐步拆解这篇论文的全部方法与实验。</p>
+    <div class="hero-stats">
+      <div class="hstat"><b>3B</b><span>模型参数</span></div>
+      <div class="hstat"><b>164B</b><span>训练 token</span></div>
+      <div class="hstat"><b>128K</b><span>上下文长度</span></div>
+      <div class="hstat"><b>2.7×</b><span>比全注意力快</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- ================= 1. TTT 入门 ================= -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 入门必读</div>
+  <h2>TTT 是什么：测试时训练的底层逻辑</h2>
+
+  <p>在讲这篇论文之前，必须先搞懂一个概念：<strong>Test-Time Training（TTT，测试时训练）</strong>。如果你之前没接触过这个方向，这一章就是为你写的。</p>
+
+  <h3>传统范式：训练 → 部署，模型从此静止</h3>
+  <p>我们熟悉的大模型使用方式是这样的：先用海量数据预训练，然后在推理时<strong>冻结所有参数</strong>，输入一个 prompt，模型输出一个回答。整个推理过程中，模型的权重不会发生任何变化——它就像一个已经写完的百科全书，你只能查阅，不能在阅读过程中往里面写新东西。</p>
+  <p>这种"训练-部署"范式有一个根本局限：<strong>模型无法根据当前输入的上下文动态调整自己</strong>。如果输入是一段很长的文档，模型只能靠注意力机制"逐字扫描"来理解它，而不能像人一样"读着读着就理解了"。</p>
+
+  <h3>TTT 的核心思想：推理时也做梯度下降</h3>
+  <p>TTT 打破了这个范式。它的想法非常朴素：<strong>为什么不在推理时也让模型做一点梯度下降呢？</strong></p>
+  <p>具体来说，当模型处理一段输入时，它不只是"前向传播"算出输出，还会：</p>
+  <ol>
+    <li>用输入本身构造一个<strong>自监督损失</strong>（比如"预测下一个 token"）；</li>
+    <li>对这个损失做一步或几步<strong>梯度下降</strong>，更新模型的一小部分参数；</li>
+    <li>用更新后的参数来做最终的预测。</li>
+  </ol>
+  <p>这样，模型在处理输入的过程中，就把输入的信息"压缩"进了自己的参数里。等需要预测下一个 token 时，参数里已经包含了前面所有输入的信息——<strong>参数本身变成了记忆</strong>。</p>
+
+  <div class="ttt101"><span class="tag">TTT 核心类比</span>
+    <h4>模型像一个学生，TTT 让它在考试时还能翻书学习</h4>
+    <p>传统推理：学生进考场，发卷子，只能用脑子里已有的知识答题，不能在考试过程中学习。</p>
+    <p>TTT 推理：学生进考场，发卷子，<strong>允许他在答题前先读一遍卷子、从卷子中学习规律、调整自己的思路</strong>，然后再答题。卷子越长，他能学到的越多。</p>
+    <p>关键区别：TTT 更新的是模型参数（"思路"），不是把输入存在上下文里（"草稿纸"）。参数的存储空间是常数，不随输入长度增长。</p>
+  </div>
+
+  <h3>TTT 的两个关键问题</h3>
+  <p>理解了 TTT 的基本思想后，有两个问题自然浮现：</p>
+  <ol>
+    <li><strong>用什么损失来做测试时训练？</strong>——这决定了模型从输入中学到什么。最常见的是"重建损失"（让模型重建输入本身），但这篇论文认为应该用"next-token prediction"（预测下一个 token），因为这才是语言模型最终要做的事。</li>
+    <li><strong>训练时怎么准备模型，让它适合测试时训练？</strong>——如果训练时只优化"开箱即用"的 loss，模型可能不擅长"测试时再学几步"。这篇论文用<strong>元学习（meta-learning）</strong>来解决：训练时就模拟测试时的训练过程，优化"训练后再测试时训练"的最终 loss。</li>
+  </ol>
+
+  <p>这两个问题正是这篇论文的核心贡献。下面进入论文本身。</p>
+</section>
+
+<!-- ================= 2. 问题 ================= -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 问题</div>
+  <h2>长上下文的困境：全注意力太贵，RNN 太弱</h2>
+
+  <p>有了 TTT 的基础，现在看这篇论文要解决的具体问题：<strong>长上下文语言建模</strong>。</p>
+
+  <p>论文的开篇论证非常清晰，可以拆成三步：</p>
+
+  <h3>第一步：全注意力的代价随上下文线性增长</h3>
+  <p>标准 Transformer 的自注意力（full attention）在处理每个新 token 时，必须和之前所有 token 的 key、value 做比较。因此：</p>
+  <ul>
+    <li>预填充（prefill）阶段的计算复杂度是 $O(T^2)$（$T$ 是上下文长度）；</li>
+    <li>解码（decode）阶段每 token 的复杂度是 $O(T)$。</li>
+  </ul>
+  <p>当 $T$ 从 8K 涨到 128K 时，全注意力的代价变得非常昂贵。</p>
+
+  <h3>第二步：RNN 类方法虽然常数代价，但长上下文效果变差</h3>
+  <p>Mamba 2、Gated DeltaNet 等 RNN 类架构每 token 的代价是常数 $O(1)$，但论文的实验（Figure 1）显示：<strong>上下文越长，它们相对于全注意力的 loss 差距越大</strong>。原因是 RNN 的状态是固定大小的压缩，长上下文中的信息会被"挤掉"。</p>
+
+  <h3>第三步：滑动窗口注意力是常数代价，但窗口外的信息完全丢失</h3>
+  <p>滑动窗口注意力（Sliding-Window Attention, SWA）只关注最近的 $k$ 个 token，代价是常数。但窗口之外的信息模型完全看不到——它本质上是一个"只能看最近几页书"的读者。</p>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>论文的核心问题：如何在常数代价下，让模型"用得好"长上下文？</h4>
+    <p>全注意力：效果好，但贵（$O(T)$ 每 token）。RNN：便宜（$O(1)$），但长上下文效果差。滑动窗口：便宜，但窗口外信息丢失。论文要找的是<strong>第四种可能</strong>：常数代价 + 长上下文效果好。答案就是 TTT——让滑动窗口模型在测试时通过梯度下降把窗口外的信息压缩进参数。</p>
+  </div>
+</section>
+
+<!-- ================= 3. 核心思想 ================= -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 核心思想</div>
+  <h2>把长上下文看作 continual learning，而不是架构设计</h2>
+
+  <p>论文最根本的视角转换是：<strong>不把长上下文看作一个"架构问题"（怎么设计更好的注意力），而是看作一个"持续学习问题"（怎么让模型在处理输入的过程中不断学习）。</strong></p>
+
+  <p>这个视角转换带来了一个简洁的方案：</p>
+  <ul>
+    <li><strong>架构</strong>：只用最普通的 Transformer + 滑动窗口注意力（不发明新架构）；</li>
+    <li><strong>测试时</strong>：模型在处理上下文时，通过 next-token prediction 损失做梯度下降，把上下文信息压缩进 MLP 层的参数；</li>
+    <li><strong>训练时</strong>：通过元学习优化模型的初始化，让它"天生就擅长测试时学习"。</li>
+  </ul>
+
+  <p>论文称之为 <strong>TTT-E2E</strong>（End-to-End Test-Time Training），"端到端"体现在两个方面：</p>
+  <ol>
+    <li><strong>测试时端到端</strong>：内循环（测试时训练）直接优化 next-token prediction loss（模型最终的目标），而不是中间层的重建损失；</li>
+    <li><strong>训练时端到端</strong>：外循环（元学习）直接优化"测试时训练后的最终 loss"，而不是"开箱即用的 loss"。</li>
+  </ol>
+
+  <p>下面用一个玩具例子来具体说明 TTT 是怎么工作的。</p>
+</section>
+
+<!-- ================= 4. 玩具例子 ================= -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · 方法</div>
+  <h2>玩具例子：一个没有注意力的 Transformer，如何靠 TTT 获得记忆</h2>
+
+  <p>为了隔离 TTT 的效果，论文构造了一个"很傻"的架构：<strong>把 Transformer 中所有自注意力层都去掉，只留 MLP 层</strong>。这个架构没有任何跨 token 的记忆能力——它本质上是一个 bigram（只看前一个 token 来预测下一个）。</p>
+
+  <figure>
+    <img src="figures/fig2_toy.png" alt="玩具例子：TTT 如何让无注意力模型获得记忆">
+    <figcaption><b>图 1（论文 Figure 2）</b>：左：给定 $x_1, x_2$ 作为上下文，预测 $x_3$。无注意力的基线（只用向上箭头）是 bigram，记不住 $x_1$。TTT（所有箭头）先用 $x_1$ 预测 $x_2$ 作为练习，计算 loss $\ell_2$，做一步梯度下降——$x_1$ 的信息就被存进了更新后的 MLP（蓝色）。右：token 级测试 loss，TTT-E2E（蓝）几乎追平全注意力（橙）。</figcaption>
+  </figure>
+
+  <h3>TTT 的具体操作</h3>
+  <p>设这个只有 MLP 的架构为 $f$，权重为 <span class="sym">$W$</span>。给定上下文 $x_1, x_2, \ldots, x_T$，TTT 的操作是：</p>
+
+  <div class="mathcard"><h4>式 (1)-(2)：TTT 的读取与写入</h4>$$\ell_t(W) = \mathrm{CE}\big(f(x_{t-1}; W),\, x_t\big)$$$$W_t = W_{t-1} - \eta \nabla_W \ell_t(W_{t-1})$$<p class="note">$\ell_t$ 是第 $t$ 步的 next-token prediction 损失（交叉熵）：用 $x_{t-1}$ 预测 $x_t$。$W_t$ 是更新后的权重，$\eta$ 是学习率，$\nabla_W \ell_t$ 是损失对权重的梯度。每处理一个 token，就做一步梯度下降。</p></div>
+
+  <p>这个过程的直觉是：</p>
+  <ol>
+    <li>处理 $x_1$ 时，用 $x_1$ 预测 $x_2$，算 loss，做一步梯度下降——$x_1$ 的信息被写进了权重；</li>
+    <li>处理 $x_2$ 时，用更新后的权重预测 $x_3$，再算 loss，再做一步梯度下降——$x_1, x_2$ 的信息都在权重里了；</li>
+    <li>……</li>
+    <li>最后预测 $x_{T+1}$ 时，用的权重 $W_T$ 已经包含了所有 $x_1, \ldots, x_T$ 的信息。</li>
+  </ol>
+
+  <p>这就是 TTT 的魔法：<strong>权重本身变成了一个常数大小的记忆</strong>，不管上下文多长，权重的维度不变。</p>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>为什么 next-token prediction 是正确的 TTT 损失？</h4>
+    <p>之前的 TTT 方法（如 TTT-KVB）用的是中间层的重建损失（让某一层的输出重建输入）。这篇论文认为这不对——<strong>模型最终要做的是 next-token prediction，那测试时训练也应该用同一个目标</strong>。这样，测试时学到的参数变化直接服务于最终任务，而不是先服务于重建、再间接地服务于预测。实验（Table 1）显示，把重建损失换成 next-token prediction 后，loss 从 2.818 降到 2.805。</p>
+  </div>
+</section>
+
+<!-- ================= 5. 元学习 ================= -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 方法</div>
+  <h2>元学习：学习如何在测试时学习</h2>
+
+  <p>上一章讲了测试时怎么做 TTT。但还有一个问题：<strong>训练时怎么准备模型，让它适合测试时训练？</strong></p>
+
+  <h3>朴素方法的问题</h3>
+  <p>最朴素的想法是：训练时就用标准的 next-token prediction 损失训练，训练完直接拿去做 TTT。论文称之为 <strong>TTT-naive</strong>。</p>
+  <p>但这有一个<strong>训练-测试不匹配</strong>：训练时优化的是"用初始权重 $W_0$ 直接预测"的 loss，而测试时实际用的是"经过 TTT 更新后的权重 $W_T$ 来预测"的 loss。两者不是同一个目标，所以训练好的 $W_0$ 不一定适合做 TTT。</p>
+
+  <h3>元学习解决方案</h3>
+  <p>论文的解决方案是<strong>元学习（meta-learning）</strong>：训练时就模拟测试时的 TTT 过程，优化"TTT 之后的最终 loss"。</p>
+
+  <div class="mathcard"><h4>式 (3)：TTT-E2E 的训练目标</h4>$$L(W_0; X) = \frac{1}{T} \sum_{t=1}^{T} \ell_t(W_{t-1})$$<p class="note">$W_0$ 是初始权重（训练时要优化的对象），$X = (x_1, \ldots, x_T)$ 是训练序列，$W_{t-1}$ 是经过前 $t-1$ 步 TTT 更新后的权重。这个 loss 是"每一步 TTT 后的预测 loss"的平均。优化 $W_0$ 使得"经过 TTT 后"的整体 loss 最低。</p></div>
+
+  <p>对比朴素方法的训练目标：</p>
+  <div class="mathcard"><h4>式 (4)：TTT-naive 的训练目标（不匹配）</h4>$$L_{\text{naive}}(W_0; X) = \frac{1}{T} \sum_{t=1}^{T} \ell_t(W_0)$$<p class="note">注意这里所有 $\ell_t$ 都用 $W_0$（初始权重）计算，没有模拟 TTT 的更新过程。这就是训练-测试不匹配的根源。</p></div>
+
+  <h3>梯度的梯度</h3>
+  <p>元学习的一个技术细节是：因为 $W_{t-1}$ 本身是通过梯度下降得到的（式 2），所以 $\nabla_{W_0} L$ 涉及<strong>梯度的梯度</strong>（second-order gradient）。现代深度学习框架（PyTorch 等）可以高效计算这种二阶梯度，开销不大。</p>
+
+  <p>在元学习的术语中：</p>
+  <ul>
+    <li><strong>内循环（inner loop）</strong>：测试时的 TTT 梯度下降（式 2）；</li>
+    <li><strong>外循环（outer loop）</strong>：训练时优化 $W_0$ 的元学习梯度下降（式 3）。</li>
+  </ul>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>元学习让模型"天生会学习"，而不是"天生知识多"</h4>
+    <p>标准预训练优化的是 $W_0$ 本身的预测能力（"知识多"）。元学习优化的是 $W_0$ 作为 TTT 起点的质量（"会学习"）。一个好的 $W_0$ 不一定开箱即用最强，但它在测试时经过几步梯度下降后能变得很强。这和 MAML（Model-Agnostic Meta-Learning）的思想完全一致——TTT-E2E 本质上就是把 MAML 用到了长上下文语言建模上。</p>
+  </div>
+</section>
+
+<!-- ================= 6. 小批量 + 滑窗 ================= -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 方法</div>
+  <h2>小批量 TTT + 滑动窗口：解决效率与稳定性</h2>
+
+  <p>到目前为止的 TTT 有两个实际问题：</p>
+  <ol>
+    <li><strong>效率</strong>：内循环每 token 做一步梯度下降，无法并行；</li>
+    <li><strong>稳定性</strong>：每步梯度只基于单个 token，容易梯度爆炸。</li>
+  </ol>
+  <p>两个问题的共同根源是：式 (2) 用的是<strong>在线梯度下降</strong>（batch size = 1）。解决方案是<strong>小批量梯度下降</strong>（mini-batch）。</p>
+
+  <h3>小批量 TTT</h3>
+  <p>把 $T$ 个 token 分成 $T/b$ 个批次，每批 $b$ 个 token，每批做一步梯度下降：</p>
+
+  <div class="mathcard"><h4>式 (5)-(6)：小批量 TTT</h4>$$W_i = W_{i-1} - \eta \frac{1}{b} \sum_{t=(i-1)b+1}^{ib} \nabla \ell_t(W_{i-1})$$$$L(W_0; X) = \frac{1}{T} \sum_{i=1}^{T/b} \sum_{t=(i-1)b+1}^{ib} \ell_t(W_{i-1})$$<p class="note">$b$ 是小批量大小。$W_i$ 是处理完第 $i$ 批后的权重。每批内的 $b$ 个 token 可以并行计算梯度，然后取平均做一步更新。$b=1$ 时退化为式 (2)-(3)。</p></div>
+
+  <h3>新问题：小批量内变成了 bigram</h3>
+  <p>小批量带来了一个新问题：在同一批内，所有预测都用同一个 $W_{i-1}$（批开始时的权重），而不是逐步更新的 $W_{t-1}$。这意味着批内的 token 之间没有 TTT 带来的记忆——模型在批内退化成了 bigram。</p>
+  <p>论文的解决方案非常直接：<strong>给架构加上滑动窗口注意力</strong>。滑动窗口负责处理批内（以及窗口内）的短程依赖，TTT 负责把窗口外的长程信息压缩进参数。两者互补。</p>
+
+  <div class="compare-grid">
+    <div class="ccard"><h4>滑动窗口注意力</h4><p>负责<strong>短程依赖</strong>：每个 token 能看到最近 $k$ 个 token。窗口内的信息直接通过注意力访问，不需要压缩。</p><p style="font-size:12px;color:var(--ink-muted)">实验中 $k=8K$</p></div>
+    <div class="ccard a"><h4>TTT（参数记忆）</h4><p>负责<strong>长程依赖</strong>：窗口外的信息通过梯度下降压缩进 MLP 参数。参数是常数大小，不随上下文增长。</p><p style="font-size:12px;color:var(--ink-muted)">实验中 batch $b=1K$</p></div>
+    <div class="ccard r"><h4>关键约束</h4><p>必须满足 $k \geq b$：窗口要能覆盖整个小批量，这样模型在做 TTT 梯度下降之前，已经通过注意力"看到"了批内所有 token。</p><p style="font-size:12px;color:var(--ink-muted)">$k=8K, b=1K$，满足</p></div>
+  </div>
+
+  <figure>
+    <img src="figures/fig3_graphs.png" alt="主方法计算图与 prior work 对比">
+    <figcaption><b>图 2（论文 Figure 3）</b>：左：主方法的计算图，滑动窗口注意力 + TTT 更新最后 1/4 块的 MLP。右：prior work（TTT-KVB）的简化版，用专门的 KVB 层而非端到端 next-token loss。</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 7. 实现细节 ================= -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 方法</div>
+  <h2>实现细节：三个工程决策</h2>
+
+  <p>论文有三个实现细节对最终结果至关重要：</p>
+
+  <h3>细节 1：只 TTT MLP 层</h3>
+  <p>在 TTT 的内循环中，<strong>只更新 MLP 层的参数</strong>，冻结 embedding、normalization 和注意力层。原因是更新注意力层会导致外循环（元学习）的不稳定。</p>
+
+  <h3>细节 2：只 TTT 最后 1/4 的 block</h3>
+  <p>不是所有 MLP 层都做 TTT，只更新<strong>最后 1/4 的 block</strong>。这是一个计算量与记忆容量的权衡：更新更多层能存更多信息，但反向传播的计算量也更大。消融实验（第 9 章）验证了 1/4 是最优选择。</p>
+
+  <h3>细节 3：每个更新 block 有两个 MLP 层</h3>
+  <p>TTT 的一个担忧是：测试时的梯度更新会不会"覆盖"掉预训练学到的知识？论文用最简单的方式解决：在每个做 TTT 的 block 里，<strong>加一个静态的、不更新的第二 MLP 层</strong>作为"安全存储"，专门保留预训练知识。为了公平比较，整个网络的 MLP 隐藏维度都相应缩小，保持总参数量不变。</p>
+
+  <h3>解码多个 token</h3>
+  <p>前面讨论的是"预填充 $T$ 个 token，解码 1 个 token"。解码多个 token 时，方法自然延伸：<strong>每解码出 $b$ 个 token，就对这批解码出的 token 做一次 TTT 更新</strong>，然后继续解码。这样模型在生成过程中也能持续学习。</p>
+</section>
+
+<!-- ================= 8. 实验 ================= -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 实验</div>
+  <h2>实验结果：常数代价下的全注意力级别表现</h2>
+
+  <figure>
+    <img src="figures/fig1_scaling.png" alt="Figure 1：上下文长度 scaling，loss 与延迟">
+    <figcaption><b>图 3（论文 Figure 1）</b>：左：测试 loss 随上下文长度的变化（y 值是各方法与全注意力的 loss 差，全注意力本身是 y=0 的平线）。其他方法在长上下文上 loss 变差，而 TTT-E2E 保持与全注意力相同的优势。右：预填充延迟。TTT-E2E 与 SWA、RNN 一样是常数延迟，128K 时比全注意力快 2.7×。</figcaption>
+  </figure>
+
+  <h3>核心结果</h3>
+  <p>所有模型都是 3B 参数，用 164B token 训练。核心发现：</p>
+  <ul>
+    <li><strong>Loss scaling</strong>：TTT-E2E 的测试 loss 随上下文长度的变化方式与全注意力相同——上下文越长，loss 越低。而 Mamba 2、Gated DeltaNet 等 RNN 方法在长上下文上 loss 反而变差。</li>
+    <li><strong>延迟</strong>：TTT-E2E 的预填充延迟是常数（不随上下文增长），128K 时比全注意力快 2.7×。</li>
+    <li><strong>绝对 loss</strong>：在 128K 上下文上，TTT-E2E 的 loss 几乎追平全注意力，远优于 SWA 基线和所有 RNN 基线。</li>
+  </ul>
+
+  <h3>替代推导验证</h3>
+  <p>论文还从 prior work TTT-KVB 出发，通过三步推导得到 TTT-E2E，验证了方法的等价性：</p>
+  <table>
+    <tr><th>方法</th><th>Loss</th><th>与 SWA 基线的差</th></tr>
+    <tr><td>SWA (k=8K) 基线</td><td>2.827</td><td>–</td></tr>
+    <tr><td>TTT-KVB (Zhang et al.)</td><td>2.818</td><td>−0.009</td></tr>
+    <tr><td>TTT-KVB simplified</td><td>2.819</td><td>+0.001</td></tr>
+    <tr><td>TTT-E2E all layers (multi-head)</td><td>2.806</td><td>−0.013</td></tr>
+    <tr><td class="hl">TTT-E2E (ours)</td><td class="best">2.805</td><td class="best">−0.022</td></tr>
+  </table>
+  <p>从 TTT-KVB 到 TTT-E2E 的关键一步是把层级重建损失换成端到端 next-token prediction 损失。</p>
+</section>
+
+<!-- ================= 9. 消融 ================= -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 消融</div>
+  <h2>消融实验：每个设计选择的贡献</h2>
+
+  <figure>
+    <img src="figures/fig4_ablations.png" alt="消融实验">
+    <figcaption><b>图 4（论文消融图）</b>：各消融条件下的测试 loss。</figcaption>
+  </figure>
+
+  <p>论文做了多组消融，验证每个设计选择的必要性：</p>
+  <ul>
+    <li><strong>TTT 哪些层</strong>：只更新 MLP 优于更新注意力+MLP（注意力更新导致不稳定）；</li>
+    <li><strong>TTT 多少 block</strong>：最后 1/4 优于 1/2 或全部（计算量与容量的权衡）；</li>
+    <li><strong>双 MLP 层</strong>：有静态第二 MLP 优于没有（防止预训练知识被覆盖）；</li>
+    <li><strong>元学习 vs 朴素训练</strong>：TTT-E2E（元学习）显著优于 TTT-naive（朴素训练），验证了训练-测试匹配的重要性；</li>
+    <li><strong>小批量大小</strong>：$b=1K$ 优于 $b=1$（并行性和稳定性）。</li>
+  </ul>
+
+  <figure>
+    <img src="figures/fig5_compute.png" alt="计算效率">
+    <figcaption><b>图 5（计算效率）</b>：TTT-E2E 的训练和推理计算开销。</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 10. 批判 ================= -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 批判与开放问题</div>
+  <h2>批判评估与未来方向</h2>
+
+  <div class="critique-box"><span class="tag">C1</span><h4>测试时训练的延迟开销被低估了</h4><p>论文报告的是预填充延迟（prefill latency），但 TTT 在预填充阶段需要做反向传播（梯度下降），这比纯前向传播贵得多。论文的 2.7× 加速是相对于全注意力的预填充，但 TTT-E2E 本身的预填充比普通 SWA 慢（因为多了反向传播）。对于延迟敏感的在线服务，这个开销需要更仔细地量化。</p></div>
+
+  <div class="critique-box"><span class="tag">C2</span><h4>元学习的二阶梯度训练成本高</h4><p>外循环需要计算梯度的梯度（second-order gradient），这比标准预训练贵。论文用 3B 模型 + 164B token 验证了可行性，但更大规模（如 70B+）的训练成本是否可接受，论文没有讨论。</p></div>
+
+  <div class="critique-box"><span class="tag">C3</span><h4>只在语言建模 loss 上验证，缺少下游任务评估</h4><p>论文的核心实验是语言建模 loss（perplexity），没有在 RULER、LongBench 等长上下文下游任务上做全面评估。loss 好不等于下游任务好，这是一个需要补充的验证。</p></div>
+
+  <div class="critique-box"><span class="tag">C4</span><h4>TTT 更新可能导致"灾难性遗忘"</h4><p>测试时的梯度下降会修改 MLP 参数，可能覆盖预训练学到的通用知识。论文用"静态第二 MLP 层"来缓解，但这是否在所有场景下都足够？特别是在非常长的上下文（如 1M+ token）上，持续的梯度更新会不会逐渐侵蚀预训练能力？</p></div>
+
+  <h3>开放问题</h3>
+  <ol>
+    <li><strong>TTT 与检索增强（RAG）的结合</strong>：TTT 把信息压缩进参数，RAG 把信息存在外部数据库。两者是否可以互补——参数存"高频/长期"信息，检索存"低频/精确"信息？</li>
+    <li><strong>更高效的 TTT 优化器</strong>：目前用的是普通 SGD。能否用更智能的优化器（如 Adam、Lion）或学习率调度来提升 TTT 的样本效率？</li>
+    <li><strong>TTT 的理论分析</strong>：TTT 本质上是一个在线学习过程。能否用在线学习理论（regret bound 等）来分析 TTT 的收敛性和记忆容量？</li>
+    <li><strong>多轮对话中的 TTT</strong>：论文主要评估的是单段长文本。在多轮对话中，TTT 的状态是否需要在轮次间保留？如何处理"用户纠正之前信息"这类场景？</li>
+  </ol>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献</h3>
+  <ol>
+    <li>Tandon et al. <em>End-to-End Test-Time Training for Long Context</em>. <a href="https://arxiv.org/abs/2512.23675">arXiv:2512.23675</a>, 2025.</li>
+    <li>Sun et al. <em>Test-Time Training with Masked Autoencoders</em>. ICML 2020.</li>
+    <li>Finn et al. <em>Model-Agnostic Meta-Learning (MAML)</em>. ICML 2017.</li>
+    <li>Dao and Gu. <em>Mamba 2</em>. 2024.</li>
+    <li>Yang et al. <em>Gated DeltaNet</em>. ICLR 2025.</li>
+    <li>Zhang et al. <em>TTT-KVB: Long-Context Language Modeling with Test-Time Training</em>. 2025.</li>
+  </ol>
+  <div class="fin">E2E TTT 深度解读（可读性增强版 v2）· 原版备份于 index_v1_backup.html · 2026-10-08</div>
+</div></footer>
+</body>
+</html>

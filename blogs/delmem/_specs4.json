@@ -1,0 +1,7 @@
+[
+ {
+  "name": "figures/ai_arch_v4",
+  "size": "2048*1152",
+  "prompt": "Academic architecture diagram, iteration 4. Clean CVPR style: pure white background, flat vector, rounded rectangles, Arial labels, thick dark-gray SINGLE-HEADED arrows, large filled arrowheads, no double-headed arrows, no glow, no 3D, no watermark. TOP ROW (light gray band titled 'Frozen LLM Backbone'): three boxes left to right: 'x_t', 'Attention', 'y_t', connected by two horizontal single-headed arrows x_t to Attention, Attention to y_t. BOTTOM ROW (lavender band titled 'delta-mem'): five boxes left to right: blue 'Memory Projections q,k,v', orange 'Gated Delta Write', purple 'Online State S' drawn as an 8x8 grid, light-purple 'Read r=Sq', green 'Steering dq,do'; connected by four horizontal single-headed arrows labeled respectively 'k,v', 'update S', 'read', 'r'. EXACTLY three more arrows, no others: (1) vertical single-headed arrow from 'x_t' DOWN to 'Memory Projections', arrowhead at Projections, label 'hidden state'; (2) diagonal single-headed arrow from 'Steering dq,do' UP-LEFT to 'Attention', arrowhead at Attention, label '+ dq to query'; (3) vertical single-headed arrow from 'Steering dq,do' UP to 'y_t', arrowhead at y_t, label '+ do to output'. Nothing else. Balanced whitespace, print-friendly, professional."
+ }
+]

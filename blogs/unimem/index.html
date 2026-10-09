@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UniMem 深度解读 | 互补式情景-参数记忆：边界无关任务流上的自主记忆扩展</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  --bg-primary:#FAF9F6; --bg-secondary:#F5F5F0; --bg-tertiary:#E8E8E4;
+  --text-primary:#2C3E50; --text-secondary:#5D6D7E; --text-muted:#95A5A6;
+  --color-primary:#1B4B6F; --color-secondary:#5A8F7B; --color-tertiary:#2E4057;
+  --accent-warm:#E85D4E; --accent-gold:#C9A86C; --accent-soft:#FFB7C5;
+  --ink:#2C3E50; --paper:#FAF9F6;
+  --border:rgba(27,75,111,0.15); --shadow:0 4px 24px rgba(44,62,80,0.08);
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:0.4s;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Noto Sans SC',-apple-system,sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.85;font-size:17px}
+h1,h2,h3,h4{font-family:'Noto Serif SC','Playfair Display',Georgia,serif}
+a{color:var(--color-primary);text-decoration:none}
+nav{position:sticky;top:0;z-index:100;background:rgba(250,249,246,0.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:18px;overflow-x:auto;scrollbar-width:none;height:52px}
+.nav-inner::-webkit-scrollbar{display:none}
+.nav-brand{font-weight:700;color:var(--color-primary);white-space:nowrap;font-size:15px;letter-spacing:0.5px;font-family:'Noto Serif SC',serif}
+.nav-link{font-size:13px;color:var(--text-secondary);white-space:nowrap;transition:color .2s}
+.nav-link:hover{color:var(--accent-warm)}
+.hero{position:relative;min-height:96vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:100px 24px 80px;
+background:linear-gradient(135deg,#FAF9F6 0%,#EEF2F7 18%,#F0EDE4 50%,#FFFBEB 100%)}
+.hero::before{content:'';position:absolute;inset:0;
+background:radial-gradient(ellipse 520px 320px at 12% 22%,rgba(27,75,111,0.10),transparent 60%),
+radial-gradient(ellipse 520px 320px at 88% 78%,rgba(232,93,78,0.08),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:820px;text-align:center}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.6);backdrop-filter:blur(12px);border:1px solid rgba(27,75,111,0.3);color:var(--color-primary);padding:7px 20px;border-radius:100px;font-size:11px;font-weight:600;letter-spacing:3px;margin-bottom:24px;box-shadow:0 4px 20px rgba(27,75,111,0.1)}
+.hero h1{font-size:clamp(2.2rem,6vw,3.8rem);font-weight:900;letter-spacing:-0.02em;line-height:1.15;margin:12px 0 16px;
+background:linear-gradient(135deg,var(--color-tertiary) 0%,var(--color-primary) 40%,var(--color-secondary) 70%,var(--accent-warm) 100%);
+-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-tagline{font-size:18px;color:var(--text-secondary);max-width:680px;margin:0 auto 28px;line-height:1.7;font-family:'Noto Serif SC',serif}
+.hero-desc{font-size:15px;color:var(--text-muted);max-width:640px;margin:0 auto 24px}
+.hero-art{margin:28px auto 8px;max-width:780px;width:100%}
+.hero-img{width:100%;height:auto;border-radius:16px;box-shadow:0 24px 70px -24px rgba(27,75,111,0.25);border:1px solid rgba(27,75,111,0.1)}
+.hero-caption{font-size:12px;color:var(--text-muted);margin-top:12px;font-style:italic}
+.hero-stats{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:24px}
+.hero-stats span{padding:5px 14px;background:rgba(27,75,111,0.06);border-radius:6px;font-size:12px;color:var(--color-primary);font-family:'JetBrains Mono',monospace}
+.scroll-hint{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--text-muted);letter-spacing:2px;animation:float 2s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(6px)}}
+.stats-grid{max-width:1000px;margin:-30px auto 0;padding:0 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;position:relative;z-index:10}
+.stat-card{background:var(--paper);border-radius:10px;padding:24px 20px;text-align:center;box-shadow:var(--shadow);border-top:3px solid var(--color-primary)}
+.stat-num{font-size:32px;font-weight:700;color:var(--color-primary);line-height:1.2;font-family:'Noto Serif SC',serif}
+.stat-label{font-size:13px;color:var(--text-muted);margin-top:6px}
+.content{max-width:860px;margin:0 auto;padding:60px 24px 80px}
+.chapter{margin-bottom:72px;scroll-margin-top:70px}
+.ch-tag{font-size:12px;letter-spacing:3px;color:var(--accent-warm);text-transform:uppercase;font-weight:700;margin-bottom:10px;font-family:'JetBrains Mono',monospace}
+.chapter h2{font-size:clamp(24px,3.5vw,34px);color:var(--color-primary);margin-bottom:24px;line-height:1.35;border-bottom:2px solid var(--color-secondary);padding-bottom:14px}
+.chapter h3{font-size:21px;color:var(--color-tertiary);margin:32px 0 14px}
+.chapter h4{font-size:17px;color:var(--text-primary);margin:24px 0 10px}
+.chapter p{margin-bottom:16px;text-align:justify}
+.chapter ul,.chapter ol{margin:0 0 18px 24px}
+.chapter li{margin-bottom:8px}
+.chapter strong{color:var(--color-primary)}
+.formula{background:var(--bg-secondary);border-left:4px solid var(--color-secondary);padding:20px 24px;margin:24px 0;border-radius:0 8px 8px 0;overflow-x:auto}
+.formula .eq-label{float:right;font-size:13px;color:var(--text-muted);font-style:italic}
+.formula p.note{font-size:14px;color:var(--text-secondary);margin-top:12px;margin-bottom:0}
+.insight-box{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-radius:16px;padding:24px;margin:24px 0;border-left:4px solid #10b981}
+.insight-box .tag{background:#10b981;color:white;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.insight-box h4{margin-top:12px;color:var(--color-tertiary);font-size:16px}
+.insight-box p{margin-bottom:0;color:var(--text-primary)}
+.critique-box{background:linear-gradient(135deg,#ffe4e6,#fecdd3);border-radius:16px;padding:24px;margin:24px 0;border-left:4px solid var(--accent-warm)}
+.critique-box .tag{background:var(--accent-warm);color:white;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.critique-box h4{margin-top:12px;color:var(--color-tertiary);font-size:16px}
+.critique-box p{margin-bottom:0}
+.rq-box{background:var(--bg-secondary);border-radius:10px;padding:20px 24px;margin:28px 0;border:1px dashed var(--accent-gold)}
+.rq-box h4{color:var(--accent-warm);margin-top:0;font-size:15px}
+.rq-box ol{margin-left:20px;margin-bottom:0}
+.rq-box li{margin-bottom:10px;font-size:15px}
+.code-block{background:#1B2838;color:#E8EDF2;border-radius:8px;padding:18px 22px;margin:24px 0;overflow-x:auto;font-family:'JetBrains Mono','Fira Code',monospace;font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.code-block .cm{color:#7F8C9B}
+.code-block .kw{color:#5A8F7B}
+.code-block .fn{color:#C9A86C}
+.code-block .str{color:#E85D4E}
+.code-block .num{color:#FFB7C5}
+.svg-container{background:var(--paper);border-radius:10px;padding:24px;margin:28px 0;text-align:center;box-shadow:var(--shadow)}
+.svg-container svg{max-width:100%;height:auto}
+.svg-caption{font-size:13px;color:var(--text-muted);margin-top:12px;font-style:italic}
+.figure{margin:32px 0;text-align:center}
+.figure img{max-width:100%;border-radius:8px;box-shadow:var(--shadow)}
+.figure figcaption{font-size:13px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.table-wrap{overflow-x:auto;margin:28px 0}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--paper);border-radius:8px;overflow:hidden;box-shadow:var(--shadow)}
+th{background:var(--color-primary);color:#FAF9F6;padding:12px 14px;text-align:left;font-weight:600;font-size:13px}
+td{padding:11px 14px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(90,143,123,0.06)}
+td.best{font-weight:700;color:var(--accent-warm)}
+.double-border{border:2px solid var(--color-primary);position:relative;border-radius:12px;padding:20px}
+.double-border::before{content:'';position:absolute;inset:6px;border:1px solid var(--accent-warm);opacity:0.4;pointer-events:none;border-radius:8px}
+footer{background:var(--color-tertiary);color:rgba(250,249,246,0.6);padding:40px 24px;text-align:center;font-size:13px}
+footer a{color:var(--accent-gold)}
+@media(max-width:640px){.content{padding:40px 16px}.hero{padding:70px 16px 50px}}
+</style>
+</head>
+<body>
+
+<nav>
+<div class="nav-inner">
+<span class="nav-brand">UniMem · 深度解读</span>
+<a class="nav-link" href="#ch1">问题</a>
+<a class="nav-link" href="#ch2">CLS理论</a>
+<a class="nav-link" href="#ch3">架构</a>
+<a class="nav-link" href="#ch4">路由机制</a>
+<a class="nav-link" href="#ch5">参数记忆</a>
+<a class="nav-link" href="#ch6">记忆扩展</a>
+<a class="nav-link" href="#ch7">实验</a>
+<a class="nav-link" href="#ch8">消融</a>
+<a class="nav-link" href="#ch9">动力学</a>
+<a class="nav-link" href="#ch10">批判与未来</a>
+</div>
+</nav>
+
+<section class="hero">
+<div class="hero-wrap">
+<div class="hero-badge">PREPRINT · CAS / PKU / THU / UCL</div>
+<h1>UniMem<br>互补式情景-参数记忆</h1>
+<p class="hero-tagline">受人类大脑互补学习系统启发，用可学习路由 token 自主协调情景缓冲与参数记忆——新颖任务快速检索，重复模式渐进巩固，边界无关任务流上的自主记忆扩展。</p>
+<p class="hero-desc">Siyu Xia, Chenheng Zhang, Yanting Wu, Haoxuan Li, Jiajun Chai, Xiaohan Wang, Guojun Yin, Wei Lin, Zhouchen Lin, Haifeng Zhang, Jun Wang</p>
+<div class="hero-art">
+<img src="assets/cover.jpg" alt="UniMem cover" class="hero-img">
+<p class="hero-caption">封面（AI 绘制，浮世绘水彩）：左侧流体海马体——情景记忆快速吸收；右侧晶体新皮层——参数记忆稳定巩固；金色路由通路连接两者，token 如记忆碎片从左向右流动。</p>
+</div>
+<div class="hero-stats">
+<span>CLS 理论启发</span>
+<span>自路由 token</span>
+<span>情景→参数生命周期</span>
+<span>100 任务流</span>
+<span>3 种 backbone</span>
+<span>+4.0 EM 平均增益</span>
+</div>
+</div>
+<div class="scroll-hint">↓ SCROLL TO READ</div>
+</section>
+
+<div class="stats-grid">
+<div class="stat-card"><div class="stat-num">+4.0</div><div class="stat-label">平均 EM 增益（3 backbone）</div></div>
+<div class="stat-card"><div class="stat-num">85%+</div><div class="stat-label">100 任务时路由准确率</div></div>
+<div class="stat-card"><div class="stat-num">76</div><div class="stat-label">16000 样本中新巩固的记忆单元</div></div>
+<div class="stat-card"><div class="stat-num">0</div><div class="stat-label">部署时需要的任务标签</div></div>
+</div>
+
+<div class="content">
+
+<!-- CH1 -->
+<section class="chapter" id="ch1">
+<div class="ch-tag">Chapter 01 · 问题</div>
+<h2>边界无关任务流上的稳定性-可塑性困境</h2>
+<p>LLM Agent 在真实部署中面对的不是一组预定义的封闭任务集，而是<strong>边界无关（boundary-agnostic）、持续演化的任务流</strong>——任务类型、频率、复杂度随时间变化，没有明确的任务边界标记。Agent 需要从经验中积累任务知识、复用任务特定的执行策略，但传统记忆方案在这种场景下面临根本性的两难。</p>
+
+<h3>两种记忆范式的局限</h3>
+<p><strong>外部检索记忆（Episodic / RAG）</strong>：将任务相关知识存储在模型参数之外，通过上下文窗口注入。优点是能快速吸收新证据（高可塑性），缺点是：</p>
+<ul>
+<li>无法内化重复出现的执行模式——每次推理都要重新检索，产生持续的检索开销。</li>
+<li>上下文窗口有限，长时程任务序列中历史证据会被截断或稀释。</li>
+<li>检索质量依赖于 embedding 质量和检索策略，对语义相近但执行策略不同的任务容易混淆。</li>
+</ul>
+
+<p><strong>参数记忆（Parametric / LoRA / Prefix）</strong>：将任务特定行为存储在轻量可训练组件中，骨干权重冻结。优点是一旦学习完成，执行稳定高效（高稳定性），缺点是：</p>
+<ul>
+<li>通常依赖<strong>显式任务边界</strong>——需要知道每个样本属于哪个任务才能分配对应的适配器。</li>
+<li><strong>固定参数预算</strong>——预定义的适配器数量无法适应任务组成和规模随时间的变化。</li>
+<li>顺序吸收新任务模式时存在<strong>参数碰撞（parameter collision）</strong>和表征干扰。</li>
+</ul>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>为什么单一记忆系统无法同时满足稳定性和可塑性？</h4>
+<p>这是认知科学中的经典结论（McClelland et al., 1995）：一个单一的记忆系统如果要快速吸收新经验（高可塑性），就必须允许参数大幅变动，但这会干扰已存储的知识（低稳定性）；反之，如果要稳定保存知识（高稳定性），参数变动必须受限，但这会减缓新学习（低可塑性）。这两者在同一个参数空间中是<strong>根本矛盾</strong>的。解决方案不是寻找一个"完美平衡点"，而是<strong>用两个互补的系统分别承担两种功能</strong>——这正是 UniMem 的核心设计哲学。</p>
+</div>
+
+<div class="figure">
+<img src="figures/fig1_workflow.png" alt="UniMem conceptual workflow">
+<figcaption>图 1（论文原图）：UniMem 的情景-参数概念工作流。三阶段：①初始路由构建——已知任务路由嵌入初始化 + 新颖性哨兵校准；②流式情景缓冲——路由到 e_NOVEL 的查询存入情景缓冲区，RAG 执行；③任务发现与参数巩固——重复模式聚类，转化为新的路由嵌入 + 参数记忆单元。</figcaption>
+</div>
+</section>
+
+<!-- CH2 -->
+<section class="chapter" id="ch2">
+<div class="ch-tag">Chapter 02 · 理论</div>
+<h2>互补学习系统（CLS）理论：人脑的记忆架构</h2>
+<p>UniMem 的设计直接受<strong>互补学习系统（Complementary Learning Systems, CLS）理论</strong>启发。这一理论由 McClelland、McNaughton 和 O'Reilly 于 1995 年提出，后经 Kumaran 等人（2016）发展，是认知神经科学中解释人脑记忆组织的核心框架。</p>
+
+<h3>CLS 理论的核心主张</h3>
+<p>CLS 理论认为，人脑通过两个互补的记忆系统解决稳定性-可塑性困境：</p>
+<ol>
+<li><strong>海马体（Hippocampus）</strong>：支持新经验的<strong>快速情景存储</strong>。学习率高，能迅速编码单次经历，但存储是稀疏的、基于实例的，不做泛化。</li>
+<li><strong>新皮层（Neocortex）</strong>：将重复出现的结构<strong>渐进巩固</strong>为稳定的长期知识。学习率低，通过反复暴露逐渐提取统计规律，但一旦巩固就非常稳定。</li>
+</ol>
+
+<p>关键机制是<strong>记忆巩固（memory consolidation）</strong>：海马体中存储的情景记忆在离线期间（如睡眠）被"重放"（replay），新皮层从中提取重复模式并逐渐内化。随着时间推移，记忆逐渐从海马体依赖转变为新皮层依赖——这就是为什么近期记忆容易被干扰（海马体未巩固），而远期记忆更稳定（已巩固到新皮层）。</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:13px 'Noto Sans SC',sans-serif;fill:#2C3E50}.t2{font:11px 'Noto Sans SC',sans-serif;fill:#5D6D7E}.t3{font:bold 13px 'Noto Serif SC',serif;fill:#FAF9F6}</style>
+<!-- Human brain analogy -->
+<rect x="20" y="20" width="340" height="260" rx="12" fill="#FFF5F0" stroke="#E85D4E" stroke-width="1.5"/>
+<text x="190" y="50" text-anchor="middle" class="t1" font-weight="bold" fill="#E85D4E">人脑 CLS 系统</text>
+<!-- Hippocampus -->
+<ellipse cx="110" cy="140" rx="70" ry="55" fill="#E85D4E" opacity="0.2"/>
+<ellipse cx="110" cy="140" rx="70" ry="55" fill="none" stroke="#E85D4E" stroke-width="2" stroke-dasharray="6,3"/>
+<text x="110" y="130" text-anchor="middle" class="t1" font-weight="bold">海马体</text>
+<text x="110" y="150" text-anchor="middle" class="t2">快速情景存储</text>
+<text x="110" y="168" text-anchor="middle" class="t2">高可塑性 · 稀疏编码</text>
+<!-- Neocortex -->
+<ellipse cx="270" cy="140" rx="70" ry="55" fill="#1B4B6F" opacity="0.15"/>
+<ellipse cx="270" cy="140" rx="70" ry="55" fill="none" stroke="#1B4B6F" stroke-width="2"/>
+<text x="270" y="130" text-anchor="middle" class="t1" font-weight="bold">新皮层</text>
+<text x="270" y="150" text-anchor="middle" class="t2">渐进参数巩固</text>
+<text x="270" y="168" text-anchor="middle" class="t2">高稳定性 · 统计提取</text>
+<!-- Consolidation arrow -->
+<defs><marker id="ahc" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#C9A86C"/></marker></defs>
+<path d="M180 140 Q225 100 200 140" fill="none" stroke="#C9A86C" stroke-width="2.5" marker-end="url(#ahc)"/>
+<text x="190" y="95" text-anchor="middle" class="t2" fill="#C9A86C">记忆巩固</text>
+<text x="190" y="230" text-anchor="middle" class="t2">离线重放 → 提取重复模式 → 内化</text>
+
+<!-- UniMem mapping -->
+<rect x="400" y="20" width="340" height="260" rx="12" fill="#F0FDF4" stroke="#5A8F7B" stroke-width="1.5"/>
+<text x="570" y="50" text-anchor="middle" class="t1" font-weight="bold" fill="#5A8F7B">UniMem 对应实现</text>
+<!-- Episodic buffer -->
+<rect x="440" y="80" width="120" height="100" rx="8" fill="#E85D4E" opacity="0.15"/>
+<rect x="440" y="80" width="120" height="100" rx="8" fill="none" stroke="#E85D4E" stroke-width="2" stroke-dasharray="6,3"/>
+<text x="500" y="115" text-anchor="middle" class="t1" font-weight="bold">情景缓冲区</text>
+<text x="500" y="138" text-anchor="middle" class="t2">RAG 检索执行</text>
+<text x="500" y="156" text-anchor="middle" class="t2">新颖/稀疏任务</text>
+<!-- Parametric memory -->
+<rect x="580" y="80" width="120" height="100" rx="8" fill="#1B4B6F" opacity="0.12"/>
+<rect x="580" y="80" width="120" height="100" rx="8" fill="none" stroke="#1B4B6F" stroke-width="2"/>
+<text x="640" y="115" text-anchor="middle" class="t1" font-weight="bold">参数记忆单元</text>
+<text x="640" y="138" text-anchor="middle" class="t2">Procedural KV</text>
+<text x="640" y="156" text-anchor="middle" class="t2">重复/可靠模式</text>
+<!-- Consolidation -->
+<line x1="560" y1="130" x2="580" y2="130" stroke="#C9A86C" stroke-width="2.5" marker-end="url(#ahc)"/>
+<text x="570" y="115" text-anchor="middle" class="t2" fill="#C9A86C">聚类+SFT</text>
+<text x="570" y="230" text-anchor="middle" class="t2">路由 token 自主决策 → 按需扩展</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：CLS 理论与人脑记忆架构 → UniMem 的对应映射。左：人脑海马体（快速情景存储）与新皮层（渐进参数巩固）通过记忆巩固连接。右：UniMem 的情景缓冲区（RAG）与参数记忆单元（Procedural KV）通过聚类+SFT 巩固连接。</div>
+</div>
+
+<h3>从 CLS 到 UniMem 的问题形式化</h3>
+<p>CLS 理论启发了 UniMem 的核心问题：<strong>LLM Agent 如何在边界无关任务流中自主协调情景检索与选择性参数巩固？</strong></p>
+<p>具体来说，需要解决三个子问题：</p>
+<ol>
+<li><strong>任务识别</strong>：给定一个查询，如何判断它属于已知任务（应激活参数记忆）还是新颖任务（应进入情景缓冲）？</li>
+<li><strong>记忆选择</strong>：如果是已知任务，如何选择正确的参数记忆单元？如果是新颖任务，如何高效地用 RAG 执行？</li>
+<li><strong>自主扩展</strong>：何时将情景缓冲区中的重复模式巩固为新的参数记忆单元？如何避免过早分配或参数爆炸？</li>
+</ol>
+<p>UniMem 的答案是：用<strong>可学习路由 token</strong> 作为记忆控制器，将任务识别与任务执行解耦，通过情景-参数生命周期实现按需扩展。</p>
+</section>
+
+<!-- CH3 -->
+<section class="chapter" id="ch3">
+<div class="ch-tag">Chapter 03 · 架构</div>
+<h2>自路由记忆架构：任务识别与任务执行的解耦</h2>
+<p>UniMem 的核心架构创新是<strong>将任务识别（routing）与任务执行（execution）解耦</strong>。传统的 token memory（如 TOKMEM）用单个 token 同时承担任务标识和过程编码，但单个 token 的容量不足以编码复杂的过程逻辑。UniMem 保留 token 用于轻量级路由选择，同时为每个已知任务关联一个独立的高容量参数记忆块。</p>
+
+<div class="figure">
+<img src="figures/fig2_arch.png" alt="UniMem architecture">
+<figcaption>图 2（论文原图）：UniMem 架构。左面板——自路由总体架构，查询分配到已知任务记忆单元或新颖性通路。右上部——路由引导的记忆选择与执行（路由阶段 + 执行阶段）。右下部——记忆扩展期间的情景缓冲与参数巩固。</figcaption>
+</div>
+
+<h3>路由 token 矩阵</h3>
+<p>UniMem 维护一个路由 token 矩阵 $E = [e_1, \ldots, e_K, e_{\text{NOVEL}}]$，其中的 token 分为两类：</p>
+<ul>
+<li><strong>已知任务 token（$e_k$）</strong>：每个对应一个已巩固的任务，关联一个参数记忆单元 $u_k = (e_k, P_k)$，其中 $P_k$ 存储任务特定的执行参数。</li>
+<li><strong>新颖性哨兵 token（$e_{\text{NOVEL}}$）</strong>：经过校准，用于捕获不匹配任何已知任务表示的查询，将其路由到情景缓冲区。</li>
+</ul>
+
+<h3>推理时的路由</h3>
+<p>在推理时，查询 $q$ 通过冻结 LLM 前向得到最终隐藏状态 $h_q$，然后计算路由分布：</p>
+
+<div class="formula">
+<span class="eq-label">式 (1)</span>
+$$P(e_k \mid q) = \frac{\exp(h_q^\top e_k)}{\sum_{j=1}^{K} \exp(h_q^\top e_j)}$$
+</div>
+
+<p>这是一个基于点积的 softmax 路由。注意分母只包含已知任务 token（不含 $e_{\text{NOVEL}}$），新颖性判断通过额外的置信度门控机制实现（见第 4 章）。</p>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>为什么用 token 做路由而不是用分类头？</h4>
+<p>用可学习 token 做路由有几个关键优势：(1) <strong>可扩展性</strong>——新增任务只需添加一个新的 token 嵌入，不需要修改路由层的结构（分类头的输出维度是固定的）。(2) <strong>几何意义</strong>——token 嵌入在同一空间中，可以通过聚类、距离、角度等几何操作分析任务关系（论文的 latent space 可视化就是基于此）。(3) <strong>与 LLM 的兼容性</strong>——token 嵌入可以直接插入序列，利用 LLM 的注意力机制进行上下文感知的路由，而不是独立于 LLM 的外部分类器。</p>
+</div>
+
+<h3>解耦优化目标</h3>
+<p>为了与"先路由后执行"的工作流对齐，UniMem 用两个解耦的目标分别优化路由和执行：</p>
+
+<div class="formula">
+<span class="eq-label">式 (3)</span>
+$$\mathcal{L}_{\text{route}} = -\log p(z \mid q_{1:n};\ E),$$
+$$\mathcal{L}_{\text{exec}}^{(k)} = -\frac{1}{m}\sum_{t=1}^{m} \log p(y_t \mid q_{1:n},\ k,\ y_{<t};\ \Theta_k)$$
+</div>
+
+<p>其中 $z \in \{1, \ldots, K, \text{NOVEL}\}$ 是离散路由标签，$\Theta_k = \{P_k, \{g^{(l)}\}\}$ 是任务 $k$ 的参数。关键设计：</p>
+<ul>
+<li><strong>路由阶段所有参数记忆块都不激活</strong>，因此 $\mathcal{L}_{\text{route}}$ 只更新路由 token $E$。</li>
+<li><strong>执行损失只应用于已知任务样本</strong>（路由到新颖性哨兵的样本在校准期间没有关联的参数记忆块），更新选中的参数记忆块 $P_k$ 和门控 $g^{(l)}$。</li>
+</ul>
+
+<p>这种解耦确保了路由学习不会被执行参数的梯度干扰，反之亦然——两个子系统可以独立优化。</p>
+</section>
+
+<!-- CH4 -->
+<section class="chapter" id="ch4">
+<div class="ch-tag">Chapter 04 · 机制</div>
+<h2>新颖性检测：置信度门控与哨兵校准</h2>
+<p>UniMem 如何判断一个查询是"已知"还是"新颖"？这不是简单的 argmax——因为即使已知任务 token 获得了最高概率，如果置信度很低，也可能是因为查询不属于任何已知任务。UniMem 用<strong>双重条件门控</strong>解决这个问题。</p>
+
+<h3>新颖性哨兵的初始化</h3>
+<p>在 Phase I（路由空间初始化）中，UniMem 首先学习已知任务的路由 token $\{e_k\}_{k=1}^K$，然后计算平均路由范数：</p>
+<div class="formula">
+$$\bar{r} = \frac{1}{K}\sum_{k=1}^{K} \|e_k\|$$
+</div>
+<p>这为后续的记忆扩展提供了固定的几何尺度。新颖性哨兵初始化为已知路由 token 质心方向附近的一个点：</p>
+
+<div class="formula">
+<span class="eq-label">式 (4)</span>
+$$e_{\text{NOVEL}} = \bar{r} \cdot \frac{\bar{e} + \epsilon}{\|\bar{e} + \epsilon\|}, \quad \epsilon \sim \mathcal{N}\big(0,\ (0.05\bar{r})^2 I\big)$$
+</div>
+
+<p>其中 $\bar{e}$ 是已知路由 token 的平均方向。这个初始化将新颖性哨兵放在与已知任务<strong>相同的路由空间</strong>中（而不是作为离群点），使它能与现有路由 token 竞争。高斯扰动 $\epsilon$ 的方差为 $(0.05\bar{r})^2$，确保哨兵从质心附近开始但不完全重合。</p>
+
+<h3>新颖性校准</h3>
+<p>为了校准新颖性哨兵，UniMem 从初始训练池中保留一部分任务作为<strong>伪未见任务（pseudo-unseen tasks）</strong>。这些任务不分配已知任务路由 token，只用于新颖性校准。路由层用 $(K+1)$ 路交叉熵训练，使伪未见任务被路由到 $e_{\text{NOVEL}}$，而已知任务被路由到对应的 $e_k$。</p>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>为什么新颖性哨兵要放在质心附近而不是远离已知 token？</h4>
+<p>直觉上，新颖性检测应该让"新颖"的 token 远离已知 token。但 UniMem 反其道而行之——将 $e_{\text{NOVEL}}$ 放在已知 token 的质心附近。原因是：<strong>新颖查询的特征表示通常落在已知任务表示的"间隙"中，而不是在已知空间之外</strong>。一个关于"法律推理"的查询，如果训练集中有"数学推理"和"科学推理"，它的隐藏状态会落在这两个已知 token 之间的区域。将哨兵放在质心附近，使它能在这些"间隙"区域与已知 token 竞争。如果哨兵远离已知 token，它只会捕获真正离群的查询（如完全不相关的语言），而无法检测语义相近但任务不同的新颖查询。</p>
+</div>
+
+<h3>置信度门控路由决策</h3>
+<p>在推理时，UniMem 同时计算已知任务的最大概率 $p^\star = \max_k P(e_k \mid q)$ 和新颖性哨兵的概率 $p_0 = P(e_{\text{NOVEL}} \mid q)$。只有当两个条件同时满足时，才激活已知参数记忆单元：</p>
+
+<div class="formula">
+<span class="eq-label">式 (7)-(8)</span>
+$$p^\star > p_0 \quad \text{且} \quad p^\star \geq \tau_{\text{route}}$$
+$$\hat{y} = \begin{cases} i^\star, & \text{if } p^\star > p_0 \text{ and } p^\star \geq \tau_{\text{route}} \\ e_{\text{NOV}}, & \text{otherwise} \end{cases}$$
+</div>
+
+<p>其中 $\tau_{\text{route}} = 0.7$。这个规则捕获了两种"新颖"情况：</p>
+<ol>
+<li><strong>显式新颖</strong>：新颖性哨兵本身获得比每个已知任务 token 更高的概率（$p_0 > p^\star$）。</li>
+<li><strong>低置信度拒绝</strong>：即使已知任务 token 概率最大，但如果置信度 $p^\star$ 低于阈值 0.7，UniMem 拒绝激活该参数记忆——防止低置信度查询激活错误的记忆块。</li>
+</ol>
+
+<p>论文选择用最大已知概率 $p^\star$ 而不是熵或间隔（margin）作为门控信号，因为：熵对弱竞争 token 的数量敏感，而间隔引入了前两名之间的额外判据。$p^\star$ 直接衡量是否有任何已知记忆单元以足够置信度认领该查询，简单且可解释。</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:13px 'Noto Sans SC',sans-serif;fill:#2C3E50}.t2{font:11px 'Noto Sans SC',sans-serif;fill:#5D6D7E}.t3{font:bold 12px 'Noto Serif SC',serif;fill:#FAF9F6}</style>
+<!-- Routing probability space -->
+<rect x="20" y="20" width="720" height="240" rx="12" fill="#FAF9F6" stroke="#E8E8E4"/>
+<text x="380" y="48" text-anchor="middle" class="t1" font-weight="bold">置信度门控路由决策</text>
+<!-- Threshold line -->
+<line x1="80" y1="130" x2="700" y2="130" stroke="#E85D4E" stroke-width="2" stroke-dasharray="8,4"/>
+<text x="710" y="125" text-anchor="end" class="t2" fill="#E85D4E">τ_route = 0.7</text>
+<!-- Known region -->
+<rect x="80" y="70" width="620" height="60" rx="6" fill="#5A8F7B" opacity="0.1"/>
+<text x="390" y="105" text-anchor="middle" class="t1" fill="#5A8F7B">已知任务激活区（p* ≥ 0.7 且 p* > p0）</text>
+<!-- Novel region -->
+<rect x="80" y="135" width="620" height="100" rx="6" fill="#E85D4E" opacity="0.08"/>
+<text x="390" y="165" text-anchor="middle" class="t1" fill="#E85D4E">新颖性通路（p0 > p* 或 p* < 0.7）</text>
+<!-- Case 1: explicit novel -->
+<circle cx="180" cy="190" r="18" fill="#E85D4E" opacity="0.6"/>
+<text x="180" y="195" text-anchor="middle" class="t3">①</text>
+<text x="180" y="225" text-anchor="middle" class="t2">显式新颖</text>
+<text x="180" y="240" text-anchor="middle" class="t2">p0 > p*</text>
+<!-- Case 2: low confidence -->
+<circle cx="390" cy="190" r="18" fill="#E85D4E" opacity="0.6"/>
+<text x="390" y="195" text-anchor="middle" class="t3">②</text>
+<text x="390" y="225" text-anchor="middle" class="t2">低置信度拒绝</text>
+<text x="390" y="240" text-anchor="middle" class="t2">p* < 0.7</text>
+<!-- Case 3: known -->
+<circle cx="600" cy="100" r="18" fill="#5A8F7B"/>
+<text x="600" y="105" text-anchor="middle" class="t3">③</text>
+<text x="600" y="75" text-anchor="middle" class="t2">已知任务激活</text>
+<text x="600" y="60" text-anchor="middle" class="t2">p* ≥ 0.7 且 p* > p0</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：置信度门控路由决策的三种情况。①显式新颖——新颖性哨兵概率超过所有已知 token；②低置信度拒绝——已知 token 概率最大但低于阈值 0.7；③已知任务激活——同时满足两个条件。</div>
+</div>
+</section>
+
+<!-- CH5 -->
+<section class="chapter" id="ch5">
+<div class="ch-tag">Chapter 05 · 方法</div>
+<h2>参数记忆：Procedural KV Memory 与门控注入</h2>
+<p>当查询被路由到已知任务 $e_k$ 时，UniMem 激活关联的参数记忆单元 $u_k = (e_k, P_k)$ 并进入参数执行阶段。$P_k$ 被实例化为<strong>Procedural KV Memory</strong>——一组可学习的、逐层的键值对。</p>
+
+<h3>Procedural KV Memory 的结构</h3>
+<p>对于每个已知任务 $k$，Procedural KV Memory 在每个 Transformer 层 $l$ 存储可学习的键值对 $(K_k^{(l)}, V_k^{(l)})$。在执行时，选中的 Procedural KV Memory 通过可学习的注入权重 $\{g^{(l)}\}$ 贡献到冻结的自注意力输出：</p>
+
+<div class="formula">
+<span class="eq-label">式 (2)</span>
+$$H_{\text{out}}^{(l)} = H_{\text{orig}}^{(l)} + g^{(l)} \cdot \text{CrossAttn}\big(Q^{(l)},\ K_k^{(l)},\ V_k^{(l)}\big)$$
+</div>
+
+<p>其中 $Q^{(l)}$ 是层 $l$ 的查询状态（由冻结的查询投影 $W_Q^{(l)}$ 计算），$H_{\text{orig}}^{(l)}$ 是冻结骨干的自注意力输出。</p>
+
+<h3>关键实现细节</h3>
+<ul>
+<li><strong>无 RoPE</strong>：Procedural KV Memory 不应用旋转位置编码（RoPE），因为这些键值槽编码的是任务级过程语义，而不是位置相关的 token 交互。</li>
+<li><strong>无因果掩码</strong>：cross-attention 不应用因果掩码，使选中的过程记忆对每个序列位置全局可访问。</li>
+<li><strong>单 slot 退化</strong>：当记忆 slot 数 $p=1$ 时，cross-attention 退化为简单形式——只有一个 key，注意力权重恒为 1，每个位置收到相同的任务特定 value 向量。此时 Procedural KV Memory 表现为逐层的任务特定残差信号。</li>
+<li><strong>GQA 处理</strong>：对于使用分组查询注意力（GQA）的模型（如 LLaMA-3.2-3B，$H_q=32$ query heads，$H_{kv}=8$ KV heads），Procedural KV Memory 在 $H_{kv}$ 头上参数化以降低参数成本，cross-attention 前将 KV 对重复 $H_q/H_{kv}$ 次。</li>
+</ul>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>为什么用 KV 记忆而不是 LoRA？</h4>
+<p>UniMem 选择 Procedural KV Memory 而不是 LoRA 作为参数记忆的实例化，有几个原因：(1) <strong>推理效率</strong>——KV 记忆在推理时只需额外的 cross-attention 计算，不需要修改权重矩阵乘法，与现有的 KV cache 机制天然兼容。(2) <strong>任务隔离</strong>——每个任务的 KV 对是完全独立的，不存在 LoRA 的参数碰撞问题（不同任务的低秩更新可能在同一权重空间中干扰）。(3) <strong>可解释性</strong>——KV 记忆的注入强度由门控 $g^{(l)}$ 显式控制，可以逐层分析哪些层对任务执行最重要。(4) <strong>与 TOKMEM 的继承关系</strong>——UniMem 建立在 procedural token memory 范式（Wu et al., 2026）之上，KV 记忆是该范式的自然扩展。</p>
+</div>
+
+<h3>门控机制的关键性</h3>
+<p>消融实验（Table 3）显示，禁用门控机制（w/o KV gate）导致性能急剧下降：在 LLaMA-3.2-3B 上，10 任务 EM 从 51.60 降到 35.80，50 任务从 47.22 降到 31.22。这证实了可学习门控对于调节任务特定 Procedural KV Memory 注入冻结骨干的强度至关重要——没有门控，异构的过程信号在执行时会产生更强的干扰。</p>
+
+<div class="code-block">
+<span class="cm">[示意性实现] Procedural KV Memory 注入</span>
+<span class="kw">class</span> <span class="fn">ProceduralKVMemory</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, n_layers, n_heads, head_dim, n_slots=1):
+        <span class="kw">super</span>().__init__()
+        <span class="cm"># 每层每任务的可学习 KV 对</span>
+        self.K = nn.Parameter(torch.randn(n_layers, n_heads, n_slots, head_dim) * 0.02)
+        self.V = nn.Parameter(torch.randn(n_layers, n_heads, n_slots, head_dim) * 0.02)
+        <span class="cm"># 逐层注入门控</span>
+        self.gate = nn.Parameter(torch.zeros(n_layers))  <span class="cm"># 初始为 0（不注入）</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, hidden_states, layer_idx):
+        <span class="cm"># hidden_states: [B, T, H*D]  (冻结骨干的 Q 投影输入)</span>
+        B, T, _ = hidden_states.shape
+        H, D = self.K.shape[1], self.K.shape[3]
+        Q = hidden_states.view(B, T, H, D).transpose(1, 2)  <span class="cm"># [B, H, T, D]</span>
+        K = self.K[layer_idx].unsqueeze(0).expand(B, -1, -1, -1)  <span class="cm"># [B, H, S, D]</span>
+        V = self.V[layer_idx].unsqueeze(0).expand(B, -1, -1, -1)
+        <span class="cm"># Cross-attention (无 RoPE, 无因果掩码)</span>
+        scores = torch.matmul(Q, K.transpose(-2, -1)) / (D ** 0.5)  <span class="cm"># [B, H, T, S]</span>
+        attn = F.softmax(scores, dim=-1)
+        mem_out = torch.matmul(attn, V)  <span class="cm"># [B, H, T, D]</span>
+        mem_out = mem_out.transpose(1, 2).contiguous().view(B, T, H * D)
+        <span class="cm"># 门控注入</span>
+        g = torch.sigmoid(self.gate[layer_idx])
+        <span class="kw">return</span> hidden_states + g * mem_out
+</div>
+</section>
+
+<!-- CH6 -->
+<section class="chapter" id="ch6">
+<div class="ch-tag">Chapter 06 · 机制</div>
+<h2>增量记忆扩展：情景-参数生命周期</h2>
+<p>UniMem 从一组初始已知任务开始，然后通过<strong>情景-参数生命周期</strong>从边界无关的流式样本中扩展记忆。整个过程分为两个阶段。</p>
+
+<h3>Phase I：路由空间初始化与新颖性校准</h3>
+<p>给定初始已知任务集 $\mathcal{T}^{(0)}$，UniMem 首先学习路由 token $\{e_k\}_{k=1}^K$ 和对应的参数记忆块。然后：</p>
+<ol>
+<li>计算平均路由范数 $\bar{r}$，作为后续扩展的固定几何尺度。</li>
+<li>用式 (4) 初始化新颖性哨兵 $e_{\text{NOVEL}}$。</li>
+<li>用保留的伪未见任务校准哨兵——$(K+1)$ 路交叉熵训练，使伪未见任务路由到 $e_{\text{NOVEL}}$。</li>
+</ol>
+
+<h3>Phase II：流式情景缓冲与参数巩固</h3>
+<p>部署后，流式查询进入以下生命周期：</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:13px 'Noto Sans SC',sans-serif;fill:#2C3E50}.t2{font:11px 'Noto Sans SC',sans-serif;fill:#5D6D7E}.t3{font:bold 12px 'Noto Serif SC',serif;fill:#FAF9F6}</style>
+<!-- Lifecycle flow -->
+<defs><marker id="ahl" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1B4B6F"/></marker></defs>
+<!-- Step 1: Query arrives -->
+<rect x="30" y="30" width="140" height="60" rx="8" fill="#1B4B6F"/>
+<text x="100" y="55" text-anchor="middle" class="t3">流式查询 q</text>
+<text x="100" y="75" text-anchor="middle" class="t2" fill="#A8C0D0">无任务标签</text>
+<!-- Step 2: Routing -->
+<rect x="210" y="30" width="140" height="60" rx="8" fill="#5A8F7B"/>
+<text x="280" y="55" text-anchor="middle" class="t3">自路由决策</text>
+<text x="280" y="75" text-anchor="middle" class="t2" fill="#C8E0D0">p* vs p0, τ</text>
+<!-- Branch: known -->
+<rect x="390" y="15" width="150" height="50" rx="8" fill="#5A8F7B" opacity="0.2"/>
+<rect x="390" y="15" width="150" height="50" rx="8" fill="none" stroke="#5A8F7B" stroke-width="2"/>
+<text x="465" y="38" text-anchor="middle" class="t1" font-weight="bold" fill="#5A8F7B">已知 → 参数执行</text>
+<text x="465" y="55" text-anchor="middle" class="t2">激活 P_k, 生成响应</text>
+<!-- Branch: novel -->
+<rect x="390" y="80" width="150" height="50" rx="8" fill="#E85D4E" opacity="0.15"/>
+<rect x="390" y="80" width="150" height="50" rx="8" fill="none" stroke="#E85D4E" stroke-width="2" stroke-dasharray="6,3"/>
+<text x="465" y="103" text-anchor="middle" class="t1" font-weight="bold" fill="#E85D4E">新颖 → 情景缓冲</text>
+<text x="465" y="120" text-anchor="middle" class="t2">存入缓冲区, RAG 执行</text>
+<!-- Step 3: Clustering -->
+<rect x="590" y="80" width="140" height="50" rx="8" fill="#C9A86C"/>
+<text x="660" y="103" text-anchor="middle" class="t3">聚类发现</text>
+<text x="660" y="120" text-anchor="middle" class="t2" fill="#FFF5E0">HDBSCAN + NCD</text>
+<!-- Step 4: Quality gate -->
+<rect x="590" y="155" width="140" height="50" rx="8" fill="#2E4057"/>
+<text x="660" y="178" text-anchor="middle" class="t3">质量门控</text>
+<text x="660" y="195" text-anchor="middle" class="t2" fill="#A8C0D0">离群过滤 + 凝聚度</text>
+<!-- Step 5: Consolidation -->
+<rect x="390" y="155" width="150" height="50" rx="8" fill="#1B4B6F"/>
+<text x="465" y="178" text-anchor="middle" class="t3">SFT 巩固</text>
+<text x="465" y="195" text-anchor="middle" class="t2" fill="#A8C0D0">新 e_new + P_new</text>
+<!-- Step 6: Expanded -->
+<rect x="210" y="155" width="140" height="50" rx="8" fill="#5A8F7B" opacity="0.3"/>
+<rect x="210" y="155" width="140" height="50" rx="8" fill="none" stroke="#5A8F7B" stroke-width="2"/>
+<text x="280" y="178" text-anchor="middle" class="t1" font-weight="bold" fill="#5A8F7B">扩展记忆空间</text>
+<text x="280" y="195" text-anchor="middle" class="t2">K → K+1, 后续查询可用</text>
+<!-- Arrows -->
+<line x1="170" y1="60" x2="208" y2="60" stroke="#1B4B6F" stroke-width="2" marker-end="url(#ahl)"/>
+<line x1="350" y1="50" x2="388" y2="40" stroke="#5A8F7B" stroke-width="2" marker-end="url(#ahl)"/>
+<line x1="350" y1="70" x2="388" y2="105" stroke="#E85D4E" stroke-width="2" marker-end="url(#ahl)"/>
+<line x1="540" y1="105" x2="588" y2="105" stroke="#C9A86C" stroke-width="2" marker-end="url(#ahl)"/>
+<line x1="660" y1="130" x2="660" y2="153" stroke="#2E4057" stroke-width="2" marker-end="url(#ahl)"/>
+<line x1="590" y1="180" x2="542" y2="180" stroke="#1B4B6F" stroke-width="2" marker-end="url(#ahl)"/>
+<line x1="390" y1="180" x2="352" y2="180" stroke="#5A8F7B" stroke-width="2" marker-end="url(#ahl)"/>
+<!-- Feedback loop -->
+<path d="M280 205 Q280 260 100 260 Q30 260 30 200 L30 92" fill="none" stroke="#C9A86C" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#ahl)"/>
+<text x="155" y="280" text-anchor="middle" class="t2" fill="#C9A86C">持续循环：新查询 → 路由 → 缓冲/执行 → 巩固 → 扩展</text>
+<!-- Failed clusters stay in buffer -->
+<rect x="30" y="220" width="160" height="40" rx="6" fill="#F5F5F0" stroke="#E8E8E4"/>
+<text x="110" y="238" text-anchor="middle" class="t2">未通过质量门控的聚类</text>
+<text x="110" y="254" text-anchor="middle" class="t2">→ 留在情景缓冲区，继续 RAG</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：UniMem 的情景-参数生命周期。查询 → 自路由决策 → 已知任务参数执行 / 新颖任务情景缓冲 → 聚类发现 → 质量门控 → SFT 巩固 → 扩展记忆空间 → 循环。未通过门控的聚类留在缓冲区继续 RAG。</div>
+</div>
+
+<h3>聚类与质量门控</h3>
+<p>情景缓冲区中的查询累积到一定程度后，UniMem 对其进行无监督聚类：</p>
+<ul>
+<li><strong>聚类算法</strong>：HDBSCAN（基于层次密度估计的密度聚类，Campello et al., 2013），能自动发现任意形状的聚类并标记离群点。</li>
+<li><strong>相似度度量</strong>：NCD（Normalized Compression Distance，Cilibrasi & Vitanyi, 2004）——基于压缩的无参数相似度度量，不需要训练 embedding 模型。</li>
+<li><strong>质量门控</strong>：通过离群点过滤和基于 NCD 的凝聚度（cohesion）检查，只有通过质量门控的聚类才被提升为新的参数记忆单元。</li>
+</ul>
+
+<h3>SFT 巩固</h3>
+<p>对于每个合格的聚类，UniMem 动态分配一个新的路由 token $e_{\text{new}}$ 和对应的参数记忆块 $P_{\text{new}}$（Procedural KV Memory），然后在聚类样本上通过 SFT 联合优化。未通过质量门控的聚类留在情景缓冲区中，继续由 RAG 推理服务——这为稀疏或长尾任务提供了非参数覆盖，直到积累足够证据用于未来巩固。</p>
+
+<div class="critique-box">
+<span class="tag">批判</span>
+<h4>保守巩固策略的代价</h4>
+<p>UniMem 采用保守的巩固策略——稀疏或不确定的模式一直留在情景缓冲区，直到观察到足够证据。论文在 Limitations 中承认这一点。这种保守性的代价是：(1) <strong>长尾任务永远无法参数化</strong>——如果一个任务只出现几次，它永远不会被巩固，每次执行都需要 RAG 检索开销。(2) <strong>情景缓冲区的存储增长</strong>——未巩固的查询持续累积，缓冲区大小不受控。(3) <strong>巩固延迟</strong>——从首次出现到巩固需要积累足够样本，在此期间任务执行依赖 RAG 而非高效的参数记忆。论文提到"更自适应的巩固标准可能进一步改善动态流中的记忆利用率"，但没有给出具体方案。</p>
+</div>
+</section>
+
+<!-- CH7 -->
+<section class="chapter" id="ch7">
+<div class="ch-tag">Chapter 07 · 实验</div>
+<h2>实验结果：跨骨干模型的一致优势</h2>
+
+<h3>实验设置</h3>
+<p>UniMem 在两个代表性基准上评估：</p>
+<ul>
+<li><strong>SNI 流式任务</strong>：Super-Natural Instructions，构建 10/50/100 任务的流式序列。部分任务限制为仅 10 个训练实例（模拟长尾分布），使其保持情景状态除非积累足够证据。骨干模型：LLaMA-3.2-3B、LLaMA-3.1-8B、Qwen3-8B。指标：EM / ROUGE-L。</li>
+<li><strong>SuperGLUE 混合流</strong>：选择 6 个复杂推理任务（BoolQ, CB, RTE, COPA, MultiRC, WiC）混合为单一边界无关流式序列。骨干模型：LLaMA-1B、LLaMA-3B。指标：Average Accuracy。</li>
+</ul>
+
+<p>基线覆盖四种范式：Base（零样本）、Standard RAG（kNN 历史样本检索）、Replay LoRA（10% 旧样本回放的参数基线）、Adapted TOKMEM（token 中心过程记忆基线）。</p>
+
+<h3>SNI 流式任务主结果</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>方法</th><th>10 任务</th><th>50 任务</th><th>100 任务</th><th>平均</th></tr>
+<tr><th colspan="5" style="background:#EEF2F7">LLaMA-3.2-3B（EM / ROUGE-L）</th></tr>
+<tr><td>Base</td><td>29.6 / 47.7</td><td>32.6 / 46.0</td><td>31.8 / 45.7</td><td>31.4 / 46.5</td></tr>
+<tr><td>RAG</td><td>37.0 / 58.4</td><td>37.2 / 51.8</td><td>35.2 / 49.5</td><td>36.5 / 53.2</td></tr>
+<tr><td>LoRA</td><td>38.4 / 60.4</td><td>45.8 / 57.9</td><td>43.6 / 56.7</td><td>42.6 / 58.3</td></tr>
+<tr><td>TokMem</td><td>38.4 / 61.8</td><td>41.1 / 54.7</td><td>40.5 / 55.1</td><td>40.0 / 57.2</td></tr>
+<tr><td class="best">UniMem</td><td class="best">51.6 / 67.0</td><td class="best">47.2 / 59.5</td><td class="best">47.6 / 60.6</td><td class="best">48.8 / 62.4</td></tr>
+<tr><th colspan="5" style="background:#EEF2F7">LLaMA-3.1-8B（EM / ROUGE-L）</th></tr>
+<tr><td>Base</td><td>39.8 / 58.1</td><td>39.4 / 53.3</td><td>39.3 / 53.2</td><td>39.5 / 54.9</td></tr>
+<tr><td>RAG</td><td>45.2 / 64.8</td><td>42.6 / 59.1</td><td>41.6 / 56.7</td><td>43.1 / 60.2</td></tr>
+<tr><td>LoRA</td><td>55.2 / 73.8</td><td>49.8 / 62.7</td><td>49.4 / 62.6</td><td>51.5 / 66.4</td></tr>
+<tr><td>TokMem</td><td>56.2 / 74.1</td><td>49.3 / 62.9</td><td>44.7 / 59.7</td><td>50.1 / 65.6</td></tr>
+<tr><td class="best">UniMem</td><td class="best">58.0 / 73.8</td><td class="best">51.8 / 64.5</td><td class="best">51.9 / 64.5</td><td class="best">53.9 / 67.6</td></tr>
+<tr><th colspan="5" style="background:#EEF2F7">Qwen3-8B（EM / ROUGE-L）</th></tr>
+<tr><td>Base</td><td>40.8 / 53.1</td><td>45.8 / 57.3</td><td>44.4 / 57.7</td><td>43.7 / 56.0</td></tr>
+<tr><td>RAG</td><td>41.8 / 60.4</td><td>42.9 / 58.5</td><td>42.3 / 58.7</td><td>42.3 / 59.2</td></tr>
+<tr><td>LoRA</td><td>44.8 / 63.4</td><td>47.5 / 60.2</td><td>50.4 / 63.5</td><td>47.6 / 62.4</td></tr>
+<tr><td>TokMem</td><td>39.8 / 59.7</td><td>44.5 / 57.5</td><td>44.4 / 57.9</td><td>42.9 / 58.4</td></tr>
+<tr><td class="best">UniMem</td><td class="best">53.2 / 67.8</td><td class="best">49.7 / 61.4</td><td class="best">49.9 / 62.2</td><td class="best">51.0 / 63.8</td></tr>
+</table>
+</div>
+
+<p>关键发现：</p>
+<ul>
+<li>UniMem 在三个骨干模型上均取得最佳平均分数，表明在长期记忆扩展中能维持强任务执行。</li>
+<li>与 TOKMEM 和 Replay LoRA 的对比凸显了<strong>路由与执行分离</strong>的优势。TOKMEM 在 10 任务时与 UniMem 接近（甚至 ROUGE-L 更高），但随任务数增加性能下降更快（50 任务时 TOKMEM 41.1 vs UniMem 47.2 EM），因为单个 token 无法同时承担路由和复杂过程编码。</li>
+<li>UniMem 相对于 LoRA 的优势在小骨干（LLaMA-3.2-3B）上最明显（+6.2 EM avg），在大骨干上缩小但仍为正（+2.4 EM on LLaMA-3.1-8B, +3.4 on Qwen3-8B）。</li>
+</ul>
+
+<h3>路由准确率</h3>
+<p>Figure 3 显示，随任务规模增加（10→50→100），路由准确率逐渐下降，但 LLaMA 骨干保持在 85% 以上（LLaMA-3.1-8B 在 100 任务时仍 >85%）。Qwen3-8B 下降较多（从 88.4 到 75.8），可能因为 Qwen3 的指令表示空间与 LLaMA 不同。整体表明路由层能在长时程记忆选择中维持足够的判别力。</p>
+
+<h3>SuperGLUE 混合流结果</h3>
+<div class="table-wrap">
+<table>
+<tr><th>方法</th><th>BoolQ</th><th>CB</th><th>RTE</th><th>COPA</th><th>MultiRC</th><th>WiC</th><th>平均</th></tr>
+<tr><th colspan="8" style="background:#EEF2F7">LLaMA-3B-Instruct</th></tr>
+<tr><td>Base</td><td>81.2</td><td>60.7</td><td>72.9</td><td>39.0</td><td>70.8</td><td>50.3</td><td>62.5</td></tr>
+<tr><td>RAG</td><td>75.9</td><td>78.6</td><td>74.4</td><td>81.0</td><td>68.0</td><td>52.7</td><td>71.8</td></tr>
+<tr><td>LoRA</td><td>86.5</td><td>75.0</td><td>82.7</td><td>83.0</td><td>85.2</td><td>52.5</td><td>77.5</td></tr>
+<tr><td>TOKMEM</td><td>84.4</td><td>64.3</td><td>80.9</td><td>94.0</td><td>84.0</td><td>66.3</td><td>79.0</td></tr>
+<tr><td class="best">UniMem</td><td class="best">88.1</td><td class="best">87.5</td><td class="best">88.1</td><td>92.0</td><td class="best">86.6</td><td class="best">73.5</td><td class="best">86.0</td></tr>
+</table>
+</div>
+<p>UniMem 在 LLaMA-3B 上取得 85.95 平均准确率，显著超过 LoRA（77.49）和 TOKMEM（78.98）。特别在 CB（87.5 vs 64.3）和 WiC（73.5 vs 66.3）上优势巨大，这些任务需要细粒度的语义区分能力。</p>
+</section>
+
+<!-- CH8 -->
+<section class="chapter" id="ch8">
+<div class="ch-tag">Chapter 08 · 消融</div>
+<h2>消融分析：每个组件的贡献</h2>
+
+<h3>每任务 KV vs 共享 KV</h3>
+<p>Figure 4 比较了 UniMem（每任务独立 KV 记忆）与共享 KV 记忆基线（所有任务共享同一组 KV prefix）。在 LLaMA-3.1-8B 上：</p>
+<ul>
+<li>10 任务：UniMem 58.8 EM / 74.6 ROUGE vs 共享 57.6 / 72.7（+1.2 EM, +1.9 ROUGE）</li>
+<li>50 任务：UniMem 51.8 EM / 64.5 ROUGE vs 共享 49.1 / 61.6（+2.7 EM, +2.9 ROUGE）</li>
+</ul>
+<p>EM 优势随任务序列增长从 +1.2% 增加到 +2.7%，表明<strong>共享参数在任务多样性更大时更容易受到干扰</strong>，而每任务独立 KV 记忆有助于在流式扩展中保持稳定执行。</p>
+
+<h3>情景缓冲区检索的影响</h3>
+<p>在 50 任务设置中，禁用情景缓冲区 RAG 检索导致性能下降（LLaMA-3.1-8B: 50.90 vs 51.84 EM）。10 任务设置中未做此消融（只观察到一个稀疏查询，检索增强执行高度不稳定）。这证实情景缓冲区为尚未达到参数巩固条件的查询提供了有用的非参数覆盖。</p>
+
+<h3>门控机制的关键性</h3>
+<p>禁用 KV 门控（w/o KV gate）导致所有设置下的大幅性能下降：</p>
+<div class="table-wrap">
+<table>
+<tr><th>骨干</th><th>设置</th><th>完整 UniMem</th><th>w/o KV gate</th><th>EM 下降</th></tr>
+<tr><td>LLaMA-3.2-3B</td><td>10 任务</td><td>51.60</td><td>35.80</td><td>-15.8</td></tr>
+<tr><td>LLaMA-3.2-3B</td><td>50 任务</td><td>47.22</td><td>31.22</td><td>-16.0</td></tr>
+<tr><td>LLaMA-3.1-8B</td><td>10 任务</td><td>58.00</td><td>37.40</td><td>-20.6</td></tr>
+<tr><td>LLaMA-3.1-8B</td><td>50 任务</td><td>51.84</td><td>30.16</td><td>-21.7</td></tr>
+</table>
+</div>
+<p>门控的移除导致 EM 下降 15-22 分，这是所有消融中最剧烈的。这证实可学习门控对于调节任务特定 Procedural KV Memory 注入冻结骨干的强度至关重要——没有门控，异构过程信号在执行时干扰更强。</p>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>门控为什么如此关键？</h4>
+<p>门控 $g^{(l)}$ 的作用是逐层控制 KV 记忆的注入强度。没有门控（相当于 $g^{(l)}=1$ 对所有层），每个任务的 KV 记忆以相同强度注入所有层，但不同任务需要在不同层进行适配——有些任务主要需要浅层的 token 级调整，有些需要深层的语义级调整。固定强度注入会导致：(1) 不需要强注入的层被过度干扰；(2) 需要强注入的层可能注入不足。可学习门控让模型自动发现每层的最优注入强度，这与 LoRA 中不同层的秩选择、prefix tuning 中不同层的前缀长度选择是同一类问题——<strong>层异质性（layer-wise heterogeneity）</strong>是参数高效适配中的关键设计维度。</p>
+</div>
+</section>
+
+<!-- CH9 -->
+<section class="chapter" id="ch9">
+<div class="ch-tag">Chapter 09 · 分析</div>
+<h2>自主任务发现的动力学：记忆如何增长</h2>
+<p>Figure 5 追踪了流式部署期间的记忆增长动态。从 30 个基础任务开始，UniMem 仅在缓冲查询形成重复聚类时分配新的参数单元。在覆盖 100 个新颖任务的 16,000 个样本中，共分配了 <strong>76 个新参数单元</strong>（总任务 token 从 30 增长到 106）。</p>
+
+<h3>增长模式分析</h3>
+<p>从 Figure 5 的累积增长曲线可以观察到几个阶段：</p>
+<ul>
+<li><strong>初始阶段（0-2000 样本）</strong>：增长较慢，因为新颖任务刚出现，样本量不足以形成聚类。</li>
+<li><strong>快速增长阶段（2000-10000 样本）</strong>：随着重复模式积累，聚类频繁通过质量门控，新单元快速分配。每 1000-2000 样本新增 6-13 个单元。</li>
+<li><strong>减速阶段（10000-16000 样本）</strong>：增长放缓，因为大部分高频任务已被巩固，剩余的是低频/长尾任务，难以形成足够大的聚类。</li>
+</ul>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:13px 'Noto Sans SC',sans-serif;fill:#2C3E50}.t2{font:11px 'Noto Sans SC',sans-serif;fill:#5D6D7E}.t3{font:bold 12px 'Noto Serif SC',serif;fill:#FAF9F6}</style>
+<!-- Memory growth curve -->
+<rect x="20" y="20" width="720" height="240" rx="12" fill="#FAF9F6" stroke="#E8E8E4"/>
+<text x="380" y="48" text-anchor="middle" class="t1" font-weight="bold">记忆增长动力学（示意）</text>
+<!-- Axes -->
+<line x1="80" y1="210" x2="700" y2="210" stroke="#95A5A6" stroke-width="1.5"/>
+<line x1="80" y1="70" x2="80" y2="210" stroke="#95A5A6" stroke-width="1.5"/>
+<text x="390" y="235" text-anchor="middle" class="t2">流式样本数</text>
+<text x="50" y="140" text-anchor="middle" class="t2" transform="rotate(-90 50 140)">总任务 token 数</text>
+<!-- Curve: 30 → 106 over 16000 samples -->
+<path d="M80 190 L160 185 L240 175 L320 155 L400 130 L480 108 L560 92 L640 82 L700 78"
+      fill="none" stroke="#1B4B6F" stroke-width="3"/>
+<!-- Phase labels -->
+<rect x="100" y="195" width="120" height="24" rx="4" fill="#E85D4E" opacity="0.15"/>
+<text x="160" y="212" text-anchor="middle" class="t2" fill="#E85D4E">初始：聚类不足</text>
+<rect x="300" y="120" width="160" height="24" rx="4" fill="#C9A86C" opacity="0.2"/>
+<text x="380" y="137" text-anchor="middle" class="t2" fill="#8B6914">快速增长：重复模式巩固</text>
+<rect x="580" y="65" width="120" height="24" rx="4" fill="#5A8F7B" opacity="0.15"/>
+<text x="640" y="82" text-anchor="middle" class="t2" fill="#5A8F7B">减速：长尾残留</text>
+<!-- Data points -->
+<circle cx="80" cy="190" r="4" fill="#1B4B6F"/>
+<text x="80" y="205" text-anchor="middle" class="t2">30</text>
+<circle cx="700" cy="78" r="5" fill="#E85D4E"/>
+<text x="700" y="68" text-anchor="middle" class="t1" font-weight="bold" fill="#E85D4E">106</text>
+<!-- 76 new units annotation -->
+<line x1="700" y1="190" x2="700" y2="83" stroke="#C9A86C" stroke-width="1.5" stroke-dasharray="4,3"/>
+<text x="715" y="140" class="t2" fill="#C9A86C">+76</text>
+<text x="715" y="155" class="t2" fill="#C9A86C">新单元</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：UniMem 记忆增长动力学示意。从 30 个基础任务开始，16000 样本后增长到 106 个（+76 新单元）。三阶段：初始聚类不足 → 快速增长（重复模式巩固）→ 减速（长尾任务残留）。</div>
+</div>
+
+<h3>关键观察</h3>
+<ul>
+<li><strong>非均匀增长</strong>：不是每个新颖任务都被巩固——100 个新颖任务中只有 76 个形成了合格聚类。剩余 24 个可能是样本量不足（长尾任务）或聚类未通过质量门控。</li>
+<li><strong>按需扩展</strong>：记忆单元的增长与任务出现频率相关——高频任务更快形成聚类并被巩固，低频任务留在情景缓冲区。这正是 CLS 理论中"重复模式被巩固"的体现。</li>
+<li><strong>无参数爆炸</strong>：虽然总 token 数从 30 增长到 106，但每个新单元只增加少量参数（Procedural KV Memory 的参数量与层数和头数成正比，与任务数无关），不会导致参数爆炸。</li>
+</ul>
+</section>
+
+<!-- CH10 -->
+<section class="chapter" id="ch10">
+<div class="ch-tag">Chapter 10 · 批判</div>
+<h2>局限、批判与未来方向</h2>
+
+<h3>已证实的局限</h3>
+
+<h4>1. 保守巩固策略导致长尾任务永久参数化缺失</h4>
+<p>UniMem 的保守巩固策略确保了不会过早分配参数，但代价是低频/长尾任务永远无法被参数化——它们一直留在情景缓冲区，每次执行都需要 RAG 检索。这在任务流高度长尾化时可能导致情景缓冲区无限增长。</p>
+
+<h4>2. 参数记忆仅实例化为 Procedural KV Memory</h4>
+<p>论文将 $P_k$ 固定为 Procedural KV Memory，骨干完全冻结。其他参数高效模块（LoRA、prefix、steering vectors）可能在容量、效率和可迁移性上提供不同的权衡。特别是 LoRA 可能比 KV 记忆有更强的表达能力（KV 记忆只能通过 cross-attention 注入，不能修改前馈计算）。</p>
+
+<h4>3. 聚类质量依赖于 NCD 和 HDBSCAN 的超参数</h4>
+<p>无监督聚类（HDBSCAN + NCD）的质量对超参数敏感。NCD 基于压缩，对文本长度和格式敏感；HDBSCAN 的 min_cluster_size 等参数需要手动设置。论文没有系统研究聚类超参数对最终性能的影响。</p>
+
+<h4>4. 路由错误的级联影响</h4>
+<p>路由准确率在 100 任务时约 85%（LLaMA-3.1-8B），意味着约 15% 的查询被路由到错误的记忆单元或新颖性通路。错误路由到错误参数记忆的查询会产生错误响应，且这种错误不会被纠正（因为系统不知道路由错了）。路由错误的影响可能比准确率数字暗示的更严重，因为错误路由到语义相近但执行策略不同的任务时，输出可能看起来合理但实际错误。</p>
+
+<div class="critique-box">
+<span class="tag">批判</span>
+<h4>与 A-MEM / MemAgent 等外部记忆方法的关系</h4>
+<p>UniMem 的情景缓冲区本质上是一个 RAG 系统，与 A-MEM（Xu et al., 2025）、MemAgent（Yu et al., 2025）等 agentic memory 方法有重叠。UniMem 的创新不在于情景缓冲区本身，而在于<strong>情景→参数的巩固机制</strong>。但论文没有与这些更复杂的外部记忆管理方法直接对比——基线只用了 Standard RAG（kNN 检索）。如果 A-MEM 的自适应记忆管理能更好地组织情景缓冲区，UniMem 的参数巩固优势可能会缩小。此外，UniMem 的情景缓冲区没有记忆遗忘/压缩机制——旧的、不再相关的记忆会一直保留，这在极长时程部署中可能成为问题。</p>
+</div>
+
+<h3>未来方向</h3>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>值得探索的研究方向</h4>
+<ol>
+<li><strong>自适应巩固标准</strong>：当前的固定质量门控（HDBSCAN + NCD cohesion）可以替换为基于性能增益的自适应标准——只有当参数化能带来可测量的性能提升时才巩固。这需要在线 A/B 测试或 bandit 方法。</li>
+<li><strong>多种参数记忆模块的混合</strong>：不同任务可能适合不同的参数记忆形式——简单任务用 KV 记忆，复杂任务用 LoRA。能否让 UniMem 自动选择最优的参数记忆实例化？</li>
+<li><strong>记忆遗忘与重组</strong>：当前 UniMem 只增不减。能否引入记忆遗忘机制（如 LRU 淘汰低使用率的参数单元）或记忆重组（合并相似的参数单元）？这对应于人脑的记忆消退和再巩固。</li>
+<li><strong>跨任务知识迁移</strong>：当前每个参数记忆单元是独立的。能否在巩固新任务时利用已有相似任务的参数记忆作为初始化（迁移学习），减少新任务的 SFT 成本？</li>
+<li><strong>与 Text-to-LoRA 的结合</strong>：UniMem 的参数巩固需要 SFT 训练新的 KV 记忆。能否用 Text-to-LoRA（上一篇）的 hypernetwork 根据任务描述直接生成参数记忆，而不需要 SFT？这将实现"零样本记忆巩固"。</li>
+</ol>
+</div>
+
+<div class="rq-box">
+<h4>自主科研问题</h4>
+<ol>
+<li><strong>情景记忆与参数记忆的最优分配比例是什么？</strong>给定一个任务流的频率分布和任务复杂度分布，是否存在一个理论上最优的"参数化比例"（多少任务应该被巩固为参数记忆，多少应该留在情景缓冲区）？这可以形式化为一个成本-收益优化问题：参数化的收益是推理效率提升，成本是训练开销和参数存储。能否推导出最优阈值作为任务频率和复杂度的函数？</li>
+<li><strong>路由 token 空间的几何结构如何影响记忆扩展？</strong>UniMem 的路由 token 在同一嵌入空间中，新任务的 token 被插入这个空间。随着任务数增加，token 空间的密度增加，路由难度增大（准确率下降）。是否存在一个"容量极限"——当 token 数超过某个阈值时，路由准确率会急剧下降？这个极限与嵌入维度、任务语义多样性的关系是什么？</li>
+<li><strong>Procedural KV Memory 与 LoRA 的表达能力差距有多大？</strong>KV 记忆通过 cross-attention 注入，只能修改注意力层的输出，不能影响前馈网络。LoRA 可以修改任何线性层。在什么类型的任务上，KV 记忆的表达能力不足？能否通过实验量化两者在不同任务类型上的性能差距，并给出"何时需要 LoRA 级别的参数记忆"的判据？</li>
+<li><strong>记忆巩固是否会导致"巩固偏差"？</strong>UniMem 只巩固重复出现的模式，但重复出现不等于重要或正确。如果任务流中存在系统性偏差（如某种错误模式频繁出现），UniMem 会将其巩固为参数记忆，从而固化偏差。这类似于人脑的"错误记忆巩固"。能否设计机制来检测和防止巩固偏差？</li>
+<li><strong>多模态任务流中的记忆扩展如何工作？</strong>当前 UniMem 只处理文本任务。在多模态任务流（文本+图像+音频）中，路由 token 如何处理跨模态的任务相似性？情景缓冲区的检索需要跨模态 embedding，参数记忆需要模态特定的注入机制。能否将 UniMem 的框架扩展到多模态，核心挑战是什么？</li>
+</ol>
+</div>
+
+<h3>总结</h3>
+<p>UniMem 是一个受互补学习系统（CLS）理论启发的自主记忆管理框架，解决了边界无关任务流上的稳定性-可塑性困境。核心贡献包括：</p>
+<ol>
+<li><strong>自路由架构</strong>：用可学习路由 token 将任务识别与任务执行解耦，路由 token 只做轻量级选择，高容量参数记忆块（Procedural KV Memory）负责执行。</li>
+<li><strong>双重新颖性检测</strong>：新颖性哨兵 + 置信度门控（$\tau_{\text{route}}=0.7$），同时捕获显式新颖和低置信度拒绝。</li>
+<li><strong>情景-参数生命周期</strong>：新颖任务→情景缓冲区（RAG）→聚类发现（HDBSCAN+NCD）→质量门控→SFT 巩固→新参数记忆单元，实现按需扩展。</li>
+<li><strong>实验验证</strong>：在 SNI（10/50/100 任务，3 种骨干）和 SuperGLUE 混合流上一致优于基线，平均 +4.0 EM 增益，路由准确率 85%+，16000 样本中自主巩固 76 个新记忆单元。</li>
+</ol>
+<p>UniMem 的意义在于它提供了一个<strong>可扩展的自主记忆扩展范式</strong>——不需要任务标签、不需要预定义任务数、参数按需增长。这是构建自进化 Agent（self-evolving agents）的重要一步。</p>
+</section>
+
+</div>
+
+<footer>
+<p>UniMem: Complementary Episodic-to-Parametric Memory for Boundary-Agnostic Task Streams</p>
+<p>Siyu Xia, Chenheng Zhang, Yanting Wu, Haoxuan Li, Jiajun Chai, Xiaohan Wang, Guojun Yin, Wei Lin, Zhouchen Lin, Haifeng Zhang, Jun Wang</p>
+<p>Institute of Automation CAS · Peking University · Tsinghua University · UCL</p>
+<p style="margin-top:12px;font-size:12px;opacity:0.6">博客解读 · Venus 浮世绘蓝调配色 · CLS 理论启发 · 所有公式与数据均来自原文</p>
+</footer>
+
+</body>
+</html>

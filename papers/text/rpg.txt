@@ -1,0 +1,2425 @@
+
+========== PAGE 0 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+Kai Wang1∗Dongwen Tang1∗Wangbo Zhao1 Konstantin Sch¨urholt2 Zhangyang Wang3† Yang You1†
+1National University of Singapore
+2University of St.Gallen
+3University of Texas at Austin
+Abstract
+Parameter generation has long struggled to match
+the scale of today’s large vision and language
+models, curbing its broader utility. In this paper,
+we introduce Recurrent Diffusion for Large-Scale
+Parameter Generation (RPG), a novel framework
+that generates full neural network parameters—up
+to hundreds of millions—on a single GPU. Our
+approach first partitions a network’s parameters
+into non-overlapping ‘tokens’, each correspond-
+ing to a distinct portion of the model. A recurrent
+mechanism then learns the inter-token relation-
+ships, producing ‘prototypes’ which serve as con-
+ditions for a diffusion process that ultimately syn-
+thesizes the full parameters. Across a spectrum of
+architectures and tasks—including ResNets, Con-
+vNeXts and ViTs on ImageNet-1K and COCO,
+and even LoRA-based LLMs—RPG achieves per-
+formance on par with fully trained networks while
+avoiding excessive memory overhead. Notably,
+it generalizes beyond its training set to generate
+valid parameters for previously unseen tasks, high-
+lighting its flexibility in dynamic and open-ended
+scenarios. By overcoming the longstanding mem-
+ory and scalability barriers, RPG serves as a crit-
+ical advance in ‘AI generating AI’, potentially
+enabling efficient weight generation at scales pre-
+viously deemed infeasible.
+1. Introduction
+Scaling up neural networks has been one of the most
+crucial factors driving the progress of deep learning, en-
+abling remarkable performance across a wide range of
+tasks (Krizhevsky et al., 2012; He et al., 2016; Meta,
+2024). However, neural network parameter generation—
+from early HyperNetworks (Ha et al., 2017) to more recent
+diffusion-based methods (Peebles et al., 2022; Wang et al.,
+2024; Soro et al., 2024)—has not kept pace with the expan-
+sion of mainstream vision and language models. Indeed,
+∗equal contribution, †corresponding author
+Code: NUS-HPC-AI-Lab/RPG
+partial roadmap
+10
+2
+10
+2
+10
+6
+#param / generated #param (M)
+GoogleNet
+ResNet-101ResNeXt-101
+ViT-B
+ConvNeXt-L
+ViT-22B
+ELMo
+GPT-1
+BERT-L
+GPT-2
+GPT-3
+LLaMA3
+HyperNet
+SKDE
+G.pt
+P-diff
+Cond P-diff
+SANE
+> 103
+language models
+vision models
+parameter generation models
+Figure 1. Partial roadmap of vision, language, and parameter gen-
+eration models. Parameter number in vision or language models is
+at least 103 times larger than that of generated parameters.
+as illustrated in Fig. 1, there is an astonishing scale gap of
+at least 103 between the parameter counts of widely used
+models (e.g., ViT, ConvNeXt, LLaMA) and the largest pa-
+rameter generators available today. This discrepancy not
+only underscores the challenge of scalability but also con-
+fines existing generators to academic demonstrations rather
+than broad, real-world applicability.
+Traditional approaches such as HyperNetworks struggle
+to handle even moderately sized models, primarily due to
+memory overheads and optimization complexity. While
+recent diffusion-based works attempt to break the mem-
+ory bottleneck via partial-parameter or two-stage genera-
+tion (Wang et al., 2024; Soro et al., 2024), such methods
+may overlook key correlations among different parameter
+subsets. To illustrate the importance of capturing inter-part
+correlations, we conduct a simple experiment: we train two
+ViT-Tiny (Dosovitskiy et al., 2021) models (A and B) on
+CIFAR-10 (Krizhevsky & Hinton, 2009), then exchange
+half of their layer parameters. Despite both models perform-
+ing well originally (i.e., 90.4% for model A and 89.6% for
+model B), the hybrid model’s accuracy drops dramatically
+to 45.8% (as seen below).
+model
+ViT-Tiny A
+partial A + partial B
+ViT-Tiny B
+acc. (%)
+90.4
+45.8
+89.6
+This striking performance gap highlights that adequately
+modeling parameter correlations is not a trivial detail: a
+robust generator must therefore explicitly model such re-
+lationships while also surmounting the memory pitfalls of
+large-scale processing.
+1
+arXiv:2501.11587v2  [cs.LG]  11 Feb 2025
+
+========== PAGE 1 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+Our contributions.
+We present Recurrent Diffusion for
+Large-Scale Parameter Generation (RPG), a novel, end-to-
+end framework capable of generating full neural network pa-
+rameters with up to hundreds of millions of weights using
+just a single commodity GPU. To the best of our knowledge,
+RPG is the first method to efficiently synthesize the param-
+eters of models like ConvNeXt-L and LLaMA-LoRA–with
+up to ∼200M weights–in a single pass. This significant
+leap is achieved by two core technical innovations:
+1. Parameter processing for large-scale tokenization.
+We devise a highly customized parameter tokenization
+strategy designed to preserve both the layer-wise dis-
+tribution and the cross-layer correlations. Specifically,
+we (i) split weights according to their layer indices, (ii)
+apply layer-wise normalization to mitigate distribution
+shifts, (iii) slice parameters into non-overlapping to-
+kens with uniform size, and (iv) introduce a lightweight
+permutation state to alleviate symmetry issues when
+collecting multiple checkpoints. Additionally, we em-
+ploy 2D position embeddings (layer index + token in-
+dex) to ensure the network retains positional awareness
+of each token within the entire set. This tailored pre-
+processing pipeline is crucial for learning stable and
+high-quality parameter representations.
+2. Recurrent diffusion modeling. Unlike prior diffusion-
+based generators that flatten or divide all parameters
+into a single sequence or chunks, we propose a re-
+current mechanism to learn the relationships among
+tokens. Concretely, we map each token into a hidden
+space via a recurrent model, whose outputs serve as
+prototypes. These prototypes then condition a 1D diffu-
+sion process that progressively denoises the parameter
+tokens. By recurrently modeling global inter-token
+interactions and leveraging a diffusion sampler for syn-
+thesis, RPG aligns well with the dual goals of capturing
+token-to-token dependencies and remaining memory-
+efficient.
+Key results and impact.
+Extensive evaluation on Image-
+Net classification, ADE20K segmentation, COCO detection,
+and commonsense reasoning show that RPG consistently
+produces weights on par with trained models. Notably:
+• Single-GPU feasibility.
+Our recurrent design and
+parameter-token strategy enable inference on a single
+commodity GPU beyond 100M weights.
+• Generalization to unseen tasks. RPG can generate
+high-performing networks for unseen binary classifi-
+cation tasks on CIFAR-10, providing evidence for its
+broader generalization capabilities.
+• Architectural Versatility. Our method supports di-
+verse families such as ResNet, ViT, ConvNeXt, and
+LoRA-based language models, making it a unified
+framework for parameter generation.
+These results place us significantly closer to the vision of ‘AI
+creating AI’, where a single generative model can synthesize
+entire networks tailored for different tasks. We believe
+RPG’s strong scalability, lightweight memory footprint, and
+ability to accurately capture global parameter relationships
+may open new frontiers in fields like rapid architecture
+search, efficient model adaptation, and beyond.
+2. Method: Large-Scale Parameter Generation
+In this section, we describe our proposed Recurrent Diffu-
+sion for Large-Scale Parameter Generation (RPG), which
+synthesizes full neural network parameters under strict mem-
+ory constraints. As illustrated in Fig. 2, our approach com-
+prises two primary components: parameter processing and
+recurrent diffusion.
+Parameter processing (Sec. 2.2) equips the model with a
+specialized tokenization pipeline, layer-wise normalization,
+permutation states, and position embeddings—all meticu-
+lously designed to mitigate issues like distribution shifts,
+neural symmetry, and the sheer size of modern network
+weights. Recurrent diffusion (Sec. 2.3) then learns these
+‘tokens’ via a recurrent model whose outputs condition a 1D
+diffusion process, enabling us to capture global parameter
+correlations while maintaining feasibility on a single GPU.
+2.1. Overview
+Our pipeline for large-scale parameter generation is shown
+conceptually on the right of Fig. 2. Given a set of trained
+parameters {W} (e.g., from various checkpoints or model
+variants), we first transform them into parameter tokens,
+augment them with a permutation state, and apply position
+embeddings. This processed sequence is fed into a recurrent
+model, which outputs per-token ‘prototypes’. Finally, a
+diffusion model uses these prototypes, along with random
+noise, to synthesize the entire parameter vector. In practice,
+we can sample from this generative model to produce a
+diverse family of high-performing weights.
+2.2. Parameter Processing
+Parameter tokenization.
+Drawing inspiration from the
+success of language and vision transformers (Vaswani, 2017;
+Dosovitskiy et al., 2021), we divide a network’s parameters
+into a sequence of non-overlapping tokens. However, direct
+flattening or naive partitioning often fails to preserve crucial
+layer-wise statistics and undermines global consistency. To
+circumvent this, we first segregate parameters by layer and
+then normalize each layer to reduce distribution shifts:
+W
+divide by layer
+−−−−−−−→[w[1], . . . , w[I]]
+−µ, /σ
+−−−−→[ ˆw[1], . . . , ˆw[I]],
+(1)
+2
+
+========== PAGE 2 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+1
+2
+3
+5
+6
+8
+9
+4
+7
+1
+2
+3
+4
+5
+6
+7
+8
+9
+position embeddings
+parameter tokens
+parameter processing
+parameter layers
+layer2
+layer1
+layer3
+recurrent model
+ 𝜖~𝒩(0, 𝑰)
+  S 
+1
+diffusion process
+predicted token
+recurrent model
+ 𝜖~𝒩(0, 𝑰)
+diffusion process
+predicted token
+recurrent diffusion
+  S 
+7
+padding
+permutation state
+Figure 2. Illustration of parameter processing (left) and inference of recurrent diffusion (right). The recurrent model integrates
+permutation states and position embeddings, generating prototypes that condition the diffusion model to synthesize the full parameters.
+where w[i] and ˆw[i] denote the original and normalized
+parameter blocks of the i-th layer, respectively, and µ, σ are
+the mean and standard deviation of that layer’s weights.
+Next, each normalized layer ˆw[i] is tokenized into contigu-
+ous chunks of uniform size k (plus padding if necessary):
+ˆw[i]
+tokenize
+−−−−→K[i] =
+
+k1
+i , k2
+i , . . . , padding
+ kJ
+i
+
+.
+(2)
+Importantly, the padded regions are excluded from the loss
+and do not affect gradient updates. By enforcing a consistent
+token size across layers, we facilitate batch processing of
+parameter tokens—a critical step for large-scale training.
+Permutation state.
+When aggregating checkpoints from
+various training runs, neural symmetry (Kunin et al., 2021)
+can become a major bottleneck. Essentially, distinct per-
+mutations of layer weights may yield identical final per-
+formance but appear different to a generative model. To
+resolve this ambiguity, we introduce a distinct permutation
+state S—encoded as a one-hot vector—for each checkpoint
+W. This extra condition guides the generative model to
+treat otherwise symmetrical weight configurations as unique
+exemplars, significantly stabilizing distribution learning.
+Position embedding.
+To preserve token locality and inter-
+layer relationships, we augment each token with a 2D si-
+nusoidal position embedding (Dosovitskiy et al., 2021).
+Specifically, for the j-th token of layer i, we assign
+K[i]
+pos. embedding
+−−−−−−−−→e[i] = [ e1
+i , . . . , ej
+i, . . . , eJ
+i ].
+(3)
+The first dimension encodes the layer index, while the sec-
+ond dimension captures the token’s in-layer position. As a
+result, the g model knows not only how tokens are grouped
+by layer, but also each token’s placement within that layer.
+2.3. Recurrent Diffusion
+Recurrent model.
+After obtaining the parameter tokens
+K[i], permutation states S, and position embeddings e[i],
+we feed them into a recurrent network f(·) that learns token-
+wise representations while capturing cross-token dependen-
+cies. We denote the output as a prototype P j
+i :
+P j
+i , Hj
+i = f
+
+Hj−1
+i
+, ej
+i, S
+
+,
+(4)
+where Hj
+i is the internal hidden state for the j-th token in
+layer i. In practice, we use Mamba (Gu & Dao, 2024) (a
+memory-efficient transformer alternative) followed by an
+MLP that projects features to the required dimension for
+our diffusion model. We find that a recurrence-based design
+elegantly handles long sequences of tokens, offering a strong
+balance between model capacity and memory usage. Later
+in experiments, we compare different recurrent architectures
+such as LSTM (Hochreiter et al., 1997) and causal-decoder
+transformers (Vaswani, 2017).
+Parameter diffusion.
+Finally, we leverage a diffusion
+model to generate the actual parameter values. Drawing on
+p-diff (Wang et al., 2024) and MAR (Li et al., 2024a), we
+construct a 1D convolutional network that accepts random
+noise ϵ together with the prototypes P. Formally, at diffu-
+sion time step t, we aim to predict the noise ϵ in a denoising
+objective:
+Ldiff = Et, K, ϵ
+ ϵ −ϵθ
+ Kt, t, P
+2,
+(5)
+where ϵθ(·) is our denoising network with learnable parame-
+ters θ, and Kt is the noisy version of K at step t. Critically,
+the recurrent prototypes P act as conditional inputs, enforc-
+ing global coherence among tokens. Gradients from this
+diffusion loss flow back into the recurrent model, implicitly
+learning token correlations as well.
+Inference.
+Once training is complete, the pipeline sup-
+ports two inference modes. Basically, in conditional genera-
+tion, we feed the permutation state S of an existing check-
+point to replicate or perturb known parameter configurations.
+3
+
+========== PAGE 3 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+arch.\acc.(%)
+params. (M) original
+best
+average
+min
+ResNet-18
+11.7
+70.0
+69.9
+69.5
+69.0
+ResNet-50
+25.6
+79.8
+79.6
+79.5
+79.4
+ViT-Tiny
+5.7
+74.9
+75.4
+75.3
+75.2
+ViT-Small
+22.1
+81.4
+80.6
+80.5
+80.1
+ViT-Base
+86.6
+84.4
+84.6
+84.4
+84.2
+ConvNeXt-Atto
+3.7
+75.2
+74.6
+74.4
+74.2
+ConvNeXt-Large
+197.8
+85.8
+85.8
+85.5
+85.2
+Table 1. We compare with the results of original models across
+seven architectures on the ImageNet-1K. Our approach success-
+fully generates the entire model parameters that perform compara-
+ble results with the original models.
+Further more, we can sample entirely unseen task states to
+produce novel parameter draws (Sec. 4). In both cases, the
+recurrent model outputs prototypes, and the diffusion model
+denoises random noise into a final parameter set that can
+scale up to hundreds of millions of weights.
+Overall, recurrent diffusion elegantly decouples the com-
+plex problem of global parameter correlation into (i) a
+recurrent pass that focuses on cross-token interactions, and
+(ii) a diffusion pass that refines each token. This two-step
+design is precisely what allows RPG to handle large-scale
+architectures on standard hardware.
+3. Main Experiments
+3.1. Setup
+Datasets and architectures.
+We evaluate our method
+across various tasks, including ImageNet-1K (Deng et al.,
+2009) for theclassification, ADE20K (Zhou et al., 2017) for
+the semantic segmentation, COCO (Lin et al., 2014) for the
+object detection, and BoolQ (Clark et al., 2019), PIQA (Bisk
+et al., 2020), SIQA (Sap et al., 2019), HellaSwag (Zellers
+et al., 2019), and ARC (Clark et al., 2018) for the common-
+sense reasoning tasks. To verify the scalability, we conduct
+experiments on various architectures with parameter counts
+ranging from several to hundred million.
+Trained parameters collection.
+We take parameters col-
+lection on the ImageNet-1K as an example. To save the cost,
+we finetune the full parameters of the models in timm 1 and
+save 50 checkpoints as the training data. (More details are
+in Appendix C.6) For each checkpoint, we assign a unique
+permutation state to guide the generated parameters.
+Preprocessing and training details.
+The length of pa-
+rameter tokens, permutation states, position embeddings,
+and prototypes is set to 8192. It is worth noting that the
+permutation states and position embeddings are fixed during
+the training. We also study the influence of the token length,
+1https://github.com/huggingface/pytorch-image-models
+varying it from 1024 to 16384. The parameter diffusion
+consists of 1D convolutional layers. We default to using
+Mamba (Gu & Dao, 2024) as the architecture of the recur-
+rent model. More details can be found in Appendix B.1.
+Inference details.
+We input permutation states (relevant
+experimental results are in Appendix C.1) and position em-
+beddings into the recurrent model to generate the prototypes.
+Then, the diffusion model utilizes the prototypes as condi-
+tions, along with random noises, to synthesize the entire
+network parameters. We repeat the above process 10 times
+and report the best, average, and minimum.
+3.2. Results of Large-Scale Parameter Generation
+On ImageNet-1K.
+Tab. 1 presents performance compar-
+isons across seven architectures on ImageNet-1K. The pa-
+rameter number of these architectures ranges from 3 to 197
+million. Several observations can be made as follows: i)
+Our approach successfully generates model parameters at
+hundred-million scales, overcoming the out-of-memory is-
+sues faced by previous works (Peebles et al., 2022; Wang
+et al., 2024). ii) The performances of the generated models
+are comparable with the original ones.
+method
+ADE20K
+COCO
+mIoU(%) mAcc(%) mAP Bbox (%) mAP Seg (%)
+original
+47.6
+58.3
+43.6
+39.0
+ours
+47.1
+57.5
+44.5
+39.6
+Table 2. Accuracy comparison of original and generated parame-
+ters on ADE20K (176.5M parameters) and COCO (110.9M pa-
+rameters). All models are built based on ViT-Base.
+On ADE20K and COCO.
+For semantic segmentation,
+following Zhao et al. (2024), we adopt UperNet (Xiao
+et al., 2018) as the segmentation model and train it on
+ADE20K (Zhou et al., 2017) to prepare checkpoints. For
+object detection and instance segmentation, we finetune ViT-
+Det (Li et al., 2022) on COCO (Lin et al., 2014) to collect
+checkpoints and report the results of mAP Bbox and mAP
+Seg, respectively. All experiments here are conducted based
+on ViT-Base (Dosovitskiy et al., 2021). Tab. 2 presents the
+strong generalization of RPG to these two tasks. Specifically,
+compared to the original models, we achieve comparable or
+even slightly better results over all the above metrics.
+On commonsense reasoning.
+We employ DoRA (Liu
+et al., 2024), an upgraded version of LoRA (Hu et al., 2022),
+to fine-tune LLaMA-7B (Touvron et al., 2023) for com-
+monsense reasoning tasks and save the checkpoints as the
+training data. We report the results across 7 sub-tasks with
+rank = 4 and 64 in Tab. 3. The generated models consistently
+yield results comparable to those of the original ones.
+4
+
+========== PAGE 4 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+rank
+params. (M)
+BoolQ
+PIQA
+SIQA
+HellaSwag
+ARC-e
+ARC-c
+OBQA
+org
+RPG
+org
+RPG
+org
+RPG
+org
+RPG
+org
+RPG
+org
+RPG
+org
+RPG
+4
+7.8
+64.3
+63.1
+71.3
+72.0
+66.0
+67.5
+53.7
+56.7
+64.4
+65.3
+49.5
+49.7
+63.1
+66.0
+64
+113.1
+69.3
+69.1
+78.9
+79.4
+72.9
+73.9
+81.1
+81.1
+72.9
+73.1
+58.1
+58.3
+71.2
+72.1
+Table 3. Accuracy comparisons of original and generated DoRA with varying ranks for LLaMA-7B on the commonsense reasoning tasks.
+Our approach can generate comparable or even better results than original models. Bold entries are best results.
+best
+avg.
+min.
+original
+75.2
+74.9
+74.7
+- recurrent model
+fail
+fail
+fail
++ recurrent model
+75.4
+75.3
+75.2
+(a) Recurrent model can largely improve
+the performance and stability.
+pos. emb.
+best
+avg.
+min.
+learnable
+75.5
+75.4
+75.3
+by index
+75.4
+75.3
+75.0
+by layer
+75.4
+75.3
+75.2
+(b) Learnable embeddings perform better,
+but saving cost needs to be considered.
+tokenization
+best
+avg.
+min. time (h)
+flatten
+75.3 75.2
+74.8
+6.2
+by channel
+75.3 75.1
+75.0
+14.2
+within layer
+75.4 75.3
+75.2
+6.2
+(c) Our tokenization achieves the best trade-
+off between performance and training time.
+Table 4. Ablation experiments of the recurrent model, position embeddings, and tokenization with ViT-Tiny on ImageNet-1K. Defaults
+are marked in gray. ‘fail’ indicates models performing at random-chance level. Bold entries are best results.
+3.3. Ablation Studies and Analysis
+In this section, we present the results of the generated ViT-
+Tiny on the ImageNet-1K, unless stated otherwise.
+The effect of recurrent model.
+We employ the recurrent
+model to learn the relationship among parameter tokens. To
+keep other factors consistent, we simply remove the state
+transition function from the recurrent model for comparison,
+denoted as ‘−recurrent model’. The experimental results
+from Tab. 4a confirm that the recurrent model plays a crucial
+role in parameter generation. Without the state transition
+function, our approach learns each parameter token individ-
+ually, overlooking the relationships among these tokens. As
+a result, the generated parameters perform extremely poorly.
+The manner of position embeddings.
+In ViT, the posi-
+tion embeddings are learnable by default. Here, we mainly
+conduct the experiments with three different position em-
+bedding manners and show the details as follows:
+• learnable: Initializing with 2D sinusoidal positional en-
+coding and set to be learnable.
+• encoded by index: Using 1D sinusoidal positional en-
+coding, irrespective of the original network structure, with
+indices assigned from front to back.
+• encoded by layer (default): Using 2D sinusoidal positional
+encoding to represent layer and token indices.
+As shown in Tab. 4b, the learnable embeddings perform
+slightly better than the other two manners. However, we
+still recommend using fixed position embeddings, as they
+offer comparable performance while significantly reducing
+storage requirements compared to the learnable one.
+The manner of tokenization.
+Considering the differences
+among various layers, we divide the parameters into tokens
+within each layer. P-diff (Wang et al., 2024) flattens the
+parameters into 1D vectors, while SANE (Sch¨urholt et al.,
+2024) divides the parameters by channel within each layer.
+We compare the results of these 3 strategies in Tab. 4c. Our
+default strategy achieves better results than the others. Flat-
+tening results in a single token containing parameters from
+different layers, which poses challenges for optimization.
+Tokenizing by the channel may result in excessive padding
+values for each token, as the channel number is usually
+much smaller than the token size.
+The structure of recurrent model.
+We mainly ex-
+plore three structures of the recurrent model, including
+LSTM (Hochreiter et al., 1997), Transformer (Vaswani,
+2017), and Mamba (Gu & Dao, 2024). In Tab. 5, we re-
+port the performances, training time, and memory cost of
+generating ViT-Tiny parameters on ImageNet-1K. All three
+structures can achieve good results. However, considering
+the training time and memory cost, our default Mamba is
+the best structure of the recurrent model.
+structure
+best
+avg.
+min.
+time (h)
+memory (GB)
+LSTM
+75.5
+75.2
+74.4
+16.1
+38.1
+Transformer
+75.0
+74.8
+74.6
+4.2
+29.1
+Mamba
+75.4
+75.3
+75.2
+4.1
+27.8
+Table 5. We study the characteristics of three recurrent structures.
+Defaults are marked in gray. Bold entries are best results.
+Token size.
+In Tab. 6, we show the results of generated
+ViT series with tokens of different sizes ranging from 1024
+to 16384. The performance of generated models become
+better as the token size increases. When token is of small
+size, itcontains limited information that is hard to learn.
+Despite carrying large volume of information, larger token
+leads to substantial memory costs (see in Appendix Fig. 8a).
+5
+
+========== PAGE 5 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+model
+params. (M)
+token size
+1024
+2048
+4096
+8192
+16384
+ViT-Tiny
+5.7
+0.3
+70.8
+75.2
+75.3
+69.3
+ViT-Small
+22.1
+0.1
+0.7
+80.5
+80.5
+80.4
+ViT-Base
+86.6
+0.1
+0.1
+0.2
+45.3
+84.4
+Table 6. Accuracy of generated models with the different toke sizes.
+Large token size performs better on large models. Bold entries
+are best results.
+Efficiency of generating large-scale parameters.
+Rapid
+synthesis of large-scale parameters is crucial for evaluating
+the practicality of our approach. As illustrated in Tab. 7, we
+present the time cost for generating models of ViT-Base and
+ConvNeXt-L across various DDIM (Song et al., 2020) sam-
+pling steps. All results are obtained with a single NVIDIA
+H100 80G GPU. Our approach shows the capability to gen-
+erate models within minutes. Notably, even for ConvNeXt-L
+(197.7 M parameters), we can synthesize the entire parame-
+ter within 1.3 minutes. Even with only 20 sampling steps,
+we can achieve promising results. Meanwhile, the inference
+memory requirement is approximately 20GB, so RPG can
+be deployed on NVIDIA RTX 3090 or similar-level GPUs.
+model / memory
+ViT-Base / 20.7GB
+ConvNeXt-L / 21.6GB
+diffusion steps
+20
+60
+100
+200
+20
+60
+100
+200
+time (minute)
+0.6
+0.8
+1.1
+1.8
+0.7
+1.3
+2.0
+3.5
+accuracy (%)
+83.3 84.4 84.4 84.3 85.0 85.5 85.3 85.3
+Table 7. GPU memory and inference time comparisons among
+different diffusion steps. Our approach can efficiently generate the
+entire ConvNeXt-L parameters (197.8 M) in minutes, requiring
+only ∼20GB of GPU memory.
+Similarity analysis of generated models.
+We compare
+RPG with adding noise and model interpolation. Following
+p-diff (Wang et al., 2024), we use IoU to measure model
+similarity by comparing outputs across samples, selecting
+the maximum IoU with original models as our metric.
+In Fig. 3, as the noise level increases, both the similarity
+and accuracy of the models decrease. The points represent-
+ing our generated models are distributed in the upper left
+region relative to the other conditions, indicating that our
+models can enhance diversity while maintaining accuracy.
+Furthermore, our method demonstrates greater diversity in
+comparison to trivial interpolation methods.
+3.4. Comparisons with Previous Methods
+We compare RPG with four previous works,
+i.e.,
+SKDE30 (Sch¨urholt et al., 2022a), p-diff (Wang et al., 2024),
+D2NWG (Soro et al., 2024), and SANE (Sch¨urholt et al.,
+2024). We report the original and generated performances
+for comparison. As shown in Tab. 8, among all compared
+0.750 0.775 0.800 0.825 0.850 0.875 0.900 0.925 0.950
+similarity
+72
+73
+74
+75
+accuracy (%)
+noise=0.01
+noise=0.02
+noise=0.03
+noise=0.04
+noise=0.05
+original
+generated
+interpolated
+Figure 3. The figure shows the trade-off between accuracy and
+similarity with ViT-Tiny on ImageNet-1K. The shaded area in-
+cludes the approximate range of noise-added checkpoints. This
+plot demonstrates the strong trade-off between accuracy and simi-
+larity and highlights our advantages over trivial interpolation.
+methods, only our approach consistently achieves the high-
+est results and comparable results to original models across
+various architectures. Another key issue is that the previous
+works usually fail to generate large-scale neural network
+parameters. (More discussion is in Appendix A.)
+method
+CNN (s)
+CNN (m)
+ResNet-18
+ViT-Base
+params. (M)
+0.003
+0.011
+11.7
+86.6
+SKDE30
+26.9 46.1
+-
+OOM
+OOM
+p-diff
+48.8 49.0
+61.9 62.1
+OOM
+OOM
+SANE
+-
+57.9 57.2
+68.6 85.5
+-
+D2NWG
+38.2 44.7
+58.8 57.2
+94.6 94.6
+-
+RPG
+49.0 49.0
+62.0 62.1
+95.1 95.3
+98.9 98.7
+Table 8. Our approach obtains the best results across all architec-
+tures and largely outperforms most previous works. The subscripts
+denote the average accuracy of corresponding original models.
+Underline denotes the reproduced results. And OOM denotes out-
+of-memory issue. The detailed structures of CNN (s) and CNN
+(m) can be found in Model Zoos (Sch¨urholt et al., 2022).
+4. RPG Generalizes to Unseen Tasks
+Until now, experimental results have demonstrated that our
+approach can efficiently generate large-scale neural network
+parameters if these models are included in the training set.
+In this section, we mainly investigate whether our approach
+has the ability to generate models to tackle unseen tasks.
+This generalization capability is crucial as it enables RPG
+to handle novel tasks without requiring additional training,
+making it particularly valuable for real-world applications.
+4.1. Experiment Designs.
+Build seen and unseen tasks.
+To assess RPG’s capability
+for unseen tasks, we construct various binary classification
+tasks on CIFAR-10. As shown in Fig. 4, we encode each
+task as a 10-bit binary embedding, where each bit corre-
+6
+
+========== PAGE 6 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+For this embedding, 
+the corresponding 
+model should classify 
+“ship” and “truck” to 
+class 1, others to 
+class 0
+binary embeddings (1022 in total)
+For this embedding, 
+the corresponding 
+model should classify 
+“automobile”, “dog”, 
+“horse”, “ship”, and 
+“truck” to class 1, 
+others to class 0.
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+1
+0
+1
+0
+0
+0
+1
+0
+1
+1
+1
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+0
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+0
+CIFAR-10 categories
+0000000001
+0000000010
+0000000011
+1111111110
+embedding-parameter pairs
+0000000100
+Figure 4. An illustration of our binary embedding strategy and dataset construction. Left: binary embeddings (1022 in total) encode
+different CIFAR-10 classification tasks, where 1s indicate classes to be classified together (e.g., ‘ship’ and ‘truck’ in the first example).
+Right: the dataset consists of parameter-encoding pairs, formed by network parameters with their corresponding binary embeddings.
+These pairs are split into non-overlapping training and validation sets.
+sponds to a CIFAR-10 category. 1 indicates that the cor-
+responding category should be classified as positive (class
+1), while 0 indicates negative (class 0). For example, in the
+third embedding shown, ‘ship’ and ‘truck’ are assigned to
+class 1, while all other categories belong to class 0.
+Given this encoding strategy, we can create 210 possible
+binary embeddings. After removing the two trivial cases (all
+0s and all 1s), we obtain 1022 valid embeddings. For each
+embedding, we collect its corresponding model parameters,
+forming embedding-parameter pairs. These pairs are then
+split into non-overlapping sets for training and validation,
+allowing us to evaluate RPG’s generality on unseen tasks.
+Collection of the checkpoints.
+We use ViT-Tiny to train
+1022 binary classifiers on CIFAR-10 with different binary
+embeddings and save 3 models for each classifier. These bi-
+nary embeddings serve as conditioning inputs for the subse-
+quent RPG training process. Of these tasks, 1002 randomly
+selected embedding-parameter pairs serve as the training
+set (seen tasks), while the remaining pairs are reserved as
+unseen tasks for evaluation.
+Training and evaluation of RPG.
+We only use the 1002
+checkpoints from seen tasks to train RPG. Meanwhile, these
+embeddings are also fed into RPG as conditional inputs of
+the recurrent model. During the training stage, the check-
+points trained by the unseen binary embeddings are not
+accessible. When evaluating, we input the unseen binary
+embeddings to the trained RPG to generate the parameters
+for unseen tasks. The results of the original and generated
+unseen models are reported for comparison.
+4.2. Results for Unseen Tasks
+Performance comparisons.
+We compare the results of
+our approach and original models on unseen binary embed-
+unseen tasks (embeddings)
+original
+RPG
+0 1 0 0 0 1 0 1 1 1
+97.3
+94.4
+0 1 1 1 1 1 0 1 1 0
+98.1
+96.6
+0 0 1 1 1 0 1 1 1 0
+97.4
+95.0
+0 1 0 1 1 1 1 1 1 1
+98.4
+96.1
+0 0 1 0 0 0 0 0 0 0
+98.9
+96.6
+0 0 0 1 1 0 0 1 0 1
+96.7
+92.9
+1 1 1 1 1 0 1 0 0 1
+97.6
+94.8
+1 0 1 0 0 0 0 0 1 1
+98.1
+95.7
+0 1 0 0 0 1 0 1 1 0
+97.1
+93.6
+1 1 0 0 0 1 1 0 0 1
+97.0
+94.0
+Table 9. Result comparisons between original and generated mod-
+els on unseen embeddings (tasks). Even without seeing trained
+parameters of unseen tasks, RPG directly generates models that
+achieve competitive performance on them.
+dings in Tab. 9. Considering the space limitation, we ran-
+domly select 10 unseen binary embeddings for comparison.
+Notably, RPG yields commendable performance in these
+unseen tasks, even without being trained on the specific un-
+seen embeddings. That demonstrates the strong practicality
+and potential of our approach in generating models under
+unseen tasks. The results of the remaining unseen binary
+embeddings and more analysis are shown in Appendix C.2.
+Perception of embedding changes.
+In addition to com-
+paring results, we further investigate our approach’s ability
+to perceive embedding changes. We select two tasks with
+opposite binary embeddings in each element and report the
+results in Tab. 10. Our approach demonstrates a remarkable
+capacity to accurately detect changes in the tasks and gener-
+ate corresponding model parameters. It is worth noting that
+the accuracy would hover around 50% if our approach were
+not aware of the embedding changes.
+7
+
+========== PAGE 7 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+binary embedding (from seen set)
+1
+0
+1
+1
+1
+0
+1
+0
+0
+0
+accuracy (%)
+98.0
+99.1
+98.5
+94.4
+98.1
+92.2
+99.2
+97.0
+97.1
+99.1
+flipped embedding (from unseen set)
+0
+1
+0
+0
+0
+1
+0
+1
+1
+1
+accuracy (%)
+92.3
+98.9
+94.0
+85.4
+92.2
+90.8
+99.3
+95.3
+97.6
+98.1
+Table 10. Comparisons of binary embedding changes. The accuracy is for each single class. RPG can be aware of such changes accurately.
+org.-1
+org.-2
+org.-3
+seen binary embedding: 1010011000
+gen.-1
+gen.-2
+gen.-3
+seen binary embedding: 1010011000
+-0.08
+ 0.00
++0.08
+(a) Original and generated models with identical seen binary embed-
+dings are compared. The three original models exhibit homogeneity,
+while the generated models display diversity and maintain high
+accuracy across all three models.
+org.
+gen.
+unseen binary embedding: 0001100101
+org.
+gen.
+unseen binary embedding: 0001100101
+org.
+gen.
+unseen binary embedding: 0001100101
+-0.08
+ 0.00
++0.08
+(b) Original and generated models with 3 unseen binary embeddings
+are compared. The results confirm that our approach can learn high-
+performing parameter patterns even when they are not included in
+the training set.
+Figure 5. Illustration of the parameters of original and generated models in seen and unseen embeddings. We select 100 parameters of the
+classification head and visualize its normalized values.
+Visualizations of model parameters.
+We visualize the
+original and generated models for both seen and unseen
+tasks in Fig. 5. For seen tasks, our approach generates
+diverse models compared to the original ones. Surprisingly,
+as shown in Fig. 5b, we find that our approach can learn
+unseen parameter patterns. This demonstrates the potential
+generalization ability of our method.
+5. Related Works
+In this section, we mainly introduce recurrent models and
+previous works of parameter generation.
+Recurrent models.
+Recurrent neural networks (RNNs)
+were first proposed to process sequential data. To tackle the
+vanishing gradient problem in early RNNs, long short-term
+memory (LSTM) (Hochreiter, 1991; 1997) was introduced.
+Recently, transformer-based models (Vaswani, 2017) ex-
+hibits excellent potential in sequential data processing, due
+to their parallelized training and scalability, such as linear
+attentions (Wang et al., 2020; Choromanski et al., 2020),
+RWKV (Peng et al., 2023), Mamba (Gu & Dao, 2023; Dao
+& Gu, 2024), and xLSTM (Beck et al., 2024).
+Parameter generation.
+The core idea of parameter gen-
+eration is to learn the distribution of trained parameters.
+Stochastic neural networks (Sompolinsky et al., 1988; Bot-
+tou et al., 1991; Graves, 2011) and Bayesian neural net-
+works (Neal, 2012; Kingma & Welling, 2013; Gal & Ghahra-
+mani, 2016) model the priors or probability distributions
+over the parameters. However, these methods are limited
+by their generality to large-scale parameter generation. Hy-
+perNetworks (Ha et al., 2017), i.e. is proposed to gener-
+ate various architectures’ parameters for a larger network.
+Smash (Brock et al., 2018) extends the range of architectures
+via a memory read-writes scheme. With the development of
+diffusion models, many works (Peebles et al., 2022; Chou
+et al., 2023; Erkoc¸ et al., 2023; Wang et al., 2024; Soro
+et al., 2024; Lin et al., 2024; Li et al., 2024b; Jin et al., 2024;
+Peebles et al., 2022) adopt diffusion models to generate neu-
+ral network parameters. Hyper-Representations (Sch¨urholt
+et al., 2022a;b; 2024) use an autoencoder to capture the la-
+tent distribution of trained models. COND P-DIFF (Jin et al.,
+2024) and Tina (Li et al., 2024b) introduce text-controlled
+parameter generation method. Unfortunately, the above
+methods have a common drawback: can not generate large-
+scale parameters, such as whole parameters of ResNet, ViT,
+ConvNeXt, or LoRA. Therefore, our approach brings new
+inspiration to the field of parameter generation.
+6. Discussion and Conclusion
+Our approach demonstrates promising results in large-scale
+parameter generation across various vision, language and
+unseen tasks. However, we acknowledge that achieving true
+‘AI generating AI’ remains a distant goal. Firstly, while our
+method shows potential in generating models for unseen
+tasks, it currently faces limitations in generating parameters
+for novel model architectures. Secondly, our approach is
+constrained by modeling parameter relationships within a
+single task, potentially limiting its practical applicability.
+More importantly, future work should focus on simultane-
+ously modeling parameter relationships across diverse ar-
+chitectures and tasks. Such an approach could yield a more
+powerful and versatile parameter generator, potentially ad-
+vancing us closer to the ‘AI generating AI’ era. We hope
+our approach will inspire and encourage future research in
+neural network parameter generation.
+8
+
+========== PAGE 8 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+Acknowledgments.
+We sincerely thank Zhiyuan Liang,
+Zhuang Liu, Gongfan Fang, Xuanlei Zhao, Zangwei Zheng,
+Ziheng Qin, and Tianlong Chen for valuable discussions
+and feedbacks. This research is supported by the National
+Research Foundation, Singapore under its AI Singapore
+Programme (AISG Award No: AISG2-PhD-2021-08-008).
+References
+Beck, M., P¨oppel, K., Spanring, M., Auer, A., Prudnikova,
+O., Kopp, M., Klambauer, G., Brandstetter, J., and
+Hochreiter, S. xlstm: Extended long short-term mem-
+ory. arXiv preprint arXiv:2405.04517, 2024.
+Bisk, Y., Zellers, R., Gao, J., Choi, Y., et al. Piqa: Reasoning
+about physical commonsense in natural language. In
+AAAI, volume 34, pp. 7432–7439, 2020.
+Bottou, L. et al.
+Stochastic gradient learning in neural
+networks. Proceedings of Neuro-Nımes, 91(8), 1991.
+Brock, A., Lim, T., Ritchie, J., and Weston, N. SMASH:
+One-shot model architecture search through hypernet-
+works. In ICLR, 2018. URL https://openreview.
+net/forum?id=rydeCEhs-.
+Choromanski, K., Likhosherstov, V., Dohan, D., Song, X.,
+Gane, A., Sarlos, T., Hawkins, P., Davis, J., Mohiuddin,
+A., Kaiser, L., et al. Rethinking attention with performers.
+arXiv preprint arXiv:2009.14794, 2020.
+Chou, G., Bahat, Y., and Heide, F. Diffusion-sdf: Condi-
+tional generative modeling of signed distance functions.
+In ICCV, pp. 2262–2272, 2023.
+Clark, C., Lee, K., Chang, M.-W., Kwiatkowski, T., Collins,
+M., and Toutanova, K. Boolq: Exploring the surprising
+difficulty of natural yes/no questions. arXiv preprint
+arXiv:1905.10044, 2019.
+Clark, P., Cowhey, I., Etzioni, O., Khot, T., Sabharwal, A.,
+Schoenick, C., and Tafjord, O. Think you have solved
+question answering? try arc, the ai2 reasoning challenge.
+arXiv preprint arXiv:1803.05457, 2018.
+Dao, T. and Gu, A. Transformers are ssms: Generalized
+models and efficient algorithms through structured state
+space duality. arXiv preprint arXiv:2405.21060, 2024.
+Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei,
+L. Imagenet: A large-scale hierarchical image database.
+In CVPR, pp. 248–255. Ieee, 2009.
+Dhariwal, P. and Nichol, A. Diffusion models beat gans on
+image synthesis. In NeurIPS, volume 34, pp. 8780–8794,
+2021.
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn,
+D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer,
+M., Heigold, G., Gelly, S., Uszkoreit, J., and Houlsby,
+N. An image is worth 16x16 words: Transformers for
+image recognition at scale. In ICLR, 2021. URL https:
+//openreview.net/forum?id=YicbFdNTTy.
+Erkoc¸, Z., Ma, F., Shan, Q., Nießner, M., and Dai, A. Hyper-
+diffusion: Generating implicit neural fields with weight-
+space diffusion. In ICCV, 2023.
+Fang, G., Ma, X., and Wang, X. Structural pruning for
+diffusion models. In NeurIPS, 2023. URL https://
+openreview.net/forum?id=d4f40zJJIS.
+Gal, Y. and Ghahramani, Z. Dropout as a bayesian approxi-
+mation: Representing model uncertainty in deep learning.
+In ICML. PMLR, 2016.
+Graves, A. Practical variational inference for neural net-
+works. NeurIPS, 24, 2011.
+Gu, A. and Dao, T.
+Mamba:
+Linear-time sequence
+modeling with selective state spaces.
+arXiv preprint
+arXiv:2312.00752, 2023.
+Gu, A. and Dao, T.
+Mamba:
+Linear-time sequence
+modeling with selective state spaces.
+arXiv preprint
+arXiv:2312.00752, 2024.
+Ha, D., Dai, A. M., and Le, Q. V. Hypernetworks. In ICLR,
+2017. URL https://openreview.net/forum?
+id=rkpACe1lx.
+He, K., Zhang, X., Ren, S., and Sun, J. Deep residual
+learning for image recognition. In CVPR, pp. 770–778,
+2016.
+Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-
+bilistic models. In NeurIPS, volume 33, pp. 6840–6851,
+2020.
+Hochreiter, S. Untersuchungen zu dynamischen neuronalen
+netzen. Diploma, Technische Universit¨at M¨unchen, 91
+(1):31, 1991.
+Hochreiter, S. Long short-term memory. Neural Computa-
+tion MIT-Press, 1997.
+Hochreiter, S., Schmidhuber J¨urgen, Hochreiter, S., and
+Schmidhuber. Long short-term memory. Neural Comput.,
+9(8):1735–1780, nov 1997. ISSN 0899-7667. doi: 10.
+1162/neco.1997.9.8.1735. URL https://doi.org/
+10.1162/neco.1997.9.8.1735.
+Hu, E. J., yelong shen, Wallis, P., Allen-Zhu, Z., Li,
+Y., Wang, S., Wang, L., and Chen, W. LoRA: Low-
+rank adaptation of large language models.
+In ICLR,
+2022. URL https://openreview.net/forum?
+id=nZeVKeeFYf9.
+9
+
+========== PAGE 9 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+Jin, X., Wang, K., Tang, D., Zhao, W., Zhou, Y., Tang, J.,
+and You, Y. Conditional lora parameter generation. arXiv
+preprint arXiv:2408.01415, 2024.
+Kingma, D. P. and Welling, M. Auto-encoding variational
+bayes. arXiv preprint arXiv:1312.6114, 2013.
+Krizhevsky, A. and Hinton, G. Learning multiple layers of
+features from tiny images. Technical report, University
+of Toronto, 2009.
+Krizhevsky, A., Sutskever, I., and Hinton, G. E. Imagenet
+classification with deep convolutional neural networks.
+In NeurIPS, volume 25, 2012.
+Kunin, D., Sagastuy-Brena, J., Ganguli, S., Yamins, D. L.,
+and Tanaka, H. Neural mechanics: Symmetry and broken
+conservation laws in deep learning dynamics. In ICLR,
+2021. URL https://openreview.net/forum?
+id=q8qLAbQBupm.
+Li, T., Tian, Y., Li, H., Deng, M., and He, K. Autoregres-
+sive image generation without vector quantization. arXiv
+preprint arXiv:2406.11838, 2024a.
+Li, Y., Mao, H., Girshick, R., and He, K. Exploring plain
+vision transformer backbones for object detection. In
+ECCV, pp. 280–296. Springer, 2022.
+Li, Z., Gao, L., and Wu, C. Text-to-model: Text-conditioned
+neural network diffusion for train-once-for-all personal-
+ization. arXiv preprint arXiv:2405.14132, 2024b.
+Lin, L., Shi, D., Han, A., Wang, Z., and Gao, J. Unleash
+graph neural networks from heavy tuning. arXiv preprint
+arXiv:2405.12521, 2024.
+Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ra-
+manan, D., Doll´ar, P., and Zitnick, C. L. Microsoft coco:
+Common objects in context. In Computer Vision–ECCV
+2014: 13th European Conference, Zurich, Switzerland,
+September 6-12, 2014, Proceedings, Part V 13, pp. 740–
+755. Springer, 2014.
+Liu, S.-Y., Wang, C.-Y., Yin, H., Molchanov, P., Wang,
+Y.-C. F., Cheng, K.-T., and Chen, M.-H.
+Dora:
+Weight-decomposed low-rank adaptation. arXiv preprint
+arXiv:2402.09353, 2024.
+Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-
+solver: A fast ode solver for diffusion probabilistic model
+sampling in around 10 steps. In NeurIPS, volume 35, pp.
+5775–5787, 2022.
+Ma, X., Fang, G., and Wang, X. Deepcache: Accelerating
+diffusion models for free. In CVPR, pp. 15762–15772,
+2024.
+Meta, A. Introducing meta llama 3: The most capable
+openly available llm to date. Meta AI, 2024.
+Mihaylov, T., Clark, P., Khot, T., and Sabharwal, A. Can a
+suit of armor conduct electricity? a new dataset for open
+book question answering. In EMNLP, 2018.
+Neal, R. M. Bayesian learning for neural networks, volume
+118. Springer Science & Business Media, 2012.
+Nichol, A. Q. and Dhariwal, P. Improved denoising diffusion
+probabilistic models. In ICML, pp. 8162–8171. PMLR,
+2021.
+Pan, Z., Zhuang, B., Huang, D.-A., Nie, W., Yu, Z., Xiao,
+C., Cai, J., and Anandkumar, A. T-stitch: Accelerating
+sampling in pre-trained diffusion models with trajectory
+stitching. arXiv preprint arXiv:2402.14167, 2024.
+Peebles, W. and Xie, S. Scalable diffusion models with
+transformers. In ICCV, pp. 4195–4205, 2023.
+Peebles, W., Radosavovic, I., Brooks, T., Efros, A. A.,
+and Malik, J. Learning to learn with generative mod-
+els of neural network checkpoints.
+arXiv preprint
+arXiv:2209.12892, 2022.
+Peng, B., Alcaide, E., Anthony, Q., Albalak, A., Arcadinho,
+S., Biderman, S., Cao, H., Cheng, X., Chung, M., Grella,
+M., et al. Rwkv: Reinventing rnns for the transformer era.
+arXiv preprint arXiv:2305.13048, 2023.
+Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and
+Ommer, B. High-resolution image synthesis with latent
+diffusion models. In CVPR, pp. 10684–10695, 2022.
+Sap, M., Rashkin, H., Chen, D., LeBras, R., and Choi, Y.
+Socialiqa: Commonsense reasoning about social interac-
+tions. arXiv preprint arXiv:1904.09728, 2019.
+Sch¨urholt, K., Knyazev, B., Gir´o-i Nieto, X., and Borth, D.
+Hyper-representations as generative models: Sampling
+unseen neural network weights. In NeurIPS, volume 35,
+pp. 27906–27920, 2022a.
+Sch¨urholt, K., Knyazev, B., Gir´o-i Nieto, X., and Borth,
+D. Hyper-representations for pre-training and transfer
+learning. arXiv preprint arXiv:2207.10951, 2022b.
+Sch¨urholt, K., Taskiran, D., Knyazev, B., Gir´o-i Nieto, X.,
+and Borth, D. Model zoos: A dataset of diverse popula-
+tions of neural network models. In NeurIPS, 2022.
+Sch¨urholt, K., Mahoney, M. W., and Borth, D. Towards scal-
+able and versatile weight space learning. arXiv preprint
+arXiv:2406.09997, 2024.
+So, J., Lee, J., Ahn, D., Kim, H., and Park, E. Temporal
+dynamic quantization for diffusion models. In NeurIPS,
+volume 36, 2024.
+10
+
+========== PAGE 10 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+Sompolinsky, H., Crisanti, A., and Sommers, H.-J. Chaos
+in random neural networks. Physical review letters, 61
+(3), 1988.
+Song, J., Meng, C., and Ermon, S. Denoising diffusion
+implicit models. arXiv preprint arXiv:2010.02502, 2020.
+Song, Y., Dhariwal, P., Chen, M., and Sutskever, I. Consis-
+tency models. arXiv preprint arXiv:2303.01469, 2023.
+Soro, B., Andreis, B., Lee, H., Chong, S., Hutter, F., and
+Hwang, S. J. Diffusion-based neural network weights
+generation. arXiv preprint arXiv:2402.18153, 2024.
+Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux,
+M.-A., Lacroix, T., Rozi`ere, B., Goyal, N., Hambro, E.,
+Azhar, F., et al. Llama: Open and efficient foundation lan-
+guage models. arXiv preprint arXiv:2302.13971, 2023.
+Vaswani, A. Attention is all you need. In NeurIPS, 2017.
+Wang, K., Xu, Z., Zhou, Y., Zang, Z., Darrell, T., Liu, Z.,
+and You, Y. Neural network diffusion. arXiv preprint
+arXiv:2402.13144, 2024.
+Wang, S., Li, B. Z., Khabsa, M., Fang, H., and Ma, H.
+Linformer: Self-attention with linear complexity. arXiv
+preprint arXiv:2006.04768, 2020.
+Wightman, R. GitHub repository: Pytorch image models.
+GitHub repository, 2019.
+Xiao, T., Liu, Y., Zhou, B., Jiang, Y., and Sun, J. Unified
+perceptual parsing for scene understanding. In ECCV, pp.
+418–434, 2018.
+Yang, A., Yang, B., Hui, B., Zheng, B., Yu, B., Zhou, C.,
+Li, C., Li, C., Liu, D., Huang, F., Dong, G., Wei, H., Lin,
+H., Tang, J., Wang, J., Yang, J., Tu, J., Zhang, J., Ma, J.,
+Xu, J., Zhou, J., Bai, J., He, J., Lin, J., Dang, K., Lu, K.,
+Chen, K., Yang, K., Li, M., Xue, M., Ni, N., Zhang, P.,
+Wang, P., Peng, R., Men, R., Gao, R., Lin, R., Wang, S.,
+Bai, S., Tan, S., Zhu, T., Li, T., Liu, T., Ge, W., Deng,
+X., Zhou, X., Ren, X., Zhang, X., Wei, X., Ren, X., Fan,
+Y., Yao, Y., Zhang, Y., Wan, Y., Chu, Y., Liu, Y., Cui, Z.,
+Zhang, Z., and Fan, Z. Qwen2 technical report. arXiv
+preprint arXiv:2407.10671, 2024.
+Yang, X., Zhou, D., Feng, J., and Wang, X. Diffusion
+probabilistic model made slim. In CVPR, pp. 22552–
+22562, 2023.
+Zellers, R., Holtzman, A., Bisk, Y., Farhadi, A., and Choi,
+Y. Hellaswag: Can a machine really finish your sentence?
+arXiv preprint arXiv:1905.07830, 2019.
+Zhao, W., Tang, J., Han, Y., Song, Y., Wang, K., Huang, G.,
+Wang, F., and You, Y. Dynamic tuning towards parameter
+and inference efficiency for vit adaptation. arXiv preprint
+arXiv:2403.11808, 2024.
+Zhou, B., Zhao, H., Puig, X., Fidler, S., Barriuso, A., and
+Torralba, A. Scene parsing through ade20k dataset. In
+CVPR, 2017.
+11
+
+========== PAGE 11 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+We organize our appendix as follows.
+Discussion with More Related Works
+Section A.1: Overview of comparisons.
+Section A.2: Discussion with Hyper-Representations.
+Section A.3: Details and limitations of G.pt.
+Section A.4: Details and limitations of p-diff.
+Section A.5: More related works.
+Experimental Setting and Other Details
+Section B.1: Training recipe.
+Section B.2: Description of datasets.
+Section B.3: Detailed structure of recurrent diffusion.
+Additional Experimental Results
+Section C.1: Effectiveness of permutation state.
+Section C.2: More results of Section 4.
+Section C.3: Training memory cost analysis.
+Section C.4: Inference memory cost & sampling time.
+Section C.5: Parameter sensitivity v.s. performance.
+Section C.6: Details of trained checkpoints collection.
+Section C.7: Why not auto-regression?
+A. Discussion with More Related Works
+A.1. Overview of comparisons
+We compare RPG and four other methods from three aspects:
+scalability, performance, and generalization. Only our RPG
+excels in all three aspects simultaneously.
+method
+scalability
+performance
+generalization
+SKDE30
+✘
+✘
+✘
+p-diff
+✘
+✔
+✘
+SANE
+✔
+✘
+✘
+D2NWG
+✔
+✔
+✘
+RPG
+✔
+✔
+✔
+Table 11. Comparison of RPG and existing methods on key aspects:
+scalability, performance, and generalization.
+A.2. Discussion with Hyper-Representations
+We mainly compare with three HyperRepresentation meth-
+ods (Sch¨urholt et al., 2022a; 2024; 2022b). These methods
+use an autoencoder to learn the latent features of trained
+models, so they call the latent feature HyperRepresentation.
+This HyperRepresentation is then used for analyzing the
+model’s performance or characteristics, or for sampling to
+generate new models or pre-trained parameters.
+• (Sch¨urholt et al., 2022a) utilizes kernel density esti-
+mation (KDE) to sample model parameters on the
+learned HyperRepresentation space. They also empha-
+size the importance of layer-wise loss normalization
+in the learning process of HyperRepresentation. This
+work achieves parameter generation in small CNNs
+from Model Zoos (Sch¨urholt et al., 2022) with 2864
+parameters.
+• (Sch¨urholt et al., 2022b) focuses on using HyperRepre-
+sentation to sample the pre-trained model parameters.
+They also evaluate the ability of transfer learning by
+using a trained parameter autoencoder to initialize on
+unseen dataset. This work can be regarded as a cheap
+parameter initialization method.
+• (Sch¨urholt et al., 2024) divides the neural network
+weights into subsets and utilizes a sequential autoen-
+coder for neural embeddings (SANE) on there subsets
+with a sliding window. This work can generate the en-
+tire parameter of ResNet-18. However, its generation
+process does not directly derive parameters from noise.
+Instead, it relies on a half-trained model for Kernel
+Density Estimation (KDE) sampling.
+We summarize the main differences as follows:
+• Hyper-representations as generative models is hard to
+achieve comparable results as their original models
+that are used for training, but our approach obtains
+comparable results.
+• Hyper-representation for pre-training and transfer
+learning focuses on parameter initialization while
+our approach targets to learn the distribution of high-
+performing neural network parameters.
+• SANE is the latest method among these three Hyper-
+Representation methods. However, SANE uses a slid-
+ing window to model the relationship of a small part
+of trained parameters. Our approach uses a recurrent
+model among all parameters.
+• Our approach can synthesize many popular vision and
+language parameters, such as ConvNeXt-L and LoRA
+parameters of LLaMA-7B, with a maximum parameter
+count of approximately 200M, which is much larger
+than previous works.
+Additionally, the parameters generated by our model
+can directly achieve almost peak performance without
+any finetuning. And the generation process is entirely
+synthesized from noise, eliminating the need for a few
+prompt examples that are trained for a few epochs, as
+required by the SKDE (Sch¨urholt et al., 2024) sampling.
+The capability of large-scale and high-accuracy gener-
+ation makes our method more applicable in practical
+scenarios, significantly bridging the gap between theo-
+retical parameter generation and practical application.
+12
+
+========== PAGE 12 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+A.3. Details and limitations of G.pt
+A primary limitation of G.pt (Peebles et al., 2022) is the
+training data collection cost. By default, they collect 23
+million checkpoints to train the parameter generator. Be-
+sides, they only evaluate the effectiveness of G.pt on small
+architectures, such as a low-dimensional MLP layer or a
+Convolutional layer with limited channels. The maximum
+number of generated parameters does not exceed 10,000.
+A.4. Details and limitations of p-diff
+P-diff (Wang et al., 2024) directly flattens all parameters
+into a 1D vector, disregarding the inter-layer parameter re-
+lationships. Furthermore, p-diff faces challenges in scaling
+up to large-scale parameter generation.
+A.5. More related works
+Diffusion models.
+Diffusion models (Ho et al., 2020;
+Nichol & Dhariwal, 2021; Dhariwal & Nichol, 2021) gain
+increasing popularity in recent years, due to their superi-
+ority in image generation. Ever since its advent, many
+works have been done focusing on improving the generation
+quality and efficiency of diffusion models. For generation
+quality, Rombach et al. (2022) propose to conduct diffusion
+in the latent space, enabling high-resolution image synthesis.
+Peebles & Xie (2023) leverage the transformer (Vaswani,
+2017) to explore scalability of diffusion models, proving
+the possibility of generating higher quality images by in-
+creasing model size. As for efficiency problem, efficient
+samplers (Song et al., 2020; Lu et al., 2022; Song et al.,
+2023), efficiency models (Fang et al., 2023; So et al., 2024;
+Yang et al., 2023), and global acceleration approaches (Ma
+et al., 2024; Pan et al., 2024) are proposed to increase diffu-
+sion models’ efficiency. These methods facilitate generating
+high quality images with less computational and/or memory
+cost. Although diffusion models for image generation have
+achieved great success, improving quality and efficiency in
+large-scale parameter generation remains to be explored.
+B. Experimental Setting and Other Details
+B.1. Training recipe
+In this section, we provide detailed training recipes and
+supplementary information. The number of parameters gen-
+erated by our approach ranges from approximately 3K to
+200M. The significant disparity necessitates different train-
+ing settings. Generally, as the number of parameters in-
+creases, the learning process becomes more challenging,
+requiring higher training costs, particularly for generating
+parameters beyond 50 million. Therefore, our training set-
+tings are divided into two categories: the default setting and
+the setting for parameters over 50 million, shown in Tab. 12.
+Data parallelism: When the number of parameters is less
+than 50 million, we adopt a single GPU to run the train-
+ing process. For larger number of parameters, we employ
+distributed data parallelism to facilitate the training.
+Diffusion batch size: In our approach, the diffusion model
+is shared across all tokens. Typically, all tokens can be
+fed as a single batch into the diffusion model for training.
+However, in practice, we randomly select a subset of tokens
+from a long sequence for training, rather than feeding all
+parts at once. This approach significantly reduces memory
+usage without compromising performance. The ‘diffusion
+batch size’ in Tab. 12 refers to the number of tokens fed
+into the diffusion model during a single training iteration.
+training setting
+#params. < 50M
+#params. > 50M
+batch size
+16
+8
+optimizer
+AdamW
+AdamW
+learning rate
+3e-5
+1e-5
+training steps
+80,000
+120,000
+weight decay
+1e-5
+1e-5
+mixed precision
+bfloat16
+bfloat16
+diffusino batch size
+1024
+512
+Table 12. Training recipe in detail. The amount of parameters that
+need to be generated is denoted as #params.
+B.2. Description of datasets
+In this section, we introduce the datasets used in the paper,
+including those for classification, semantic segmentation,
+object detection&instance segmentation, and commonsense
+reasoning.
+Classification: ImageNet-1k (Deng et al., 2009) is a large-
+scale visual database for visual object recognition research.
+It contains over 1 million images across 1000 categories and
+is widely used for training and benchmarking deep learning
+models. CIFAR-10 (Krizhevsky & Hinton, 2009) dataset
+consists of 60,000 32×32 colorful images in 10 different
+classes. It is commonly used for training machine learn-
+ing and computer vision algorithms, providing a standard
+benchmark for image classification task.
+Semantic segmentation: ADE20K (Zhou et al., 2017)
+is a dataset for semantic segmentation and scene parsing,
+containing over 20,000 images annotated with pixel-level
+labels for 150 object categories. It is used to train models
+to understand and segment various objects and scenes in an
+image, making it valuable for applications in autonomous
+driving, robotics, and image editing.
+Instance segmentation & object detection: COCO (Lin
+et al., 2014) dataset is a large-scale object detection, seg-
+mentation, and captioning dataset. It contains over 330,000
+images in various resolutions, with more than 200,000 la-
+beled instances across 80 object categories. COCO is widely
+13
+
+========== PAGE 13 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+used for training and evaluating models in object detection,
+segmentation, and image captioning tasks.
+Commonsense reasoning: BoolQ (Clark et al., 2019):
+Yes/No questions based on natural passages. PIQA (Bisk
+et al., 2020): Questions about physical tasks and actions.
+SIQA (Sap et al., 2019): Questions about social interactions.
+HellaSwag (Zellers et al., 2019): Choosing the correct end-
+ing for stories. ARC (Clark et al., 2018): Multiple-choice
+science questions. OBQA (Mihaylov et al., 2018): Ques-
+tions requires multi-step reasoning, commonsense knowl-
+edge, and rich text comprehension.
+B.3. Detailed structure of recurrent diffusion
+In this section, we provide specific details about the pro-
+posed recurrent model and diffusion model in RPG. More
+detailed configurations can be found in Tab. 13.
+Details of recurrent model.
+By default, the recurrent
+model consists of two Mamba layers (Gu & Dao, 2023). As
+the increasing of parameters to generate, we need a larger
+recurrent model to capture the information in these parame-
+ters. The size of the recurrent model is mainly determined
+by the token size, which varies according to the number of
+parameters to be generated. Based on the token size, we
+categorize our model into four versions: Tiny, Small, Base,
+and Large.
+Details of diffusion model.
+Following p-diff (Wang et al.,
+2024), our diffusion model adopts a 1D convolutional archi-
+tecture. The parameters of the diffusion model are signifi-
+cantly fewer than those of the recurrent model. We feed the
+prototypes from the recurrent model as conditions into the
+diffusion model by directly adding them to the feature map.
+The setting of our main experiments.
+In our main ex-
+periments, ViT-Base, ConvNeXt-Large, ADE20K, COCO,
+and DoRA rank 64 used the setting of RPG-Large. CNN (s)
+and CNN (m) used the setting of RPG-Tiny. And all other
+experiments used the setting of RPG-Base.
+C. Additional Experimental Results
+C.1. Effectiveness of permutation state
+The effect of permutation state.
+RPG incorporates a
+permutation state operation to address parameter symme-
+tries, which become particularly pronounced when collect-
+ing checkpoints from multiple training runs. To evaluate
+this, we collect checkpoints from different numbers of train-
+ing runs (1, 3, and 10) and compare the performance with
+and without permutation state. These results demonstrate
+that permutation state operation effectively addresses pa-
+rameter symmetries and enables stable results even when
+incorporating checkpoints from multiple training runs.
+collected runs
+org.
+w/o permu. state
+w/ permu. state
+1
+88.2
+88.0
+88.1
+3
+88.3
+fail
+88.1
+10
+88.5
+fail
+88.2
+Table 14. Permutation state effectively mitigates parameter sym-
+metries when collecting checkpoints from different training runs.
+C.2. More results of Section 4
+Results of generating models for unseen tasks.
+In Sec-
+tion 4, we show the potential of our approach in generating
+models for unseen tasks. In this part, we provide more re-
+sults. First, we compare the performance of original and
+generated models using all unseen embeddings in Tab. 16.
+Results demonstrate that our approach consistently achieves
+good results in unseen tasks.
+Efficiency comparison.
+To evaluate efficiency on unseen
+tasks, we compare 3 approaches: i) training ViT-Tiny from
+scratch, ii) finetuning an ImageNet-pretrained ViT-Tiny, and
+iii) finetuning a RPG-initialized model. As shown in Tab. 15,
+RPG significantly accelerates training for the unseen task.
+These results establish RPG initialization as an effective
+approach that significantly reduces training costs.
+epoch
+from scratch
+finetune
+RPG initialization + finetune
+0
+50.0
+52.9
+94.4
+1
+61.4
+90.3
+96.8
+5
+69.1
+96.3
+97.3
+10
+74.9
+97.1
+97.5
+50
+86.7
+97.7
+97.8
+Table 15. Accuracy (%) comparison for different training strate-
+gies on an unseen task. RPG initialization demonstrates superior
+performance and faster convergence.
+PCA visualization of classification head parameters.
+We also provide a visualization of the parameters of the clas-
+sification head (a two-layer fully connected structure with
+total 38,976 parameters) for 1022 tasks as described in Sec-
+tion 4 using Principal Component Analysis (PCA), which
+presents the structure of the parameter space in Fig. 6a. Our
+generated model achieves an average accuracy of 91.2%
+across all binary classification tasks, which indicates that
+our method has effectively learned this structure. Further-
+more, we evaluate the parameters corresponding to unseen
+tasks and compared their positions in Fig. 6b between the
+original and generated parameters. It is noteworthy that,
+even though the original parameters of these tasks are not
+included in the training data, the generated parameters con-
+sistently appeared in close proximity to the original ones.
+14
+
+========== PAGE 14 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+module
+setting
+RPG-Tiny
+RPG-Small
+RPG-Base
+RPG-Large
+adequate number of parameters
+<50K
+50K∼10M
+5M∼50M
+>50M
+recurrent
+(Mamba)
+d model of 1st layer
+256
+4096
+8192
+12288
+d model of 2nd layer
+256
+4096
+8192
+16384
+d state
+32
+128
+128
+128
+d conv
+4
+4
+4
+4
+expand
+2
+2
+2
+2
+parameter counts
+1.3M
+256M
+1018M
+3076M
+diffusion
+(1D CNN)
+encoder channels
+(1, 32, 64, 128)
+(1, 32, 64, 128)
+(1, 32, 64, 128)
+(1, 64, 96)
+decoder channels
+(128, 64, 32, 1)
+(128, 64, 32, 1)
+(128, 64, 32, 1)
+(96, 64, 1)
+token size
+256
+4096
+8192
+16384
+kernel size
+7
+7
+7
+7
+default solver
+DDPM
+DDPM
+DDPM
+DDIM
+sampling steps
+1000
+1000
+1000
+60
+β-start & β-end
+(0.0001, 0.02)
+(0.0001, 0.02)
+(0.0001, 0.02)
+(0.0001, 0.02)
+betas schedule
+linear
+linear
+linear
+linear
+number time steps
+1000
+1000
+1000
+1000
+parameter counts
+0.3M
+17M
+69M
+273M
+Table 13. Detailed information about four different sizes of recurrent diffusion. The adequate number of parameters implies that our
+model is usually adequate to generate parameters in that scale, which is empirical results instead of an exact rule. It also necessitates
+considering other factors such as parameter sensitivity.
+This observation further highlights the capability of our
+method to model the structure of the parameter space, even
+for tasks not previously encountered.
+Conditional generation guided by LLM.
+To demon-
+strate the application scenarios of our model, we utilize
+large language model to generate binary embeddings to
+guide RPG in generating corresponding classification mod-
+els. For the first example in Fig 7, we give the LLM a
+prompt: ‘Give me a model to select all living things.’ With
+the binary embedding provided by the LLM, our RPG then
+generates a ViT-Tiny classifier. After that, We use images
+in CIFAR-10 to evaluate the model’s accuracy. The model
+should classify ‘bird’, ‘cat’, ‘deer’, ‘dog’, ‘frog’, and ‘horse’
+to the positive class, which we used as the ground truth.
+The result is 97.1%. Some other examples are in Tab 17.
+This experiment demonstrates our method’s capability to
+generate neural network parameters based on natural lan-
+guage guidance, highlighting the potential applications of
+our method.
+C.3. Training memory cost analysis
+In this section, we analyze the GPU memory utilization dur-
+ing training. GPU memory consumption is usually highly
+correlated with two factors: i) the size of the generative
+model and ii) the size of generated parameters. We ana-
+lyzed the impact of these two factors on the GPU memory
+utilization during the training of our approach.
+GPU memory v.s. token size
+We visualize the GPU mem-
+ory usage with different token sizes in Fig. 8a. As the token
+size increases, the scale of the recurrent model significantly
+grows, leading to a notable increase in GPU memory con-
+sumption. This implies that, when the performance of the
+generated models is comparable, we prefer to use models
+with smaller token sizes.
+GPU memory v.s. parameter counts
+We conduct ex-
+periments to show the relationship between GPU memory
+and generated parameter counts in Fig. 8b. In previous
+methods, the relationship between GPU memory consump-
+tion and the number of parameters in the generated model
+was quadratic (Sch¨urholt et al., 2022a) or directly propor-
+tional (Wang et al., 2024). This limits their practicality and
+application range. In contrast, our approach demonstrates
+remarkable efficiency: with equivalent GPU memory usage,
+it can generate models with 34 to 960 times more parameters
+compared to previous methods.
+C.4. Inference memory cost & sampling time
+In this section, we present more information about the sam-
+pling, including memory usage, inference time, and the
+balance between sequential and parallel inference. In Tab.
+7, we show the sampling time and memory usage for ViT-
+Base and ConvNeXt-L. Here, we present the sampling time
+and memory usage for other models. In Tab. 18, we adopt
+DDPM as the solver and conduct 1000-step sampling. Since
+15
+
+========== PAGE 15 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+unseen binary embeddings
+original
+best acc.
+average acc.
+standard deviation
+0 1 0 0 0 1 0 1 1 1
+97.3
+94.4
+93.9
+0.6
+0 1 1 1 1 1 0 1 1 0
+98.1
+96.6
+94.9
+2.1
+0 0 1 1 1 0 1 1 1 0
+97.4
+95.0
+94.2
+1.1
+0 1 0 1 1 1 1 1 1 1
+98.4
+96.1
+95.8
+0.3
+0 0 1 0 0 0 0 0 0 0
+98.9
+96.6
+95.2
+2.3
+0 0 0 1 1 0 0 1 0 1
+96.7
+92.9
+91.6
+1.1
+1 1 1 1 1 0 1 0 0 1
+97.6
+94.8
+94.1
+0.7
+1 0 1 0 0 0 0 0 1 1
+98.1
+95.7
+91.8
+3.7
+0 1 0 0 0 1 0 1 1 0
+97.1
+93.6
+90.7
+4.3
+1 1 0 0 0 1 1 0 0 1
+97.0
+94.0
+90.1
+3.6
+1 0 1 0 0 0 1 1 0 1
+97.3
+91.3
+90.7
+0.8
+0 1 1 1 1 0 0 0 1 0
+96.3
+95.4
+89.4
+6.3
+1 1 0 1 1 1 0 1 0 0
+97.6
+92.6
+90.5
+3.2
+0 1 1 1 0 0 1 1 1 0
+96.3
+90.8
+89.1
+1.9
+0 1 0 0 1 1 1 0 1 0
+96.3
+91.9
+88.4
+4.4
+0 0 1 0 0 0 1 1 0 1
+97.5
+93.7
+88.0
+5.6
+0 0 0 1 1 0 1 1 1 1
+96.5
+90.8
+85.5
+7.0
+1 0 0 1 0 0 1 1 0 1
+96.4
+86.7
+83.7
+3.6
+1 0 0 1 0 1 0 0 0 0
+97.7
+85.6
+83.2
+2.0
+0 0 1 1 0 0 0 1 0 1
+96.3
+90.2
+79.2
+9.6
+Table 16. Performance comparisons between original and generated models on unseen tasks. Specifically, we generated 10 models for
+each unseen task, with binary embeddings in the unseen set as condition. The results consistently show that our generated models perform
+comparably to the original models.
+all tasks in parameter space
+(a) Visualization of the classification head of all 1022 tasks.
+This reveals that there is an inherent structure among the high-
+dimensional parameters, which can be captured by deep learn-
+ing models.
+unseen tasks in parameter space
+original
+generated
+(b) Visualization of the classification head in some unseen
+tasks. Parameters associated with the same task are indicated
+by a consistent color. Our method can capture the structure of
+the parameter space.
+Figure 6. Principal Component Analysis (PCA) visualization of the classification head. The figures demonstrate the presence of an
+inherent structure in the parameter space and highlight our method’s effectiveness in capturing this structure for unseen tasks.
+16
+
+========== PAGE 16 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+RPG
+LLM
+RPG
+LLM
+ViT-Tiny Classifier 
+overall accuracy: 97.1%
+Give me a model to 
+select all living things.
+Give me a model to 
+select animals that can 
+be regarded as pets.
+ViT-Tiny Classifier 
+overall accuracy: 96.9%
+Figure 7. Illustration of RPG-generated models guided by binary embeddings from a large language model (Qwen2.5-3B (Yang et al.,
+2024)), demonstrating neural network parameter generation conditioned by natural language.
+prompt
+expected embedding
+acc. (%)
+Give me a model to select all living things.
+0,0,1,1,1,1,1,1,0,0
+98.7
+Find all vehicles that operate on roads.
+0,1,0,0,0,0,0,0,0,1
+95.9
+Classify all mammals.
+0,0,0,1,1,1,0,1,0,0
+97.6
+Select all man-made objects.
+1,1,0,0,0,0,0,0,1,1
+97.7
+Find all things that are both man-made and can operate on water.
+0,0,0,0,0,0,0,0,1,0
+98.4
+Select all animals that can be regarded as pets.
+0,0,0,1,0,1,0,0,0,0
+96.8
+Select all things that can fly.
+1,0,1,0,0,0,0,0,0,0
+87.7
+Find all animals with fur.
+0,0,1,1,1,1,0,1,0,0
+70.4
+Select all pets commonly found in households.
+0,0,1,1,0,1,0,0,0,0
+83.3
+Identify all cold-blooded animals.
+0,0,0,0,0,0,1,0,0,0
+98.9
+Table 17. The table demonstrates examples of generating from abstract prompts using LLM and RPG. We are able to achieve high
+accuracy on abstract prompts. The expected embedding is used for evaluating the accuracy.
+2048
+4096
+8192
+16384
+token size
+0
+10
+20
+30
+40
+50
+60
+70
+80
+GPU memory usage (GB)
+GPU memory v.s. token size
+ViT-Tiny
+ViT-Small
+ViT-Base
+(a) Visualization of GPU memory v.s. token size. GPU
+memory usage increases proportionally to the token size.
+Thus, the token size cannot get larger infinitely; we need
+to choose a proper token size.
+0.01
+0.1
+1.0
+10.0
+100.0
+params. (M)
+0
+10
+20
+30
+40
+50
+60
+70
+80
+GPU memory usage (GB)
+960x larger
+34x larger
+GPU memory v.s. parameter counts
+SKDE30
+p-diﬀ
+ours
+(b) Visualization of GPU memory v.s. parameter counts.
+Our method can generate much more parameters than
+existing approaches e.g. SKDE30 (Sch¨urholt et al., 2022a)
+using a single NVIDIA H100 80G GPU.
+Figure 8. Training memory cost analysis. Left: GPU memory v.s. token size. Rihgt: GPU memory v.s. parameter counts.
+17
+
+========== PAGE 17 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+metrics
+inference mode
+ResNet-18
+ResNet-50
+ViT-Tiny
+ViT-Small
+ConvNeXt-A
+time (minute)
+sequential
+18.6
+38.0
+9.8
+33.8
+6.8
+partially parallel
+1.8
+3.3
+1.1
+2.9
+0.9
+fully parallel
+1.7
+3.3
+1.1
+2.9
+0.9
+memory cost (GB)
+sequential
+6.3
+6.4
+6.2
+6.4
+6.2
+partially parallel
+10.3
+10.5
+10.3
+10.5
+10.3
+fully parallel
+30.8
+50.5
+19.4
+45.9
+15.2
+Table 18. We show the inference time and memory cost under different inference modes. All information in this table is collected from a
+single NVIDIA H100 80G GPU. We report the time and memory required to generate a single model.
+model
+params. (M)
+sensitivity
+accuracy decline
+ours
+noise (0.01)
+noise (0.10)
+noise (1.00)
+ConvNeXt-A
+3.7
++++
+0.85
+62.83
+0.60
+0.03
+ResNet-18
+11.7
+++
+0.39
+53.56
+0.46
+0.00
+ViT-Base
+86.6
++
+0.09
+5.39
+0.02
+0.00
+Table 19. The accuracy decline reflects the accuracy gap between the original model and the generated model or the model after adding
+noise. We add Gaussian noise with weights of 0.01, 0.10, and 1.00 to the parameters to measure model sensitivity. Results demonstrate
+that smaller models are relatively more sensitive than larger ones. The more plus signs (+) , the higher the sensitivity.
+the diffusion model in RPG is shared among all the parame-
+ter tokens, we can adopt different inference modes to find a
+balance between memory usage and inference speed:
+• fully parallel: All tokens are fed into the diffusion
+model simultaneously. This approach results in a high
+memory usage but achieves a high generation speed.
+• sequential: Tokens are fed into the diffusion model
+one by one. This approach significantly reduces mem-
+ory usage, as the model only occupies memory for
+inferring a single token at a time. This enable us to
+generate parameters of models listed on a GPU with
+less than 8GB of memory .
+• partially parallel (default): In partial parallel mode,
+we set 256 tokens as a batch for the diffusion model
+inference. This approach significantly boosts speed
+with a slight increase in GPU memory usage, reaching
+an optimal trade-off between memory and speed. We
+adopt this as the default setting.
+Based on the results in Tab. 18, our approach can be flexibly
+applied to many other GPUs as it can achieve a good trade-
+off between memory and time.
+C.5. Parameter sensitivity v.s. performance
+According to conventional understanding, larger parameter
+quantities are generally more challenging to learn. How-
+ever, our experiments reveal that this rule is not absolute
+and demonstrates instability in learning some small model
+parameters.
+This motivates us to investigate the relationship between
+parameter sensitivity and generation quality. Specifically,
+we add Gaussian noise with weights of 0.01, 0.10, and 1.00
+to the original parameters to measure model sensitivity, as
+shown in Tab. 19. We observe that as noise weight increases,
+performance decreases for all models, with smaller models
+being more affected than larger ones. This indicates that
+smaller models are relatively more sensitive. Additionally,
+we notice that the performance gap between the original
+and generated models widens as sensitivity of the model
+increases. This demonstrates a strong correlation between
+a model’s sensitivity and the difficulty of generating its
+parameters.
+C.6. Details of trained checkpoint collection
+This section mainly supplements the collection of check-
+points in Section 3. First, we obtain the pre-trained mod-
+els, which either come from model libraries (such as
+timm (Wightman, 2019)) or are trained by ourselves. Then,
+we fine-tune the full model for one epoch, and save 50
+checkpoints during this epoch uniformly. In Tab 14, the
+term collected runs refers to the number of times the entire
+process, from pre-training to fine-tuning and saving, is re-
+peated. This is done without fixing the seed, resulting in
+checkpoints from entirely different permutations.
+C.7. Why not auto-regression?
+It is worth noting that our approach does not employ an
+auto-regressive method, i.e., we do not feed the output back
+as input again. Our method takes position embedding and
+permutation state as inputs and synthesizes neural network
+parameters as outputs, forming a standard recurrent neural
+18
+
+========== PAGE 18 ==========
+Scaling Up Parameter Generation: A Recurrent Diffusion Approach
+network. We have attempted to train our model using an
+auto-regressive approach such as a decoder-only transformer
+architecture, whose results are shown in Tab 20. Due to the
+accumulation of errors during the auto-regressive process in
+inference, the parameters generated at the end of sequence
+become nearly indistinguishable from noise, leading to poor
+performance. In contrast, in RPG, noise is only introduced
+in the diffusion model and does not accumulate in the recur-
+rent process, ensuring stable parameter generation.
+best
+avg.
+min.
+original
+75.2
+74.9
+74.7
+auto-regressive
+fail
+fail
+fail
+non-auto-regressive
+75.0
+74.8
+74.6
+Table 20. Comparison between auto-regressive and non-auto-
+regressive methods. The auto-regressive model refers to a trans-
+former decoder-only structure, while the non-auto-regressive
+model refers to a transformer encoder-only structure with the same
+scale. To ensure a fair comparison, we also applied a causal mask
+to the transformer encoder-only structure, ensuring that informa-
+tion can only be passed in one direction.
+19

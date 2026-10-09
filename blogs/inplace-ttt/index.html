@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>In-Place TTT 深度解读 | 把 MLP 的投影矩阵变成测试时记忆</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  --indigo-50:#eef2ff;--indigo-100:#e0e7ff;--indigo-200:#c7d2fe;--indigo-300:#a5b4fc;--indigo-400:#818cf8;--indigo-500:#6366f1;--indigo-600:#4f46e5;--indigo-700:#4338ca;--indigo-800:#3730a3;--indigo-900:#312e81;
+  --emerald-100:#d1fae5;--emerald-300:#6ee7b7;--emerald-400:#34d399;--emerald-500:#10b981;
+  --orange-100:#ffedd5;--orange-300:#fdba74;--orange-400:#fb923c;--orange-500:#f97316;--orange-600:#ea580c;
+  --ink:#0f172a;--ink-soft:#334155;--ink-muted:#64748b;
+  --paper:#ffffff;--paper-warm:#f8fafc;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;color:var(--ink);background:var(--paper-warm);line-height:1.9;font-size:16.5px}
+h1,h2,h3,h4{font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:900;letter-spacing:-0.02em;color:var(--ink)}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(255,255,255,0.82);backdrop-filter:blur(16px) saturate(1.6);border-bottom:1px solid rgba(79,70,229,0.18);padding:0 24px}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px}
+.nav-logo{font-family:'Noto Serif SC',serif;font-weight:900;font-size:15px;background:linear-gradient(135deg,var(--indigo-700),var(--orange-500));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.nav-links{display:flex;gap:10px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--ink-muted);text-decoration:none;letter-spacing:0.5px;transition:color .2s}
+.nav-links a:hover{color:var(--indigo-600)}
+.hero{position:relative;min-height:96vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:120px 24px 80px;background:linear-gradient(135deg,#eef2ff 0%,#e0e7ff 18%,#ffedd5 50%,#fffbeb 100%)}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 520px 320px at 12% 22%,rgba(99,102,241,0.16),transparent 60%),radial-gradient(ellipse 520px 320px at 88% 78%,rgba(249,115,22,0.13),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:820px;text-align:center}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.6);backdrop-filter:blur(12px) saturate(1.5);border:1px solid rgba(99,102,241,0.3);color:var(--indigo-700);padding:7px 20px;border-radius:100px;font-size:11px;font-weight:600;letter-spacing:3px;margin-bottom:20px;box-shadow:0 4px 20px rgba(99,102,241,0.12)}
+.hero h1{font-size:clamp(2.2rem,6.5vw,3.8rem);font-weight:900;letter-spacing:-0.03em;line-height:1.12;margin:12px 0 10px;background:linear-gradient(135deg,var(--ink) 0%,var(--indigo-600) 38%,var(--orange-500) 62%,var(--emerald-500) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-tagline{font-family:'Noto Serif SC',serif;font-size:clamp(1rem,2.6vw,1.2rem);color:var(--ink-soft);font-weight:700;margin-bottom:8px}
+.hero-desc{font-size:14px;color:var(--ink-muted);max-width:660px;margin:0 auto 26px}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:26px}
+.hstat{background:rgba(255,255,255,0.65);backdrop-filter:blur(8px);border:1px solid rgba(99,102,241,0.18);border-radius:16px;padding:14px 8px}
+.hstat b{display:block;font-family:'Noto Serif SC',serif;font-size:1.5rem;color:var(--indigo-700)}
+.hstat span{font-size:11px;color:var(--ink-muted)}
+.scroll-hint{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:3px;color:var(--ink-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.6s infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+main{max-width:860px;margin:0 auto;padding:70px 24px 40px}
+section{margin-bottom:74px}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--indigo-600);font-weight:700;margin-bottom:8px}
+h2{font-size:clamp(1.5rem,4vw,2.1rem);margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid var(--indigo-100)}
+h3{font-size:1.18rem;margin:28px 0 12px;color:var(--indigo-800)}
+h4{font-size:1rem;margin:20px 0 8px}
+p{margin-bottom:14px;color:var(--ink-soft)}
+p strong,li strong{color:var(--ink)}
+ul,ol{margin:0 0 14px 22px;color:var(--ink-soft)}
+li{margin-bottom:6px}
+.sym{background:var(--indigo-50);padding:1px 5px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.92em;color:var(--indigo-800)}
+figure{margin:26px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid rgba(79,70,229,0.15);box-shadow:0 10px 34px -14px rgba(15,23,42,0.18);background:#fff}
+figcaption{font-size:12.5px;color:var(--ink-muted);margin-top:10px;line-height:1.7}
+figcaption b{color:var(--indigo-700)}
+.insight-box{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid var(--emerald-500)}
+.insight-box .tag{background:var(--emerald-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.insight-box h4{margin:12px 0 8px;color:#064e3b;font-size:1.05rem}
+.insight-box p{color:#065f46;margin-bottom:6px}
+.critique-box{background:linear-gradient(135deg,#ffedd5,#fed7aa);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid var(--orange-500)}
+.critique-box .tag{background:var(--orange-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.critique-box h4{margin:12px 0 8px;color:#7c2d12;font-size:1.05rem}
+.critique-box p{color:#9a3412;margin-bottom:6px}
+.ttt101{background:linear-gradient(135deg,#e0e7ff,#c7d2fe);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid var(--indigo-500)}
+.ttt101 .tag{background:var(--indigo-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.ttt101 h4{margin:12px 0 8px;color:#312e81;font-size:1.05rem}
+.ttt101 p{color:#3730a3;margin-bottom:8px}
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:22px 0}
+.ccard{background:#fff;border-radius:14px;padding:18px;border-top:4px solid var(--indigo-400);box-shadow:0 6px 22px -14px rgba(15,23,42,0.2)}
+.ccard.o{border-top-color:var(--orange-400)}.ccard.e{border-top-color:var(--emerald-400)}
+.ccard h4{font-size:1rem;margin-bottom:8px}
+.ccard p{font-size:13.5px;margin-bottom:6px}
+table{width:100%;border-collapse:collapse;margin:20px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 6px 22px -14px rgba(15,23,42,0.18)}
+th{background:linear-gradient(135deg,var(--indigo-600),var(--indigo-500));color:#fff;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--indigo-50);text-align:center;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+td.hl{background:var(--indigo-50);font-weight:700;color:var(--indigo-800)}
+td.best{background:#d1fae5;font-weight:800;color:#065f46}
+.mathcard{background:#fff;border:1px solid var(--indigo-100);border-left:4px solid var(--indigo-500);border-radius:14px;padding:20px 24px;margin:22px 0;overflow-x:auto}
+.mathcard h4{font-size:1rem;color:var(--indigo-800);margin-bottom:8px}
+.mathcard .note{font-size:13.5px;color:var(--ink-muted);margin-top:10px}
+.theorem{background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:2px solid var(--indigo-300);border-radius:16px;padding:22px 24px;margin:24px 0}
+.theorem .tag{background:var(--indigo-600);color:#fff;padding:3px 14px;border-radius:12px;font-size:12px;font-weight:700;letter-spacing:1px}
+.theorem h4{margin:12px 0 10px;color:var(--indigo-900);font-size:1.1rem}
+.theorem p{color:var(--indigo-800);margin-bottom:8px}
+footer{background:var(--ink);color:#cbd5e1;padding:50px 24px 60px;margin-top:40px}
+footer .inner{max-width:860px;margin:0 auto}
+footer h3{color:#fff;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.8}
+footer a{color:var(--orange-300);text-decoration:none}
+footer .fin{margin-top:26px;font-size:12px;color:#64748b;border-top:1px solid #1e293b;padding-top:18px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">In-Place TTT · 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">TTT入门</a><a href="#s2">三大障碍</a><a href="#s3">核心洞察</a><a href="#s4">In-Place设计</a>
+    <a href="#s5">LM对齐目标</a><a href="#s6">理论证明</a><a href="#s7">实现细节</a><a href="#s8">实验</a>
+    <a href="#s9">消融</a><a href="#s10">批判</a>
+  </div>
+</div></nav>
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">arXiv:2604.06169 · PREPRINT · APR 2026</div>
+    <h1>In-Place TTT：把 MLP 投影矩阵变成测试时记忆</h1>
+    <p class="hero-tagline">零架构改动 × Drop-in 替换 × LM-Aligned 目标 × 上下文并行</p>
+    <p class="hero-desc">之前的 TTT 方法需要引入新层、从头预训练、用通用重建目标——这让 TTT 难以进入 LLM 主流生态。这篇论文提出 In-Place TTT：直接把 MLP block 的最终投影矩阵 $W_{down}$ 当作 fast weights，不需要改架构，不需要从头训练，用与 next-token prediction 对齐的目标做测试时更新。本篇从 TTT 底层逻辑讲起，逐步拆解方法、理论证明与实验。</p>
+    <div class="hero-stats">
+      <div class="hstat"><b>4B</b><span>Qwen3 模型</span></div>
+      <div class="hstat"><b>128K</b><span>上下文长度</span></div>
+      <div class="hstat"><b>0</b><span>架构改动</span></div>
+      <div class="hstat"><b>Drop-in</b><span>MLP 替换</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- ================= 1. TTT 入门 ================= -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 入门必读</div>
+  <h2>TTT 速览：测试时训练的核心套路</h2>
+
+  <p>如果你还不熟悉 Test-Time Training（TTT），这一章用最短的篇幅讲清它的套路。如果你已经懂了，可以直接跳到第 2 章。</p>
+
+  <h3>一句话概括</h3>
+  <p><strong>TTT = 模型在推理时，用输入本身做自监督学习，更新一小部分参数（fast weights），把上下文信息压缩进参数。</strong></p>
+
+  <h3>两个核心操作：Update 和 Apply</h3>
+  <p>所有 TTT 方法都遵循同一个"两操作"套路：</p>
+  <ol>
+    <li><strong>Apply（应用）</strong>：用当前的 fast weights 处理输入，得到输出；</li>
+    <li><strong>Update（更新）</strong>：用输入构造的 key-value 对，通过一步梯度下降更新 fast weights。</li>
+  </ol>
+  <p>这两个操作交替进行：先 Apply 得到输出，再 Update 把当前输入的信息写进参数，下一个 token 来时用更新后的参数 Apply。</p>
+
+  <div class="ttt101"><span class="tag">关键概念</span>
+    <h4>Fast weights = 测试时可动态更新的一小部分参数</h4>
+    <p>标准权重（slow weights）：预训练学到的通用知识，推理时冻结。</p>
+    <p>Fast weights：测试时通过梯度下降动态更新的参数，用来存储当前输入的上下文信息。</p>
+    <p>两者的关系就像"硬盘"和"内存"：硬盘存长期通用知识，内存存当前正在处理的内容。TTT 的 fast weights 就是模型的"内存"。</p>
+  </div>
+
+  <h3>TTT 与注意力的本质区别</h3>
+  <p>注意力机制把上下文存在 <strong>KV cache</strong> 里——这是一个随上下文长度线性增长的外部存储。TTT 把上下文压缩进 <strong>参数</strong> 里——这是一个常数大小的内部存储。</p>
+  <p>这就是为什么 TTT 能做到常数推理延迟：不管上下文多长，参数的维度不变。</p>
+
+  <p>有了这个基础，我们来看这篇论文要解决什么问题。</p>
+</section>
+
+<!-- ================= 2. 三大障碍 ================= -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 问题</div>
+  <h2>TTT 进入 LLM 主流生态的三大障碍</h2>
+
+  <p>论文开篇就指出：尽管 TTT 在长上下文建模上展现了潜力，但它至今没有被 LLM 主流生态广泛采用。原因有三个：</p>
+
+  <div class="compare-grid">
+    <div class="ccard"><h4>障碍 1：架构不兼容</h4><p>之前的 TTT 方法（如 TTT-KVB、E2E TTT）需要<strong>引入新的层</strong>或<strong>修改注意力机制</strong>。这意味着不能直接用在已有的预训练模型上——必须从头预训练一个新模型。对于已经投入巨额成本训练好的 LLM 来说，这是不可接受的。</p></div>
+    <div class="ccard o"><h4>障碍 2：计算低效</h4><p>之前的 TTT 方法通常是<strong>逐 token 更新</strong>（per-token update），因为它们替换了注意力层，必须保持因果性。逐 token 更新无法并行，在现代 GPU/TPU 上效率很低。E2E TTT 用了小批量来缓解，但仍然需要反向传播。</p></div>
+    <div class="ccard e"><h4>障碍 3：目标不对齐</h4><p>之前的 TTT 方法用的是<strong>通用重建目标</strong>（reconstruction target）：让 fast weights 重建当前 token 的表示。但 LLM 的最终目标是 next-token prediction（NTP）。重建目标和 NTP 不对齐——模型在测试时学到的东西不一定直接帮助预测下一个 token。</p></div>
+  </div>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>这篇论文的定位：不是又一个 TTT 变体，而是 TTT 的"工程化落地"</h4>
+    <p>E2E TTT 证明了 TTT 在长上下文上的有效性，但它需要改架构、从头预训练。In-Place TTT 的目标是让 TTT 能<strong>直接用在已有的预训练 LLM 上</strong>——零架构改动、零从头预训练、高效并行、目标对齐。这是从"研究原型"到"工程可用"的关键一步。</p>
+  </div>
+</section>
+
+<!-- ================= 3. 核心洞察 ================= -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 核心洞察</div>
+  <h2>核心洞察：MLP 的 $W_{down}$ 本身就是天然的 fast weights</h2>
+
+  <p>论文最关键的洞察是：<strong>不需要引入新的 fast weight 层——Transformer MLP block 的最终投影矩阵 $W_{down}$ 本身就可以当作 fast weights。</strong></p>
+
+  <h3>回顾 MLP block 的结构</h3>
+  <p>标准 Transformer 的 MLP block 通常是这样的：</p>
+  <div class="mathcard"><h4>标准 MLP block（以 Gated MLP 为例）</h4>$$h = \sigma(x W_{up}) \odot (x W_{gate})$$$$y = h W_{down}$$<p class="note">$x$ 是输入（维度 $d_{model}$），$W_{up}$ 和 $W_{gate}$ 是上投影矩阵（$d_{model} \to d_{ff}$），$\sigma$ 是激活函数（如 SiLU），$\odot$ 是逐元素乘法，$W_{down}$ 是下投影矩阵（$d_{ff} \to d_{model}$），$y$ 是输出。</p></div>
+
+  <p>注意 $W_{down}$ 的作用：它把中间激活 $h$（维度 $d_{ff}$）投影回模型维度 $d_{model}$。换句话说，<strong>$W_{down}$ 决定了"中间激活中的哪些信息被传递到输出"</strong>。</p>
+
+  <h3>为什么 $W_{down}$ 适合做 fast weights？</h3>
+  <p>论文给出了几个理由：</p>
+  <ol>
+    <li><strong>它已经存在</strong>：不需要引入新参数，不需要改架构；</li>
+    <li><strong>它是线性的</strong>：$y = h W_{down}$ 是纯线性变换，对 $W_{down}$ 做梯度下降非常简单——不需要通过非线性层反向传播；</li>
+    <li><strong>它控制信息流</strong>：修改 $W_{down}$ 就等于修改"哪些中间特征被放大/抑制"，这正是 TTT 想要的——根据上下文动态调整信息传递；</li>
+    <li><strong>它不替换注意力</strong>：因为只改 MLP 的 $W_{down}$，注意力层完全不动。这意味着可以用大 chunk 并行更新（不需要逐 token 保持因果性）。</li>
+  </ol>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>"In-Place"的含义：在原位置更新，不引入新层</h4>
+    <p>论文标题中的"In-Place"有两层含义：① 不引入新的 fast weight 层，直接在已有的 $W_{down}$ 上更新；② 不需要从头预训练，直接在已有的预训练模型上做 drop-in 替换。这和"in-place algorithm"（原地算法，不需要额外空间）的精神一致——TTT 不需要额外的参数空间。</p>
+  </div>
+</section>
+
+<!-- ================= 4. In-Place 设计 ================= -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · 方法</div>
+  <h2>In-Place TTT 的具体机制：Chunk-wise Apply-Update</h2>
+
+  <figure>
+    <img src="figures/fig1_framework.png" alt="In-Place TTT 整体框架">
+    <figcaption><b>图 1（论文 Figure 1）</b>：In-Place TTT 的整体框架。输入被分成 chunk，每个 chunk 依次经过：① Apply——用当前 fast weights $W_{down}^{(i)}$ 处理中间激活 $Z_{[i]}$ 得到输出；② Update——用 $Z_{[i]}$ 作为 key、$\hat{V}_{[i]}$ 作为 value，一步梯度下降更新 $W_{down}$。"Apply-then-Update"循环严格保持因果性。</figcaption>
+  </figure>
+
+  <h3>分块处理</h3>
+  <p>因为 In-Place TTT 不替换注意力层，它不受"逐 token 更新"的约束。论文把输入序列分成大小为 $C$ 的 chunk（实验中 $C=512$ 或 $1024$），每个 chunk 做一次 Apply + Update。</p>
+
+  <p>设第 $i$ 个 chunk 的中间激活为 <span class="sym">$Z_{[i]} \in \mathbb{R}^{C \times d_{ff}}$</span>（$C$ 个 token，每个 token 的中间激活维度是 $d_{ff}$），当前 fast weights 为 <span class="sym">$W_{down}^{(i)} \in \mathbb{R}^{d_{ff} \times d_{model}}$</span>。</p>
+
+  <h3>操作 1：Apply</h3>
+  <div class="mathcard"><h4>Apply：用当前 fast weights 处理 chunk</h4>$$O_{[i]} = Z_{[i]} (W_{down}^{(i)})^\top$$<p class="note">$O_{[i]}$ 是第 $i$ 个 chunk 的输出（$C \times d_{model}$）。注意这就是标准 MLP 的最后一步——$W_{down}$ 把中间激活投影回模型维度。唯一的区别是 $W_{down}$ 现在是动态的，每个 chunk 可能不同。</p></div>
+
+  <h3>操作 2：Update</h3>
+  <p>Update 用 $Z_{[i]}$ 作为 key，用一个目标值 $\hat{V}_{[i]}$ 作为 value，通过一步梯度下降更新 $W_{down}$：</p>
+
+  <div class="mathcard"><h4>Update：一步梯度下降更新 fast weights</h4>$$W_{down}^{(i+1)} = W_{down}^{(i)} - \eta \nabla_{W_{down}} \mathcal{L}\big(Z_{[i]}(W_{down}^{(i)})^\top,\; \hat{V}_{[i]}\big)$$<p class="note">$\eta$ 是学习率，$\mathcal{L}$ 是损失函数（下一章详细讲），$\hat{V}_{[i]}$ 是目标值（value target）。注意这里的梯度只对 $W_{down}$ 求，不需要通过 $W_{up}$、$W_{gate}$ 或注意力层反向传播——计算非常轻量。</p></div>
+
+  <h3>为什么可以用大 chunk？</h3>
+  <p>之前的 TTT 方法（替换注意力层的）必须逐 token 更新，因为注意力本身是逐 token 因果的。但 In-Place TTT 只改 MLP 的 $W_{down}$，注意力层完全正常工作——chunk 内的 token 之间通过注意力交互，chunk 之间通过 $W_{down}$ 的更新传递信息。因此可以用大 chunk（512-1024），充分利用 GPU 并行性。</p>
+
+  <div class="compare-grid">
+    <div class="ccard"><h4>逐 token 更新（prior work）</h4><p>每个 token 做一次梯度下降。无法并行，GPU 利用率低。chunk 大小 = 1。</p></div>
+    <div class="ccard o"><h4>Chunk-wise 更新（本文）</h4><p>每 512-1024 个 token 做一次梯度下降。chunk 内并行，GPU 利用率高。计算量减少 512-1024 倍。</p></div>
+  </div>
+</section>
+
+<!-- ================= 5. LM 对齐目标 ================= -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 方法</div>
+  <h2>LM-Aligned 目标：让 TTT 学的东西直接帮助预测下一个 token</h2>
+
+  <p>上一章的 Update 操作中有一个关键组件：目标值 $\hat{V}_{[i]}$。这个目标值决定了 TTT 从输入中学到什么。这一章讲论文的第二个核心贡献：<strong>LM-Aligned 目标</strong>。</p>
+
+  <h3>之前的做法：重建目标</h3>
+  <p>之前的 TTT 方法用的是<strong>重建目标</strong>（reconstruction target）：让 fast weights 重建当前 token 的表示。具体来说，value $V$ 就是当前 token 的 embedding $E_{x_t}$。损失是让 Apply 的输出 $O$ 接近 $V$。</p>
+  <p>这意味着 TTT 在学"如何重建当前 token"——但这和 LLM 的最终目标"预测下一个 token"不是一回事。</p>
+
+  <h3>论文的做法：LM-Aligned 目标</h3>
+  <p>论文的核心想法是：<strong>既然 LLM 的目标是预测下一个 token，那 TTT 的目标也应该是"帮助预测下一个 token"</strong>。具体来说，value target 应该包含<strong>未来 token 的信息</strong>，而不是当前 token 的信息。</p>
+
+  <div class="mathcard"><h4>LM-Aligned target 的构造</h4>$$\hat{V} = \mathrm{Conv1D}(X_0) W_{target}$$<p class="note">$X_0 \in \mathbb{R}^{n \times d_{model}}$ 是 token embedding 序列，$\mathrm{Conv1D}(\cdot)$ 是 1D 卷积（核大小可控，决定"看多少个未来 token"），$W_{target} \in \mathbb{R}^{d_{model} \times d_{model}}$ 是可训练的投影矩阵。$\hat{V}$ 就是包含未来 token 信息的 value target。</p></div>
+
+  <h3>为什么用 Conv1D？</h3>
+  <p>Conv1D 的作用是把"当前 token 及其附近的未来 token"的 embedding 混合起来。通过设置卷积核的大小，可以控制"看多少个未来 token"：</p>
+  <ul>
+    <li>核大小 = 1，权重只取下一个 token = 纯 next-token target；</li>
+    <li>核大小 = k，权重取接下来 k 个 token 的加权组合 = 多 token target。</li>
+  </ul>
+  <p>论文指出，这和最近 Multi-Token Prediction（MTP）的思想一致——预测多个未来 token 比只预测一个能提供更丰富的学习信号。</p>
+
+  <h3>损失函数</h3>
+  <p>有了 $\hat{V}$，论文用最简单的相似度损失：</p>
+  <div class="mathcard"><h4>损失函数：负内积</h4>$$\mathcal{L}(O, \hat{V}) = -\langle O, \hat{V} \rangle_F$$<p class="note">$\langle \cdot, \cdot \rangle_F$ 是 Frobenius 内积（对应元素相乘再求和）。最小化这个损失等于最大化 Apply 输出 $O$ 和目标 $\hat{V}$ 的相似度。</p></div>
+
+  <p>用这个损失，Update 的梯度可以直接解析求出：</p>
+  <div class="mathcard"><h4>式 (1)：更新规则的解析形式</h4>$$W_{down}^{(i)} = W_{down}^{(i-1)} + \eta\; \hat{V}_{[i]}^\top Z_{[i]}$$<p class="note">注意这是一个<strong>纯外积累加</strong>：$\hat{V}_{[i]}^\top Z_{[i]}$ 是一个 $d_{model} \times d_{ff}$ 的矩阵（$\hat{V}$ 是 $C \times d_{model}$，$Z$ 是 $C \times d_{ff}$）。不需要任何反向传播——直接计算外积然后累加。这就是 In-Place TTT 高效的根本原因。</p></div>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>外积累加 = 最简单的联想记忆</h4>
+    <p>$W_{down}^{(i)} = W_{down}^{(i-1)} + \eta \hat{V}^\top Z$ 这个更新规则本质上是一个<strong>联想记忆</strong>（associative memory）：把 key $Z$ 和 value $\hat{V}$ 绑定在一起存进矩阵。之后当类似的 key 出现时，矩阵会"回忆"出对应的 value。这和 Hopfield 网络、现代线性注意力（linear attention）的更新规则完全同构——In-Place TTT 实际上是把 MLP 的 $W_{down}$ 变成了一个线性联想记忆。</p>
+  </div>
+</section>
+
+<!-- ================= 6. 理论证明 ================= -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 理论</div>
+  <h2>理论证明：为什么 LM-Aligned 目标比重建目标好？</h2>
+
+  <p>论文不只是"觉得"LM-Aligned 目标更好，还给出了一个正式的理论证明。这一章用通俗的语言解释这个证明。</p>
+
+  <h3>证明的设定：Induction Head</h3>
+  <p>证明在<strong>induction head</strong>的经典设定下进行。Induction head 是 Transformer 中 in-context learning 的核心机制：如果序列中出现过 $(k^*, v^*)$ 这个 key-value 对，之后当 $k^*$ 再次出现时，模型应该能预测出 $v^*$。</p>
+
+  <p>具体设定：</p>
+  <ul>
+    <li>在位置 $t^*$，出现 key-value 对 $(x_{t^*}, x_{t^*+1}) = (k^*, v^*)$；</li>
+    <li>在之后的位置 $n > t^*$，key $k^*$ 再次出现：$x_n = k^*$；</li>
+    <li>模型需要正确预测 $x_{n+1} = v^*$。</li>
+  </ul>
+
+  <h3>两个假设</h3>
+  <p>证明基于两个标准假设：</p>
+  <ol>
+    <li><strong>Embedding 近似正交</strong>：不同 token 的 embedding 几乎正交（内积很小），且每个 embedding 有非零的模长。这是 Transformer 理论分析中的标准假设。</li>
+    <li><strong>Key-Query 对齐</strong>：query 位置 $n$ 的中间激活 $Z_n$ 与对应 key 位置 $t^*$ 的中间激活 $Z_{t^*}$ 是对齐的（内积为正），与其他不相关位置的激活不对齐（期望内积为 0）。</li>
+  </ol>
+
+  <h3>比较两种目标</h3>
+  <p>在这个设定下，论文比较了 TTT 用两种不同目标时，对 query 位置 $n$ 的输出 logit 的影响：</p>
+  <ul>
+    <li><strong>重建目标</strong>：$V_t^{rec} = E_{x_t}$（当前 token 的 embedding）；</li>
+    <li><strong>LM-Aligned 目标</strong>：$V_t^{LM} = E_{x_{t+1}}$（下一个 token 的 embedding）。</li>
+  </ul>
+
+  <div class="theorem"><span class="tag">THEOREM 1</span>
+    <h4>LM-Aligned Target vs Reconstruction Target 的 Logit 效应</h4>
+    <p>在上述设定和假设下，经过一步 TTT 更新后：</p>
+    <p><strong>LM-Aligned 目标</strong>：</p>
+    <p>正确 token 的 logit 增加：$\mathbb{E}[\Delta \ell_n[v^*]] \geq \lambda_{lr} \cdot c_{norm}^2 \cdot c_{align} > 0$</p>
+    <p>其他 token 的 logit 几乎不变：$|\mathbb{E}[\Delta \ell_n[w]]| \leq \lambda_{lr} \cdot \epsilon \cdot c_{align}$（$\epsilon$ 很小）</p>
+    <p><strong>重建目标</strong>：</p>
+    <p>正确 token 的 logit 变化可忽略：$|\mathbb{E}[\Delta \ell_n[v^*]]| \leq \lambda_{lr} \cdot \epsilon \cdot c_{align}$</p>
+  </div>
+
+  <h3>这个定理说了什么？</h3>
+  <p>用最通俗的话说：</p>
+  <ul>
+    <li><strong>LM-Aligned 目标</strong>：TTT 更新后，正确答案 $v^*$ 的 logit 显著增加，其他答案的 logit 几乎不变——模型更可能预测出正确答案。</li>
+    <li><strong>重建目标</strong>：TTT 更新后，正确答案 $v^*$ 的 logit 几乎没有变化——模型学了等于白学。</li>
+  </ul>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>为什么重建目标没用？因为它学的是"当前 token 是什么"，而不是"下一个 token 是什么"</h4>
+    <p>在 induction head 设定中，关键信息是"$k^*$ 后面跟着 $v^*$"。重建目标让 fast weights 记住"$k^*$ 是 $k^*$"（当前 token 的重建），这对预测"$k^*$ 后面是什么"没有帮助。LM-Aligned 目标让 fast weights 记住"$k^*$ 后面是 $v^*$"（下一个 token 的信息），这直接帮助预测。这就是定理的直觉——目标必须和最终任务对齐，否则学的东西用不上。</p>
+  </div>
+</section>
+
+<!-- ================= 7. 实现细节 ================= -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 方法</div>
+  <h2>实现细节：上下文并行与因果性保证</h2>
+
+  <h3>上下文并行（Context Parallelism）</h3>
+  <p>In-Place TTT 的更新规则（式 1）是一个<strong>外积累加</strong>，具有结合律（associative）。这意味着它可以用<strong>并行扫描（parallel scan）</strong>算法来实现上下文并行：</p>
+  <ol>
+    <li><strong>并行计算</strong>：所有 chunk 的中间激活 $Z_{[i]}$ 和更新量 $\Delta W_{[i]} = \hat{V}_{[i]}^\top Z_{[i]}$ 同时计算；</li>
+    <li><strong>前缀和</strong>：对 $[\Delta W_{[1]}, \Delta W_{[2]}, \ldots]$ 做一次前缀和（prefix sum），得到每个 chunk 的累积更新 $\Delta S_i = \sum_{j=1}^{i-1} \Delta W_{[j]}$；</li>
+    <li><strong>并行输出</strong>：每个 chunk 的有效 fast weights $W_{down}^{(i-1)} = W_{down}^{(0)} + \eta \Delta S_i$ 和输出 $O_{[i]} = Z_{[i]}(W_{down}^{(i-1)})^\top$ 同时计算。</li>
+  </ol>
+  <p>这使得 In-Place TTT 完全兼容现代 LLM 的上下文并行训练框架。</p>
+
+  <h3>因果性保证</h3>
+  <p>并行扫描的一个风险是"信息泄露"——chunk $i$ 的更新不能包含 chunk $i$ 之后的信息。论文通过两个设计保证因果性：</p>
+  <ol>
+    <li><strong>因果卷积</strong>：生成 $\hat{V}$ 时，Conv1D 使用因果填充（causal padding），确保每个位置的 $\hat{V}$ 只包含当前及之前的 token 信息；</li>
+    <li><strong>前缀和的方向</strong>：$\Delta S_i = \sum_{j=1}^{i-1} \Delta W_{[j]}$ 只累加 chunk $i$ 之前的更新，不包含 chunk $i$ 自身及之后的更新。</li>
+  </ol>
+
+  <h3>文档边界处理</h3>
+  <p>在文档边界（一个文档结束、下一个文档开始），fast weights 被重置为预训练状态 $W_{down}^{(0)}$，防止不同文档之间的上下文泄露。</p>
+
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>In-Place TTT 与线性注意力的深层联系</h4>
+    <p>式 (1) 的更新规则 $W_{down}^{(i)} = W_{down}^{(i-1)} + \eta \hat{V}^\top Z$ 和线性注意力（linear attention）的状态更新规则完全同构。线性注意力用 $K^\top V$ 作为记忆状态，In-Place TTT 用 $Z^\top \hat{V}$ 作为 $W_{down}$ 的更新量。区别在于：线性注意力的状态是外部的（随序列增长），In-Place TTT 的状态是参数本身（常数大小）。可以说 In-Place TTT 是把线性注意力的记忆"内化"进了 MLP 参数。</p>
+  </div>
+</section>
+
+<!-- ================= 8. 实验 ================= -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 实验</div>
+  <h2>实验结果：Drop-in 增强与从头预训练均优于竞品</h2>
+
+  <p>论文用 Qwen3-4B-Base 模型，在 128K 上下文上做实验，回答三个研究问题：</p>
+  <ol>
+    <li><strong>Q1</strong>：In-Place TTT 能否以 drop-in 方式增强已预训练的 LLM？</li>
+    <li><strong>Q2</strong>：从头预训练时，In-Place TTT 与 prior TTT 方法相比如何？</li>
+    <li><strong>Q3</strong>：关键设计选择的效果是什么？</li>
+  </ol>
+
+  <h3>Q1：Drop-in 增强</h3>
+  <p>在已预训练的 Qwen3-4B-Base 上，直接把 MLP block 替换为 In-Place TTT MLP（不需要重新预训练），在 RULER benchmark 上评估。结果显示 In-Place TTT 作为 drop-in 增强显著优于基线和竞品。</p>
+
+  <figure>
+    <img src="figures/fig2_swp.png" alt="与 SWP 等方法对比">
+    <figcaption><b>图 2（论文 Figure 2）</b>：In-Place TTT 与 Sliding Window Parallelism（SWP）等方法的对比。</figcaption>
+  </figure>
+
+  <h3>Q2：从头预训练</h3>
+  <p>从头预训练时，In-Place TTT 也优于 prior TTT-related 方法。这验证了 In-Place TTT 不只是"能增强已有模型"，作为从头训练的架构也有竞争力。</p>
+
+  <h3>关键指标</h3>
+  <p>RULER benchmark 覆盖多种长上下文任务（needle-in-a-haystack、多文档问答等），在 4K 到 128K 的不同上下文长度上评估。In-Place TTT 在长上下文（64K、128K）上的提升尤为显著。</p>
+</section>
+
+<!-- ================= 9. 消融 ================= -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 消融</div>
+  <h2>消融实验：验证每个设计选择</h2>
+
+  <figure>
+    <img src="figures/fig3_ablation.png" alt="消融实验">
+    <figcaption><b>图 3（论文 Figure 3）</b>：各消融条件下的性能。</figcaption>
+  </figure>
+
+  <p>论文的消融实验验证了以下设计选择：</p>
+  <ul>
+    <li><strong>LM-Aligned vs 重建目标</strong>：LM-Aligned 目标显著优于重建目标，验证了定理 1 的预测；</li>
+    <li><strong>Chunk 大小</strong>：大 chunk（512-1024）优于小 chunk，因为更好的 GPU 并行性；</li>
+    <li><strong>更新哪些层</strong>：更新所有 MLP 的 $W_{down}$ 优于只更新部分层；</li>
+    <li><strong>学习率</strong>：存在最优学习率范围，过大导致不稳定，过小导致更新不足。</li>
+  </ul>
+
+  <figure>
+    <img src="figures/fig4_efficiency.png" alt="效率分析">
+    <figcaption><b>图 4（论文 Figure 4）</b>：In-Place TTT 的计算效率分析。</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 10. 批判 ================= -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 批判与开放问题</div>
+  <h2>批判评估与未来方向</h2>
+
+  <div class="critique-box"><span class="tag">C1</span><h4>只更新 $W_{down}$ 的表达能力有限</h4><p>In-Place TTT 只更新 MLP 的最终投影矩阵 $W_{down}$，这是一个纯线性变换。相比之下，E2E TTT 更新整个 MLP 层（包括非线性）。只更新线性层的表达能力是否足够处理复杂的长上下文推理？论文的实验显示在 RULER 上有效，但在更复杂的推理任务（如长链数学证明、多步代码生成）上可能不够。</p></div>
+
+  <div class="critique-box"><span class="tag">C2</span><h4>外积累加的记忆容量问题</h4><p>更新规则是外积累加 $W_{down} \mathrel{+}= \eta \hat{V}^\top Z$。这本质上是一个秩-1 更新的累加。当上下文很长时，大量秩-1 更新叠加在一起，可能导致"记忆干扰"（memory interference）——新信息覆盖旧信息。论文没有分析 $W_{down}$ 的有效记忆容量（能存多少个独立的 key-value 对）。</p></div>
+
+  <div class="critique-box"><span class="tag">C3</span><h4>理论证明只在 induction head 设定下</h4><p>Theorem 1 的证明在简化的 induction head 设定下进行，假设了 embedding 近似正交和 key-query 对齐。在真实的 LLM 中，这些假设可能不完全成立。定理的结论在多大程度上能推广到真实场景？论文用实验验证了，但理论和实验之间仍有差距。</p></div>
+
+  <div class="critique-box"><span class="tag">C4</span><h4>Drop-in 替换需要微调吗？</h4><p>论文说 In-Place TTT 是 drop-in 替换，不需要重新预训练。但直接替换后，$W_{down}$ 的初始值是预训练值，而 TTT 的学习率 $\eta$ 和 chunk 大小 $C$ 是新的超参数。这些超参数是否需要在目标数据上微调？论文没有详细讨论 drop-in 后的超参数选择过程。</p></div>
+
+  <h3>开放问题</h3>
+  <ol>
+    <li><strong>更新更多参数</strong>：能否在保持高效的同时，更新 $W_{up}$ 和 $W_{gate}$？这会增加表达能力，但也会增加计算量。</li>
+    <li><strong>自适应学习率</strong>：目前 $\eta$ 是固定的。能否根据输入内容自适应调整学习率（重要信息多学，噪声少学）？</li>
+    <li><strong>与 E2E TTT 的结合</strong>：In-Place TTT 高效但表达能力有限，E2E TTT 表达能力强但计算贵。能否结合两者——用 In-Place TTT 做高效的基础更新，用 E2E TTT 做关键位置的深度更新？</li>
+    <li><strong>多模态扩展</strong>：In-Place TTT 的 $W_{down}$ 更新机制是通用的，能否扩展到视觉编码器（ViT）或多模态模型中？</li>
+  </ol>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献</h3>
+  <ol>
+    <li>Feng et al. <em>In-Place Test-Time Training</em>. <a href="https://arxiv.org/abs/2604.06169">arXiv:2604.06169</a>, 2026.</li>
+    <li>Tandon et al. <em>End-to-End Test-Time Training for Long Context</em>. arXiv:2512.23675, 2025.</li>
+    <li>Zhang et al. <em>Long-Context Language Modeling with Test-Time Training (TTT-KVB)</em>. 2025.</li>
+    <li>Sun et al. <em>Test-Time Training with Masked Autoencoders</em>. ICML 2020.</li>
+    <li>Olsson et al. <em>In-Context Learning and Induction Heads</em>. Transformer Circuits Thread, 2022.</li>
+    <li>Dao and Gu. <em>Mamba 2</em>. 2024.</li>
+  </ol>
+  <div class="fin">In-Place TTT 深度解读（可读性增强版 v2）· 原版备份于 index_v1_backup.html · 2026-10-08</div>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,2230 @@
+===== PAGE 0 =====
+Dynamic Parametric Retrieval Augmented Generation
+for Test-time Knowledge Enhancement
+Yuqiao Tan1,2, Shizhu He1,2 ∗, Huanxuan Liao1,2, Jun Zhao1,2, Kang Liu1,2
+1 The Key Laboratory of Cognition and Decision Intelligence for Complex Systems,
+Institute of Automation, Chinese Academy of Sciences, Beijing, China
+2 School of Artificial Intelligence, University of Chinese Academy of Sciences, Beijing, China
+{tanyuqiao2025, liaohuanxuan2023}@ia.ac.cn {shizhu.he, jzhao, kliu}@nlpr.ia.ac.cn
+https://github.com/Trae1ounG/DyPRAG
+Abstract
+Retrieval-augmented generation (RAG) enhances large language models (LLMs)
+by retrieving relevant documents from external sources and incorporating them into
+the context. While it improves reliability by providing factual texts, it significantly
+increases inference costs as context length grows and introduces challenging issue
+of RAG hallucination, primarily caused by the lack of corresponding parametric
+knowledge in LLMs. An efficient solution is to enhance the knowledge of LLMs at
+test-time. Parametric RAG (PRAG) addresses this by embedding document into
+LLMs parameters to perform test-time knowledge enhancement, effectively reduc-
+ing inference costs through offline training. However, its high training and storage
+costs, along with limited generalization ability, significantly restrict its practical
+adoption. To address these challenges, we propose Dynamic Parametric RAG
+(DyPRAG), a novel framework that leverages a lightweight parameter translator
+model to efficiently convert documents into parametric knowledge. DyPRAG not
+only reduces inference, training, and storage costs but also dynamically gener-
+ates parametric knowledge, seamlessly enhancing the knowledge of LLMs and
+resolving knowledge conflicts in a plug-and-play manner at test-time. Extensive
+experiments on multiple datasets demonstrate the effectiveness and generalization
+capabilities of DyPRAG, offering a powerful and practical RAG paradigm which
+enables superior knowledge fusion and mitigates RAG hallucination in real-world
+applications.
+1
+Introduction
+Knowledge-intensive tasks, such as question answering (QA), require leveraging extensive world
+and domain knowledge [20; 22]. While Large Language Models (LLMs) have demonstrated impres-
+sive capabilities across various tasks and fields [28], they struggle to handle knowledge-intensive
+tasks independently due to limitations in accessing external knowledge and a tendency to generate
+hallucinated information [10].
+To mitigate incorrect internal knowledge and improve performance in QA, researchers have developed
+knowledge-augmented methods for LLMs. One of the most used methods called Retrieval-Augmented
+Generation (RAG) [13], which retrieves relevant documents from external sources (e.g., Wikipedia)
+and integrates both the retrieved documents and the query into the model’s input [17] (as shown
+in Figure 1 (a)). Standard RAG methods [3; 18; 39] share a common approach: injecting external
+knowledge into LLMs by appending retrieved documents to the input context, referred to as in-
+context injection. This technique harnesses the reasoning capabilities of LLMs to address knowledge
+Preprint. Under review.
+∗Corresponding author
+arXiv:2503.23895v4  [cs.CL]  6 May 2025
+
+===== PAGE 1 =====
+gaps and reduce misinformation [5]. However, it introduces several challenges. As the number and
+length of retrieved documents increase, the extended context leads to significantly higher inference
+costs. Additionally, when the internal knowledge of LLMs conflicts with the external context, a
+phenomenon known as RAG hallucination (or knowledge conflict) arises, causing LLMs to produce
+incorrect answers even when accurate documents are provided [53; 42].
+Injection
+   Question
+(a) Retrieval Augmented Generation (RAG)
+Retrieve
+Retrieved Documents
+    Answer
+(b) Parametric Retrieval Augmented Generation (PRAG)
+(c) Dynamic Parametric Retrieval Augmented Generation (DyPRAG)
+Generate
+In-Context
+Generate
+Parameter
+⊕
+   Question
+Retrieved Fine-tuned Adapters
+Retrieve
+Injection
+    Answer
+   Question
+Retrieve
+Generate
+    Answer
+Parameter
+Translator
+Inference
+Cost
+Training
+Cost
+Storage
+Cost
+Generalization
+Ability
+RAG
+Hallucination
+Cost Comparison
+Ability Comparison
+Trainable
+Frozen
+⊕Concat
+Merge
+Very Good
+Not Bad
+Bad
+LLM
+LLM
+LLM
+Figure 1: Compared to RAG and PRAG, the pro-
+posed DyPRAG offers multiple advantages, in-
+cluding lower inference, training and storage cost,
+strong generalization ability, and mitigation of
+RAG hallucination.
+Parametric RAG (PRAG) employs another way
+of injecting knowledge which integrates exter-
+nal knowledge directly into the parameters of
+LLMs, known as parameter injection (in Fig-
+ure 1 (b)). PRAG first rewrites retrieved docu-
+ments and transforms them into QA pairs, fa-
+cilitating knowledge memorization and manip-
+ulation [1; 2]. The workflow of PRAG is di-
+vided into two stages. During the offline phase,
+these augmented documents are fine-tuned with
+LoRA [16], encoding contextual knowledge di-
+rectly into parameters. In the online phase, re-
+trieved documents are replaced with loadable
+parameters. However, this approach has sig-
+nificant trade-offs. Augmenting, training, and
+storing parameters for each retrieved document
+incurs high computational and storage costs, coupled with non-generalization, severely limiting
+scalability in real-world applications (e.g., systems in domains requiring frequent knowledge updates
+or multi open-domain QA tasks). This presents a critical challenge for PRAG: how can we min-
+imize the overhead of converting documents into parametric knowledge without compromising
+performance?
+In this work, we propose Dynamic Parametric RAG (DyPRAG), a lightweight framework that
+converts documents into parameters directly, making DyPRAG seamlessly enhance the knowledge of
+LLMs in a plug-and-play manner at test-time (as shown in Figure 1 (c)). Rethinking of PRAG, its
+intrinsic goal is to obtain an underlying mapping function F which transforms external documents
+into parameters through augmentation and training for each document. Building on this insight,
+we aim to establish a more generalized mapping function by directly modeling F with a small
+hypernetwork F′
+ϕ, referred to as parameter translator. With well-trained F′
+ϕ, DyPRAG eliminates the
+need for the cumbersome training and storage process required by PRAG. After a detailed analysis
+of computation and storage overhead, our method significantly reduces the high inference costs of
+traditional RAG while eliminating the rigid training and storage costs of PRAG.
+Through extensive experiments, we derive two key findings: 1) DyPRAG enhances the test-time
+parametric knowledge of LLMs effectively. During evaluation, DyPRAG outperforms standard
+RAG across different scales of LLMs, demonstrating its ability to enhance the internal knowledge of
+LLMs. Furthermore, although PRAG learns F by training separately for each document, DyPRAG
+achieves comparable or even better performance in various scenarios with significantly lower costs.
+2) Combining test-time generated parametric knowledge with contextual knowledge leads to
+superior knowledge fusion. Following [41], we further investigate the combination of in-context
+injection and parameter injection, referred to as DyPRAG-Combine. In both independent identically
+distributed and out-of-distribution settings, DyPRAG-Combine achieves the best results, showing
+strong generalization ability. Additionally, we find that DyPRAG-Combine effectively relieves RAG
+hallucination by first injecting context-related parameters to reduce the knowledge conflicts. Based
+on the experimental results on RAGTruth [35] benchmark, we observe that DyPRAG-Combine
+enables LLMs to internalize previous unseen knowledge. This suggests that integrating parametric
+and contextual knowledge using DyPRAG could be a powerful approach for building a trustworthy
+RAG system in real-world applications. We summarize our contributions as follows:
+• We propose Dynamic Parametric RAG (DyPRAG), a lightweight framework to efficiently
+convert documents into parameters in a plug-and-play manner with minimal cost.
+• We introduce a powerful and practical RAG paradigm that effectively combines contextual
+knowledge with test-time generated parametric knowledge, enabling superior knowledge
+fusion.
+2
+
+===== PAGE 2 =====
+• Experimental results show that DyPRAG excels in generalization, efficiently injects param-
+eters, and seamlessly incorporates contextual knowledge, enhancing performance while
+reducing RAG hallucination.
+2
+Related Work
+2.1
+Retrieval Augmented Generation
+Large language models (LLMs) have demonstrated remarkable performance across diverse applica-
+tions. However, their inherent knowledge often falls short in handling knowledge-intensive tasks,
+highlighting the need for external knowledge integration to ensure robust performance in such con-
+texts. A prominent approach to bridging this gap is Retrieval-Augmented Generation (RAG), which
+enhances LLMs by incorporating relevant external knowledge sources [4; 46; 47; 14]. The retrieved
+documents are appended to the LLM’s input context, enabling it to leverage knowledge beyond its
+training data [24]. We refer to this as the in-context injection paradigm. However, this approach leads
+to high inference costs and can exceed context length limits as the number and length of retrieved
+documents increase [50]. To address this issue, recent study introduces Parametric RAG (PRAG) [41],
+a paradigm that fine-tunes the model on augmented documents, encoding useful information into its
+parameters. While PRAG mitigates the inference cost, it introduces additional training and storage
+costs due to the need to obtain and store LoRA parameters. Our proposed method significantly
+reduces the high costs associated with standard RAG and PRAG while achieving superior generaliza-
+tion. By combining contextual knowledge with test-time generated parametric knowledge through
+DyPRAG, it enables LLMs to better manipulate knowledge, effectively mitigating RAG hallucination.
+This makes it a more practical and robust solution for real-world applications.
+2.2
+Context Compression
+Context compression is widely adopted to improve the efficiency of LLMs in processing contextual
+knowledge. Recent studies [34; 11; 8] propose condensing long contexts into soft prompts, allowing
+LLMs to utilize information more effectively. Meanwhile, other works [31; 48] focus on transforming
+context chunk into LoRA modules to improve the understanding ability of extended contexts while
+xRAG [7] integrates context compression by mapping documents into a compact token representation.
+Similarly, AAG [26] draws inspiration from human cognition, retrieving and recalling relevant
+knowledge to compensate for knowledge gaps. This approach activates relevant information within
+LLMs without relying on external resources. Our proposed method dynamically converts retrieved
+documents into parameters, effectively unifying internal and external knowledge while mitigating
+RAG hallucination issue. Furthermore, it functions as a plug-and-play solution to enhance the
+efficiency and adaptability of standard RAG systems by test-time parametric knowledge enhancement.
+3
+Methodology
+In this section, we introduce the Dynamic Parametric RAG framework, as shown in Figure 2. We first
+formulate the problem and review the previous PRAG framework. Specifically, we revisit the offline
+document parameterization process, which transforms documents into parametric representations
+through Document Augmentation and Document Parameterizing, following [41]. Subsequently,
+we present our Parameter Translation process, which learns the underlying function to map
+document embeddings into adapter parameters (e.g., LoRA [16]). Once the translator is well
+optimized, retrieved documents can be directly converted into parametric representations. These
+representations can then be efficiently integrated into the LLMs, enhancing response quality while
+reducing inference, training, and storage costs at test-time.
+3.1
+Preliminary of Parametric RAG
+This subsection introduces the problem formulation of the RAG task and outlines the static Parametric
+RAG pipeline proposed in [41].
+Standard RAG.
+Let M denote a large language model (LLM) with base parameters Θ. Given a
+user query q, the task is to generate an accurate response informed by an external corpus C, expressed
+3
+
+===== PAGE 3 =====
+Merged LoRA
+LLM
+1.2 Document             
+Parametrization
+A. DyPRAG Offline Phase
+��
+2.1 Encode
+Parameter
+Translator
+Input
+...
+...
+ℒmse
+ℒ��
+ℒpred
+2.2 Translate
+B. DyPRAG Online Phase
+Question
+�1
+�2
+��
+Σ
+3.1 Retrieve
+3.2 Encode
+3.3 Translate
+LLM
+3.4 Inference
+Parameter
+Translator
+Stage 1: Doc-Param Pairs Collection
+Stage 2: DyPRAG Training
+Dynamic
+LoRAs
+Stage 3: DyPRAG Inference
+...
+...
+...
+��
+ 
+1.1 Document
+ 
+Augmentation
+...
+...
+...
+...
+Augmented Documents ��
+Fine-tuned LoRAs ��
+...
+Retrieved Documents ��
+...
+...
+2.3 Train
+Figure 2: An illustration of the DyPRAG method. In the offline phase, Stage 1 follows the same
+parameterization process as PRAG to collect Doc-Param pairs. In Stage 2, we train the parameter
+translator F′
+ϕ to learn the mapping function from documents to parameters. During the online Stage
+3, the trained F′
+ϕ dynamically generates LoRA modules to enhance LLMs knowledge at test-time.
+as C = {d1, d2, . . . , dN}. Each element di , referred to as a document, represents a text chunk
+retrieved from Wikipedia in our experiments [17]. To achieve this, a retrieval module R is employed
+to compute relevance scores between q and the documents in C. The traditional RAG approach selects
+the top-c documents with the highest similarity scores and concatenates them with the user query to
+form the input context. Using this augmented input, M generates the response by leveraging both the
+query and the retrieved knowledge. This procedure, referred to as In-context Injection, significantly
+increases inference costs as the context length and the number of selected documents grow.
+Parametric RAG.
+In contrast, Parametric RAG (PRAG) integrates documents directly into the
+parameters of M to reduce the cost associated with long contexts. Each document di ∈C is
+transformed offline into a parametric representation pi = F(di), where F is a underlying mapping
+function that converts each document di into its corresponding parametric representation pi. To
+achieve a more effective mapping, PRAG employs Document Augmentation, inspired by [1], to
+help the model memorize and manipulate the information contained in the document di. Specifically,
+PRAG uses M to rewrite di into multiple variations, resulting in {d1
+i , d2
+i , . . . , dn
+i }. Additionally,
+for each original document di, PRAG prompts M to generate m question-answer (QA) pairs:
+{(q1
+i , a1
+i ), (q2
+i , a2
+i ), . . . , (qm
+i , am
+i )}, where n and m are controllable hyperparameters. This augmented
+set of documents preserves the factual content of the original document while incorporating diverse
+linguistic variations, expressed as:
+Di =
+
+(di
+k, qi
+j, ai
+j)
+ k ∈[1, n], j ∈[1, m]
+	
+,
+(1)
+where each (dk
+i , qj
+i , aj
+i) triple is then concatenated to a training sample x = [dk
+i ⊕qj
+i ⊕aj
+i]. For
+Document Parameterizing, PRAG utilizes LoRA [16] approach to encode parametric knowledge
+for each Di where the overall goal is to optimize:
+min
+∆Θ
+X
+(di
+k,qi
+j,ai
+j)∈Di
+T
+X
+t=1
+−log PΘ+∆Θ
+ xt
+ x<t
+
+,
+(2)
+where ∆Θ is the trainable low-rank matrix and only apply to feed-forward network (FFN), we refer
+this paradigm to as Parameter Injection. Notably, although this method eliminates the use of
+documents as context, it further introduces significant training cost and storage cost, which will be
+analyzed in later section.
+4
+
+===== PAGE 4 =====
+3.2
+Dynamic Parametric RAG
+In this section, we describe the detailed process of our newly proposed Dynamic Parametric RAG
+(DyPRAG) paradigm. To summarize the previous PRAG, its primary goal is to obtain a well-
+performing mapping function F through augmentation and training for each document di. However,
+this intricate process is impractical for real-world scenarios as it requires repeating these steps and
+consuming significant computing resources and time when faced with new documents or queries.
+We argue that the key to optimization lies in addressing the question: How to obtain a generalized
+mapping function F? To solve this, we propose a three-stage dynamic framework designed to enable
+parameter injection in an effective and efficient manner.
+Doc-Param Pairs Collection.
+To derive the general mapping function F, we start by collecting
+a set of document-parameter (Doc-Param) pairs using the method described in Sec. 3.1. For each
+document di, we collect its corresponding parametric representation pi, forming the alignment set
+K = {(d1, p1), (d2, p2), . . . , (dN, pN)}.
+Dynamic Parametric RAG Training.
+After obtaining the alignment set K, we utilize the original
+LLM M to encode textual documents into embeddings. For a given document di, we extract the
+last hidden state si ∈Rh at the final token position before transforming it into the vocabulary
+space, where h represents the hidden dimension of M. To model the implicit relationship between
+documents and parameters, we design a simple hypernetwork called Parameter Translator F′
+ϕ
+to translate si into parametric representation. This hypernetwork consists of several linear layers
+parameterized by a base parameter ϕ. As an example, consider the up-project module in FFN. The
+standard LoRA process as follows:
+W ′ = W + ∆W = W + BA
+(3)
+where W ∈Rh×k, B ∈Rh×r and A ∈Rr×k. k represents the intermediate dimension of FFN and
+r is the controllable rank of LoRA matrices. During training phase, F′
+ϕ performs separately on B
+and A. Formally:
+Bl = Reshape(W l,B
+up Relu(W l,B
+down(si ⊕idxl)))
+(4)
+where W l,B
+down ∈Rp×(h+1) and W l,B
+up
+∈Rhr×p. Here, p represents the tunable intermediate di-
+mension of the MLP module in F′
+ϕ, and Reshape(·) reshapes the output vector into the shape of B.
+This process is applied at each layer l, so we concatenate the layer index with si. We provide the
+visualization of this workflow in Figure 13. A similar procedure is followed for matrices A and in
+other modules of FFN. The parametric representation generated by F′
+ϕ is denoted as p′
+i. Our goal is
+for it to perform as effectively as pi.
+To align with PRAG [41], we utilize the augmented dataset Di and the same objective function as
+presented in Eq. 2 to optimize F′
+ϕ which corresponds to Lpred. Additionally, for the target LoRA
+adapter pi, we employ Lmse to compute the difference between the generated parameters and the
+target parameters. The Kullback-Leibler divergence, denoted as Lkl, quantifies the discrepancy in
+word probability distributions between the two models, with the model using pi serving as the target
+distribution to be imitated. The overall formulation is given by:
+Lmse = MSE(pi, F′
+ϕ(di))
+(5)
+Lkl = KL(PΘ+pi(x | Di), PΘ+F′
+ϕ(di)(x | Di))
+(6)
+Lalign = Lpred + λ1Lmse + λ2Lkl
+(7)
+where we calculate the overall alignment loss for each document di, λ1 and λ2 are tunable hyper-
+parameter which set to 100 and 0.01 separately to make loss range similar.
+Dynamic Parametric RAG Inference.
+During the inference stage, once a well-trained parameter
+translator F′
+ϕ is obtained, we can efficiently perform parameter injection while significantly reducing
+inference costs. For a test query qt, we rerun the retrieval process using the retrieval module R to
+select the most relevant documents. For each selected document dt
+i, we derive its embedding st
+i and
+input it into F′
+ϕ to obtain the dynamic LoRA adapter pt,′
+i , which encodes the relevant information
+from the document in parameter modality [7]. We then merge this as the LoRA parameter for
+inference, resulting in low inference costs without requiring a concatenated context.
+5
+
+===== PAGE 5 =====
+3.3
+Computation and Storage Cost Analysis
+We present an initial pilot analysis and a broad evaluation of computation and storage costs across
+three baseline methods. More detailed analysis of time complexity is provided in Appendix A.
+Computation Cost.
+The computation cost in RAG is primarily the in-context inference cost,
+whereas PRAG introduces additional training and inference costs due to augmentation and offline
+parametrization. Suppose the average token count of document d is |d|. As noted in [41], the
+augmentation process typically generates about 2|d| tokens, leading to an augmentation cost of 3|d|.
+When training the target LoRA, a forward pass over 3|d| tokens and a backward pass over 6|d| tokens
+(typically twice the forward pass cost) result in a total training cost of 9|d|. Although these tasks can
+be performed offline, it still requires a long time and do not generalize to new questions with newly
+retrieved documents. In contrast, our DyPRAG approach offers a more practical solution by requiring
+only N Doc-Param pairs while even a small N can achieve powerful performance, significantly
+reducing costs for augmentation and training. The cost of MLP-based F′
+ϕ is negligible compared to
+Transformer-based LLMs [45].
+The primary advantage of PRAG is the reduction of inference cost. Let |q| denote the length of
+the question, c represent the number of retrieved documents. The inference context of PRAG and
+DyPRAG is |q|, whereas in-context injection RAG requires c|d| + |q|. The parameterization process
+significantly reduces the inference cost, especially when |d| and c grow larger. Notably, the inference
+cost is also closely tied to the length of model response. DyPRAG demonstrates an improved ability
+to internalize knowledge, resulting in shorter responses that effectively reduce costs (in Figure 7).
+Storage Cost.
+One of the main shortcomings of PRAG is the storage cost associated with pi. Let r
+denote the LoRA rank, L the number of Transformer layers, h the hidden size, and k the intermediate
+size of the FFN. The number of parameters in the parametric representation of a document is
+6Lr(h + k). For instance, in the Qwen2.5-1.5B model (which has 28 layers, a hidden dimension of
+1536, and an intermediate size of 8960), setting r to 2 results in approximately 3.53M parameters,
+storing 6.73MB in 16-bit precision for each parametric representation. In our following experiments,
+we need to store 18.66GB offline parameters for Qwen2.5-1.5B, presenting a significant cost.
+In contrast, our DyPRAG only needs to save the weights of F′
+ϕ. As we set the intermediate size p of
+the F′
+ϕ to 2, the total number of parameters for the Qwen2.5-1.5B model is 3L(phr+2p(h+1)+pkr)
+as we configure separate translators for up-proj, down-proj, and gate-proj. This amounts to about
+4.04M parameters, storing only 7.71MB (0.04% of PRAG) in 16-bit precision. The reduced storage
+cost makes it negligible compared to its generalization ability when used in real applications.
+4
+Experiments
+4.1
+Experiments Details
+Datasets.
+We assess our approach using a variety of benchmark datasets, each specifically crafted
+to evaluate distinct reasoning abilities, including multi-hop reasoning and commonsense inference.
+The selected datasets are 2WikiMultihopQA (2WQA) [15], HotpotQA (HQA) [52], PopQA
+(PQA) [30] and ComplexWebQuestions (CWQ) [43]. We provide detailed information about these
+datasets in Appendix B.1.
+Evaluation Metrics.
+For evaluation, we use the F1 score (%), which balances precision and recall
+by accounting for partially correct answers. Both 2WQA and HQA categorize questions by reasoning
+type, with 2WQA having four categories and HQA two. To compare DyPRAG with other RAG
+baselines across reasoning tasks, Table 1 and 6 report performance on each sub-task separately, using
+the first 300 questions from each sub-dataset, following [41].
+Implementation Details.
+To ensure broad effectiveness across models, we select LLMs of varying
+scales and series, including Qwen2.5-1.5B-Instruct [51], LLaMA-3.2-1B-Instruct [32] and LLaMA-
+3-8B-Instruct [33]. For our base experiments, we collect 200 additional questions from each non-
+overlapping sub-dataset. The number of retrieved documents c is set to 3, resulting in a alignment set
+K of 4,800 samples for the parameter translator. The intermediate size p is set to 32. All experiments
+6
+
+===== PAGE 6 =====
+Table 1: The experimental results of DyPRAG are compared with parametric RAG and standard
+RAG methods. All metrics are reported as F1 scores (%). The best performance is bolded, while the
+second-best is underlined. The Avg is the average performance over all sub-tasks.
+Base LLM
+Method
+2WQA
+HQA
+PQA
+CWQ
+Avg
+Compare
+Bridge
+Inference
+Compose
+Total
+Bridge
+Compare
+Total
+LLaMA3.2-1B
+Vanilla
+42.89
+24.17
+16.91
+7.87
+22.52
+13.25
+40.26
+18.79
+2.26
+34.94
+22.39
+Standard RAG
+41.23
+26.78
+22.51
+10.21
+23.12
+21.38
+42.46
+27.14
+17.65
+37.39
+26.99
+PRAG
+50.20
+24.34
+19.11
+8.24
+27.73
+13.65
+40.90
+21.50
+23.58
+35.86
+26.51
+PRAG-Combine
+40.50
+31.30
+22.85
+9.77
+30.30
+22.56
+41.55
+28.31
+32.59
+39.63
+29.94
+DyPRAG (ours)
+51.25
+48.15
+17.35
+7.54
+25.31
+14.05
+43.90
+19.97
+11.33
+36.86
+27.57
+DyPRAG-Combine (ours)
+52.13
+46.19
+22.54
+12.60
+29.18
+22.05
+43.78
+26.58
+29.93
+38.96
+31.80
+Qwen2.5-1.5B
+Vanilla
+45.74
+39.06
+17.04
+7.27
+26.87
+12.18
+39.46
+17.76
+2.87
+26.47
+25.79
+Standard RAG
+38.75
+38.84
+11.87
+5.68
+24.31
+16.19
+37.13
+20.73
+9.97
+28.23
+23.17
+PRAG
+44.96
+43.96
+19.29
+11.14
+27.55
+13.27
+40.42
+18.42
+21.55
+30.82
+27.14
+PRAG-Combine
+40.50
+44.00
+16.30
+8.17
+27.49
+18.86
+36.49
+23.10
+23.43
+32.13
+27.05
+DyPRAG (ours)
+43.03
+47.20
+17.04
+8.55
+26.46
+13.72
+41.39
+19.67
+6.64
+31.94
+25.56
+DyPRAG-Combine (ours)
+35.83
+44.89
+14.81
+8.64
+25.18
+21.56
+41.25
+27.57
+22.69
+33.57
+27.60
+LLaMA3-8B
+Vanilla
+54.90
+55.20
+24.59
+14.43
+33.02
+19.00
+45.63
+21.29
+7.96
+42.44
+31.85
+Standard RAG
+58.43
+47.77
+19.20
+11.07
+34.55
+19.68
+42.10
+24.23
+16.13
+35.45
+30.86
+PRAG
+57.78
+58.93
+27.61
+19.17
+39.19
+33.68
+65.88
+38.08
+26.13
+43.54
+41.00
+PRAG-Combine
+60.13
+56.69
+32.71
+20.91
+40.55
+39.41
+68.22
+44.84
+26.23
+36.41
+42.61
+DyPRAG (ours)
+57.39
+56.43
+25.33
+18.88
+37.80
+24.85
+58.59
+28.56
+13.60
+41.87
+36.23
+DyPRAG-Combine (ours)
+66.00
+59.46
+35.78
+26.90
+50.24
+33.37
+57.93
+38.35
+32.86
+39.07
+43.69
+were conducted using PyTorch on NVIDIA A100 GPUs (80GB) and 3090 GPUs (24GB). Please
+refer to Appendix B.1 for more detailed settings.
+4.2
+Baselines
+We choose the following RAG baselines for comparison:
+• Vanilla represents the answer from original LLMs without any external knowledge.
+• Standard RAG. Appends top-retrieved documents to the LLM’s input prompt, explicitly
+instructing the model to reference them when answering.
+• PRAG injects relevant documents into the LLM’s parameters via offline parameterization,
+reducing reliance on input context length.
+• DyPRAG. Our proposed dynamic parametric RAG which utilize the parameter translator
+F′
+ϕ to imitate underlying F. For any retrieved document, we can directly transform it into
+parametric form without high training and storage cost introduced by PRAG.
+Following the approach in [41], we conduct experiments that combine in-context injection and
+parameter injection to explore their interaction. This results in two additional baselines, referred to as
+PRAG-Combine and DyPRAG-Combine.
+4.3
+Main Results
+In this section, we present the main experimental result and in-depth analysis of DyPRAG compared
+with vanilla model, standard RAG, efficient RAG, PRAG baselines and a combined setting . Notably,
+the vanilla model occasionally outperforms RAG in certain situations. We analyze the reasons for
+this in Appendix E, and confirm that it won’t affect the subsequent analysis.
+Overall Analysis.
+Since PRAG learns the mapping function F by training separately for each
+document, it can be considered as a performance upper bound of DyPRAG. Remarkably, our proposed
+DyPRAG achieves comparable or even superior results across various tasks as shown in Table 1. For
+instance, using LLaMA3.2-1B, DyPRAG achieves an average score of 27.57%, surpassing PRAG
+by 1.06%, standard RAG by 0.58% and vanilla model by 5.18%. A notable result is observed in
+the bridge sub-task of 2WQA, where DyPRAG achieves a score of 48.15%, outperforming RAG
+and PRAG by a significant margin of 21.37% and 23.81%, respectively. This demonstrates that
+our method learns more useful information when trained on diverse datasets. We also compare our
+7
+
+===== PAGE 7 =====
+Table 2: The OOD performance on two open-
+domain datasets for F′
+ϕ trained on K is reported.
+Base Model
+Method
+IIRC
+SQA
+LLaMA3.2-1B
+Vanilla
+10.99
+21.67
+Standard RAG
+40.38
+27.67
+DyPRAG
+14.04
+39.67
+DyPRAG-Combine
+41.91
+50.33
+Qwen2.5-1.5B
+Vanilla
+8.78
+1.00
+Standard RAG
+30.52
+39.00
+DyPRAG
+10.23
+15.67
+DyPRAG-Combine
+38.25
+43.33
+LLaMA3-8B
+Vanilla
+13.23
+33.33
+Standard RAG
+43.27
+45.67
+DyPRAG
+18.16
+45.67
+DyPRAG-Combine
+57.90
+58.67
+Table 3: Ablation study of intermediate dimen-
+sion p of F′
+ϕ.
+The backbone model is the
+Qwen2.5-1.5B. The inference time is computed
+by average time of CWQ with batch_size of 1.
+The encode time is highlighted in red, while the
+translate time is marked in blue.
+Method
+CWQ
+F1
+Inference Time
+(s)
+Storage Cost
+(MB)
+Vanilla
+26.47
+0.56 (0.47x)
+-
+RAG
+28.32
+1.20 (1x)
+-
+PRAG
+30.82
+0.56 (0.47x)
+672 (1x)
+DyPRAG (p = 2)
+32.66
+0.56+0.13+0.060 (0.625x)
+7.71 (0.011x)
+DyPRAG (p = 4)
+33.26
+0.56+0.13+0.062 (0.627x)
+15.42 (0.023x)
+DyPRAG (p = 16)
+32.08
+0.56+0.13+0.055 (0.621x)
+61.70 (0.092x)
+DyPRAG (p = 32)
+31.94
+0.56+0.13+0.060 (0.625x)
+123.39 (0.184x)
+DyPRAG framework with several efficient RAG baselines, including FLARE [19] and DRAGIN [40].
+As shown in Table 6, both DRAGIN and FLARE outperform standard RAG in most 2WQA settings.
+However, DyPRAG achieves even better results, demonstrating its superiority. For example, when
+using LLaMA3-8B as the base model, DyPRAG outperforms DRAGIN and FLARE by 1.56% and
+2.63% on 2WQA, respectively. These results highlight the consistent performance improvements
+offered by DyPRAG over other efficient RAG methods, underscoring its effectiveness for test-time
+knowledge enhancement.
+DyPRAG-Combine Leads to Superior Performance.
+By combining in-context injection with
+parameter injection, DyPRAG-Combine achieves the best performance across all models, outper-
+forming all baselines. For instance, DyPRAG-Combine outperforms PRAG-Combine by 1.86% on
+LLaMA3.2-1B, 0.46% on Qwen2.5-1.5B and 1.08% on LLaMA3-8B on average. These results
+demonstrate that the dynamic parameters introduced by our approach effectively intergrade with
+contextual knowledge, enabling the two information sources to complement each other.
+4.4
+Out-Of-Distribution (OOD) Performance
+To further demonstrate the generalization ability of the DyPRAG method, we evaluate it in an out-of-
+distribution (OOD) scenario. Table 2 presents the OOD performance on the StrategyQA (SQA)[12]
+and IIRC[9] datasets. Compared to the standard RAG model, the vanilla model performs poorly due
+to the lack of relevant knowledge. In contrast, our DyPRAG successfully injects parametric knowl-
+edge, achieving comparable performance in SQA. Notably, DyPRAG-Combine which incorporates
+document-related parametric knowledge with ground-truth passages can answer these questions more
+correctly, achieving the best performance across all scenarios. For example, DyPRAG-Combine
+improves performance on SQA by 22.66% using LLaMA3.2-1B and on IIRC by 13.63% using
+LLaMA3-8B. These experimental results highlight the significant generalization ability of DyPRAG,
+surpassing that of PRAG, which is unable to handle this OOD scenario without additional offline
+training. Detailed implementation is provided in Appendix B.1 and analysis in Appendix E.
+4.5
+Ablation Study
+Effect of Intermediate Dimension p.
+As demonstrated in Section 3.3, the total storage cost for
+F′
+ϕ is 3L(phr + 2p(h + 1) + pkr), which scales linearly with p. Therefore, we conducted an
+ablation study on p. As shown in Table 3, DyPRAG consistently outperforms both standard RAG
+and PRAG. Surprisingly, p = 2 achieves the second-best performance with a storage cost of only
+7.71MB. Notably, our DyPRAG significantly reduces inference costs compared to standard RAG,
+while introducing only minimal overhead (i.e., encode and translate processes) compared to PRAG. In
+contrast, PRAG requires 672MB to store data for 300 test questions in CWQ, resulting in a significant
+overhead. The experiments demonstrate that our proposed DyPRAG not only drastically reduces
+storage costs but also enhances task performance, showcasing exceptional robustness.
+8
+
+===== PAGE 8 =====
+4.6
+Analysis of Contextual and Parametric Knowledge Conflict and Fusion
+When contextual knowledge and parametric knowledge conflict, LLMs may struggle to determine
+which source of information is more reliable [44; 53]. A key distinction between parametric RAG and
+standard RAG lies in whether external documents are used as contextual knowledge or transforming
+into parametric knowledge. Additionally, we aim to explore why combining parameter injection with
+in-context injection results in superior performance.
+Table 4: Case study about contextual and para-
+metric knowledge conflict in 2WQA where only
+DyPRAG-Combine answers correctly (11.33%).
+The backbone model is the LLaMA3.2-1B. 1 : de-
+ficiency in parametric knowledge, 1 : knowledge
+conflict, 1 : successful knowledge manipulation.
+Question: Which film whose director was born first,
+The Snake Brothers or Olympus Has Fallen ?
+Ground truth: Behind Prison Gates
+Retrieved
+top-1
+document:
+Roman
+Waugh
+was
+announced
+as
+director
+for
+the
+film.
+Olympus Has Fallen
+(film
+series)
+The
+Olym-
+pus Has Fallen film series includes action thriller
+movies...
+Method
+Answer
+Status
+Vanilla
+David R
+%
+Standard RAG
+The Snake Brothers
+%
+DyPRAG (ours)
+The Snake Brothers
+%
+DyPRAG-Combine (ours)
+Olympus Has Fallen
+!
+Contextual + Parametric Knowledge Relieves
+RAG Hallucination.
+As shown in Table 4,
+the vanilla LLM contains incorrect parametric
+knowledge. While standard RAG and DyPRAG
+try to address this by performing in-context in-
+jection and parameter injection, respectively.
+Both approaches introduce hallucinations that
+result in incorrect answers.
+In contrast, DyPRAG-Combine effectively inte-
+grates contextual knowledge with transformed
+parametric knowledge, enabling it to provide
+correct answers and demonstrating its ability to
+leverage both types of knowledge effectively.
+Compared to RAG, DyPRAG-Combine trans-
+forms the retrieved documents into parametric
+knowledge before injecting them into the model.
+This approach ensures that the LLM already
+contains relevant knowledge when answering
+questions, unlike RAG which often suffers from
+well-known hallucination issues [44; 42]. As a
+result, DyPRAG-Combine offers a practical and
+efficient solution to directly relieve the common
+hallucination problem in standard RAG, providing a plug-and-play improvement to enhance RAG’s
+performance in real-world applications.
+0
+20
+40
+60
+80
+100
+Number of Examples
+Qwen-1.5B
+LLaMA-1B
+LLaMA-8B
+89
+9
+2
+85
+9
+6
+47
+26
+27
+Knowledge Internalization Comparison (RAGTruth)
+Win
+Tie
+Loss
+Figure
+3:
+Comparison
+between
+DyPRAG-
+Combine vs standard RAG judged by GPT-4o.
+DyPRAG Enables LLMs to Internalize Un-
+seen Knowledge.
+The retrieved documents
+in our experiments are primarily sourced from
+Wikipedia, which are already encountered by
+LLMs during the pre-training phase. In this sec-
+tion, we further investigate how DyPRAG per-
+forms on unseen contextual knowledge using the
+RAGTruth benchmark [35]. Specifically, we ran-
+domly sample 100 examples from the QA-type
+sub-dataset, which presents greater challenges
+(e.g., the required answers are only accessible
+in carefully crafted context). As shown in Fig-
+ure 3, DyPRAG-Combine significantly outper-
+forms RAG. This demonstrates that DyPRAG
+effectively enables LLMs to better internalize
+contextual knowledge and mitigate hallucina-
+tions, even when handling unseen data. 2
+5
+Conclusion
+In this work, we propose Dynamic Parametric RAG (DyPRAG), a novel framework designed to reduce
+the high inference cost of standard RAG while also mitigating the substantial training and storage
+2We explore metrics for detecting hallucinations in RAG in Appendix D. Additionally, we present a detailed
+analysis of contextual and parametric knowledge in Appendix F.
+9
+
+===== PAGE 9 =====
+costs of previous Parametric RAG approach. DyPRAG learns the underlying mapping function from
+documents to parameters, enabling effective parameter injection in a plug-and-play manner at test
+time, thereby enhancing the internal knowledge of LLMs . Through comprehensive experiments,
+we demonstrate that DyPRAG achieves superior performance with significantly lower costs and
+great generalization ability. Notably, this enables the discovery of a powerful RAG paradigm, where
+DyPRAG effectively combines parametric knowledge with contextual knowledge. The superior
+knowledge fusion ability comes with extremely low costs while mitigating RAG hallucinations,
+revealing its practical capacity in real-world RAG systems.
+References
+[1] Zeyuan Allen-Zhu and Yuanzhi Li. Physics of language models: Part 3.1, knowledge storage
+and extraction. arXiv preprint arXiv:2309.14316, 2023.
+[2] Zeyuan Allen-Zhu and Yuanzhi Li. Physics of language models: Part 3.2, knowledge manipula-
+tion. arXiv preprint arXiv:2309.14402, 2023.
+[3] Akari Asai, Zeqiu Wu, Yizhong Wang, Avirup Sil, and Hannaneh Hajishirzi. Self-rag: Learn-
+ing to retrieve, generate, and critique through self-reflection. In The Twelfth International
+Conference on Learning Representations.
+[4] Sebastian Borgeaud, Arthur Mensch, Jordan Hoffmann, Trevor Cai, Eliza Rutherford, Katie
+Millican, George Bm Van Den Driessche, Jean-Baptiste Lespiau, Bogdan Damoc, Aidan Clark,
+et al. Improving language models by retrieving from trillions of tokens. In International
+conference on machine learning, pages 2206–2240. PMLR, 2022.
+[5] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal,
+Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are
+few-shot learners. Advances in neural information processing systems, 33:1877–1901, 2020.
+[6] Chao Chen, Kai Liu, Ze Chen, Yi Gu, Yue Wu, Mingyuan Tao, Zhihang Fu, and Jieping
+Ye. Inside: Llms’ internal states retain the power of hallucination detection. arXiv preprint
+arXiv:2402.03744, 2024.
+[7] Xin Cheng, Xun Wang, Xingxing Zhang, Tao Ge, Si-Qing Chen, Furu Wei, Huishuai Zhang,
+and Dongyan Zhao. xrag: Extreme context compression for retrieval-augmented generation
+with one token. arXiv preprint arXiv:2405.13792, 2024.
+[8] Ruiting Dai, Yuqiao Tan, Lisi Mo, Tao He, Ke Qin, and Shuang Liang. Muap: Multi-step
+adaptive prompt learning for vision-language model with missing modality. arXiv preprint
+arXiv:2409.04693, 2024.
+[9] James Ferguson, Matt Gardner, Hannaneh Hajishirzi, Tushar Khot, and Pradeep Dasigi. IIRC: A
+dataset of incomplete information reading comprehension questions. In Bonnie Webber, Trevor
+Cohn, Yulan He, and Yang Liu, editors, Proceedings of the 2020 Conference on Empirical
+Methods in Natural Language Processing (EMNLP), pages 1137–1147, Online, November
+2020. Association for Computational Linguistics.
+[10] Giacomo Frisoni, Alessio Cocchieri, Alex Presepi, Gianluca Moro, and Zaiqiao Meng. To
+generate or to retrieve? on the effectiveness of artificial contexts for medical open-domain
+question answering. arXiv preprint arXiv:2403.01924, 2024.
+[11] Tao Ge, Jing Hu, Lei Wang, Xun Wang, Si-Qing Chen, and Furu Wei. In-context autoencoder
+for context compression in a large language model. arXiv preprint arXiv:2307.06945, 2023.
+[12] Mor Geva, Daniel Khashabi, Elad Segal, Tushar Khot, Dan Roth, and Jonathan Berant. Did
+aristotle use a laptop? a question answering benchmark with implicit reasoning strategies.
+Transactions of the Association for Computational Linguistics, 9:346–361, 2021.
+[13] Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Mingwei Chang. Retrieval
+augmented language model pre-training. In Hal Daumé III and Aarti Singh, editors, Proceedings
+of the 37th International Conference on Machine Learning, volume 119 of Proceedings of
+Machine Learning Research, pages 3929–3938. PMLR, 13–18 Jul 2020.
+10
+
+===== PAGE 10 =====
+[14] Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Mingwei Chang. Retrieval
+augmented language model pre-training. In International conference on machine learning,
+pages 3929–3938. PMLR, 2020.
+[15] Xanh Ho, Anh-Khoa Duong Nguyen, Saku Sugawara, and Akiko Aizawa. Constructing
+a multi-hop qa dataset for comprehensive evaluation of reasoning steps.
+arXiv preprint
+arXiv:2011.01060, 2020.
+[16] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang,
+Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR,
+1(2):3, 2022.
+[17] Gautier Izacard and Edouard Grave. Leveraging passage retrieval with generative models
+for open domain question answering. In Paola Merlo, Jorg Tiedemann, and Reut Tsarfaty,
+editors, Proceedings of the 16th Conference of the European Chapter of the Association for
+Computational Linguistics: Main Volume, pages 874–880, Online, April 2021. Association for
+Computational Linguistics.
+[18] Zhengbao Jiang, Luyu Gao, Jun Araki, Haibo Ding, Zhiruo Wang, Jamie Callan, and Graham
+Neubig. Retrieval as attention: End-to-end learning of retrieval and reading within a single
+transformer. arXiv preprint arXiv:2212.02027, 2022.
+[19] Zhengbao Jiang, Frank F Xu, Luyu Gao, Zhiqing Sun, Qian Liu, Jane Dwivedi-Yu, Yiming
+Yang, Jamie Callan, and Graham Neubig. Active retrieval augmented generation. arXiv preprint
+arXiv:2305.06983, 2023.
+[20] Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. TriviaQA: A large scale dis-
+tantly supervised challenge dataset for reading comprehension. In Regina Barzilay and Min-Yen
+Kan, editors, Proceedings of the 55th Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 1601–1611, Vancouver, Canada, July 2017. Asso-
+ciation for Computational Linguistics.
+[21] Vladimir Karpukhin, Barlas O˘guz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov,
+Danqi Chen, and Wen-tau Yih. Dense passage retrieval for open-domain question answering.
+arXiv preprint arXiv:2004.04906, 2020.
+[22] Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris
+Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, Kristina Toutanova, Llion
+Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. Dai, Jakob Uszkoreit, Quoc Le, and Slav
+Petrov. Natural questions: A benchmark for question answering research. Transactions of the
+Association for Computational Linguistics, 7:452–466, 2019.
+[23] Quinn Leng, Jacob Portes, Sam Havens, Matei Zaharia, and Michael Carbin. Long context rag
+performance of large language models. arXiv preprint arXiv:2411.03538, 2024.
+[24] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman
+Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, et al. Retrieval-augmented
+generation for knowledge-intensive nlp tasks. Advances in Neural Information Processing
+Systems, 33:9459–9474, 2020.
+[25] Huanxuan Liao, Shizhu He, Yao Xu, Yuanzhe Zhang, Yanchao Hao, Shengping Liu, Kang Liu,
+and Jun Zhao. From instance training to instruction learning: Task adapters generation from
+instructions. Advances in Neural Information Processing Systems, 37:45552–45577, 2024.
+[26] Huanxuan Liao, Shizhu He, Yao Xu, Yuanzhe Zhang, Kang Liu, Shengping Liu, and Jun Zhao.
+Awakening augmented generation: Learning to awaken internal knowledge of large language
+models for question answering. arXiv preprint arXiv:2403.15268, 2024.
+[27] Zi Lin, Jeremiah Zhe Liu, and Jingbo Shang. Towards collaborative neural-symbolic graph
+semantic parsing via uncertainty. Findings of the Association for Computational Linguistics:
+ACL 2022, 2022.
+11
+
+===== PAGE 11 =====
+[28] Pengfei Liu, Weizhe Yuan, Jinlan Fu, Zhengbao Jiang, Hiroaki Hayashi, and Graham Neubig.
+Pre-train, prompt, and predict: A systematic survey of prompting methods in natural language
+processing. ACM Comput. Surv., 55(9), jan 2023.
+[29] Andrey Malinin and Mark Gales. Uncertainty estimation in autoregressive structured prediction.
+arXiv preprint arXiv:2002.07650, 2020.
+[30] Alex Mallen, Akari Asai, Victor Zhong, Rajarshi Das, Daniel Khashabi, and Hannaneh Ha-
+jishirzi. When not to trust language models: Investigating effectiveness of parametric and
+non-parametric memories. arXiv preprint arXiv:2212.10511, 2022.
+[31] Yansheng Mao, Jiaqi Li, Fanxu Meng, Jing Xiong, Zilong Zheng, and Muhan Zhang.
+Lift: Improving long context understanding through long input fine-tuning. arXiv preprint
+arXiv:2412.13626, 2024.
+[32] Meta. Llama-3.2-1b-instruct, 2024. Accessed: 2024-09.
+[33] Meta. Meta-llama-3-8b-instruct, 2024. Accessed: 2024-04.
+[34] Jesse Mu, Xiang Li, and Noah Goodman. Learning to compress prompts with gist tokens.
+Advances in Neural Information Processing Systems, 36:19327–19352, 2023.
+[35] Cheng Niu, Yuanhao Wu, Juno Zhu, Siliang Xu, Kashun Shum, Randy Zhong, Juntong Song,
+and Tong Zhang.
+Ragtruth: A hallucination corpus for developing trustworthy retrieval-
+augmented language models. arXiv preprint arXiv:2401.00396, 2023.
+[36] Ori Ram, Yoav Levine, Itay Dalmedigos, Dor Muhlgay, Amnon Shashua, Kevin Leyton-Brown,
+and Yoav Shoham. In-context retrieval-augmented language models. Transactions of the
+Association for Computational Linguistics, 11:1316–1331, 2023.
+[37] Jie Ren, Jiaming Luo, Yao Zhao, Kundan Krishna, Mohammad Saleh, Balaji Lakshminarayanan,
+and Peter J Liu. Out-of-distribution detection and selective generation for conditional language
+models. arXiv preprint arXiv:2209.15558, 2022.
+[38] Freda Shi, Xinyun Chen, Kanishka Misra, Nathan Scales, David Dohan, Ed H Chi, Nathanael
+Schärli, and Denny Zhou. Large language models can be easily distracted by irrelevant context.
+In International Conference on Machine Learning, pages 31210–31227. PMLR, 2023.
+[39] Weihang Su, Yichen Tang, Qingyao Ai, Changyue Wang, Zhijing Wu, and Yiqun Liu. Miti-
+gating entity-level hallucination in large language models. In Proceedings of the 2024 Annual
+International ACM SIGIR Conference on Research and Development in Information Retrieval
+in the Asia Pacific Region, pages 23–31, 2024.
+[40] Weihang Su, Yichen Tang, Qingyao Ai, Zhijing Wu, and Yiqun Liu. DRAGIN: Dynamic re-
+trieval augmented generation based on the real-time information needs of large language models.
+In Lun-Wei Ku, Andre Martins, and Vivek Srikumar, editors, Proceedings of the 62nd Annual
+Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages
+12991–13013, Bangkok, Thailand, August 2024. Association for Computational Linguistics.
+[41] Weihang Su, Yichen Tang, Qingyao Ai, Junxi Yan, Changyue Wang, Hongning Wang, Ziyi
+Ye, Yujia Zhou, and Yiqun Liu. Parametric retrieval augmented generation. arXiv preprint
+arXiv:2501.15915, 2025.
+[42] Zhongxiang Sun, Xiaoxue Zang, Kai Zheng, Yang Song, Jun Xu, Xiao Zhang, Weijie Yu, and
+Han Li. Redeep: Detecting hallucination in retrieval-augmented generation via mechanistic
+interpretability. arXiv preprint arXiv:2410.11414, 2024.
+[43] Alon Talmor and Jonathan Berant. The web as a knowledge-base for answering complex
+questions. arXiv preprint arXiv:1803.06643, 2018.
+[44] Yufei Tao, Adam Hiatt, Erik Haake, Antonie J Jetter, and Ameeta Agrawal. When context leads
+but parametric memory follows in large language models. arXiv preprint arXiv:2409.08435,
+2024.
+12
+
+===== PAGE 12 =====
+[45] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information
+processing systems, 30, 2017.
+[46] Changyue Wang, Weihang Su, Qingyao Ai, and Yiqun Liu. Knowledge editing through chain-
+of-thought. arXiv preprint arXiv:2412.17727, 2024.
+[47] Changyue Wang, Weihang Su, Hu Yiran, Qingyao Ai, Yueyue Wu, Cheng Luo, Yiqun Liu,
+Min Zhang, and Shaoping Ma. Lekube: A legal knowledge update benchmark. arXiv preprint
+arXiv:2407.14192, 2024.
+[48] Yan Wang, Dongyang Ma, and Deng Cai. With greater text comes greater necessity: Inference-
+time training helps long text generation. arXiv preprint arXiv:2401.11504, 2024.
+[49] Zhepei Wei, Wei-Lin Chen, and Yu Meng. Instructrag: Instructing retrieval-augmented genera-
+tion via self-synthesized rationales. arXiv preprint arXiv:2406.13629, 2024.
+[50] Wenhan Xiong, Jingyu Liu, Igor Molybog, Hejia Zhang, Prajjwal Bhargava, Rui Hou, Louis
+Martin, Rashi Rungta, Karthik Abinav Sankararaman, Barlas Oguz, et al. Effective long-context
+scaling of foundation models. arXiv preprint arXiv:2309.16039, 2023.
+[51] An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan
+Li, Dayiheng Liu, Fei Huang, Haoran Wei, et al. Qwen2. 5 technical report. arXiv preprint
+arXiv:2412.15115, 2024.
+[52] Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W Cohen, Ruslan Salakhut-
+dinov, and Christopher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop
+question answering. arXiv preprint arXiv:1809.09600, 2018.
+[53] Hao Zhang, Yuyang Zhang, Xiaoguang Li, Wenxuan Shi, Haonan Xu, Huanshuo Liu, Yasheng
+Wang, Lifeng Shang, Qun Liu, Yong Liu, et al.
+Evaluating the external and parametric
+knowledge fusion of large language models. arXiv preprint arXiv:2405.19010, 2024.
+13
+
+===== PAGE 13 =====
+Table 5: Comparison of cost metrics for different baselines. ATTN denotes the time complexity of
+the self-attention module as O(|I|2h), and FFN represents the FFN with O(|I|h2), where context
+length |I| = 1 and |R| denotes the response length. ii indicates significant high cost,
+denotes
+negligible cost, and
+ represents temporal storage.
+Method
+Inference Cost
+Training Cost
+Storage Cost
+RAG
+|R| × ((c|d| + |q|)2 × ATTN + (c|d| + |q|) × FFN)
+-
+-
+PRAG
+|R| × (|q|2 × ATTN + |q| × FFN)
+M × (9|d|2 × ATTN + 3|d| × FFN)+
+M × E1 × (81|d|2 × ATTN + 9|d| × FFN)
+M × 6Lr(h + k)
+DyPRAG
+c × (|d|2 × ATTN + |d| × FFN)+
+c × O(p(h + 1 + hr))+
+|R| × (|q|2 × ATTN + |q| × FFN)
+N × (9|d|2 × ATTN + 3|d| × FFN)+
+N × E1 × (81|d|2 × ATTN + 9|d| ∗FFN)+
+N × E2 × (9(|qa| + |d|)2 × ATTN + 3(|qa| + |d|) × FFN) + O(p(h + 1 + hr))
+(((((((
+N ∗6Lr(h + k)+
+3L(phr + 2p(h + 1) + pkr)
+A
+Detailed Cost Comparison
+In this section, we provide a detail comparison of several cost metrics for standard RAG, PRAG and
+our proposed DyPRAG, as shown in Table 5.
+Inference Cost.
+We first analyze the inference cost across three baselines. Intuitively, the RAG
+method requires more resources for inference due to its context length of c|d| + |q|, compared to
+only |q| for PRAG and DyPRAG. In our experimental settings, |q| is usually less than 100, while
+|d| is typically larger than 600, with c set to 3. This results in an attention cost of at least 271x
+and a FFN cost of 19x for RAG. For DyPRAG, there is additional cost incurred for encoding and
+translating. The encoding cost is c × (|d|2 × ATTN + |d| × FFN), as each document should be
+encoded separately. As shown in Table 3, the encoding time is significantly lower than the inference
+time because encoding requires only a single forward pass. Additionally, the translation time is also
+negligible. Moreover, the response length |R| exhibits a linear relationship with the LLM inference
+loss. As illustrated in Figure 7, the response length decreases when DyPRAG is employed, enabling
+LLMs to better internalize knowledge. Notably, DyPRAG-Combine achieves much shorter response
+lengths, significantly reducing inference costs compared to standard RAG.
+Training Cost.
+PRAG [41] introduces further training for each document to obtain corresponding
+LoRA parameters. In Section 3.3, we hypothesize that after augmentation, there are a total of 3|d|
+tokens, resulting in a cost of N ×(9|d|2×ATTN+3|d|×FFN) for DyPRAG and M ×(9|d|2×ATTN+
+3|d| × FFN) for PRAG, where N represents the size of the training dataset K and M denotes the size
+of the test set. The common divisor of offline parametrization is E1 ×(81|d|2 ×ATTN+9|d|×FFN),
+where E1 is the number of epochs for LoRA training.
+Additionally, to train our F′
+ϕ for E2 epochs, we need to perform both forward and backward passes
+(the backward pass requires twice the cost of the forward pass) on one QA pair and its corresponding
+document in each step. This results in a cost of N ×E2×9(|qa|+|d|)2×ATTN+3(|qa|+|d|)×FFN,
+with a negligible cost for translation. As shown in Figure 5 and 6, our DyPRAG achieves stable
+results with as few as 480 examples (even fewer is powerful), while M = 3000 in our experiments,
+and this value would be significantly larger in real-world applications.
+For instance, using LLaMA3-8B as the backbone, producing a pi requires 88 seconds, while one
+step for F′
+ϕ only takes an average of 15 seconds. Therefore, the total cost for training (excluding
+augmentation) is M ×88s in PRAG and N ×103s in DyPRAG. Assuming N = 480 and M = 3000,
+DyPRAG is 5.34x faster than PRAG. The low requirement for a large N makes DyPRAG highly
+effective and generalizable for real-world scenarios, with extremely low costs that can be handled
+during offline training.
+Storage Cost.
+As illustrated in Section 3.3, each pi requires 6.73MB for PRAG using Qwen2.5-
+1.5B, resulting in a total storage cost of 18.66GB in our main experiment. However, we significantly
+reduce this cost by imitating the underlying function between the document and parameters. Notably,
+the cost for pi is a temporary cost in DyPRAG, which can be removed after collecting data or training
+one pi and then updating F′
+ϕ by one step. Consequently, the overall cost of DyPRAG is substantially
+lower than that of PRAG (e.g., DyPRAG achieve better performance with only 7.71MB of storage as
+shown in Table 3).
+14
+
+===== PAGE 14 =====
+B
+Experiment Setup
+B.1
+Implementation Details
+QA Datasets.
+To ensure a comprehensive evaluation, we assess our method using the following
+datasets:
+• 2WikiMultihopQA (2WQA) [15] is designed to evaluate a model’s capability in multi-hop
+reasoning by synthesizing information from multiple Wikipedia passages.
+• HotpotQA (HQA) [52] similarly targets multi-hop reasoning, requiring models to amalga-
+mate information from various contexts to answer a single query.
+• PopQA (PQA) [30] focuses on factual question answering, posing challenges that test the
+model’s ability to recall precise knowledge and navigate ambiguities in entity representation.
+• ComplexWebQuestions (CWQ) [43] entails answering complex, multi-step questions
+sourced from the web, further challenging the model’s capacity to retrieve and reason over
+extensive web content.
+Offline Doc-Param Pairs Collection.
+Following [19; 41], we utilize Wikipedia dumps as the
+external knowledge corpus, adopting the dataset proposed by DPR [21]. For document augmentation,
+each document is rewritten once, and three QA pairs are generated based on the document. Unless
+explicitly stated otherwise, the downstream LLM is used for this purpose. During LoRA fine-tuning,
+the learning rate was set to 3 × 10−4, and training was conducted for a single epoch (except PQA for
+2). The LoRA modules were integrated exclusively into the feed-forward network (FFN) matrices,
+while the query, key, and value (QKV) matrices were excluded. The scaling factor α was set to 32,
+the LoRA rank r was configured to 2, and no dropout was applied to ensure training stability and
+maximize parameter updates. The LoRA weights were randomly initialized following the settings
+outlined in the original LoRA paper [16].
+Inference Settings.
+All experiments use the publicly available Hugging Face implementations of
+LLaMA and Qwen. To ensure fairness, DyPRAG and all baselines share the same prompt template in
+Figure 14 and 15 following [41] and adopt of greedy decoding for result reproducibility. The max
+number of new tokens is set to 128.
+Retrieval Module R.
+Recent research on retrieval-augmented generation (RAG) [36] has shown
+that BM25 matches or even surpasses state-of-the-art dense retrieval models in certain scenarios.
+Following [41], we adopt BM25 as the retriever in our approach and Elasticsearch is used as the
+backend for implementing BM25.
+Training F′
+ϕ.
+Motivated by [25], we use simple MLP hypernetwork to transform embedding into
+adapter parameters. Through cross validation, the learning rate was set to 1 × 10−5, and the training
+epoch was set to 1 which making the overall alignment process quickly. The truncation max length
+of text is set to 3000, which is larger than most retrieved documents. The performance reports for
+Qwen2.5-1.5B and LLaMA3.2-1B in Table 1 are based on training with 4,800 examples, while
+LLaMA3-8B is trained on 2,400 examples (except for 480 examples on 2WQA).
+Implementation of OOD Experiment.
+To evaluate the generalization ability of our proposed
+DyPRAG, we select to out-of-distribution (OOD) datasets to conduct.
+• StrategyQA (SQA) [12]: A QA benchmark where reasoning steps are implicit in the
+question and must be inferred through strategic reasoning.
+• IIRC [9]: A dataset comprising over 13,000 questions based on English Wikipedia para-
+graphs that provide only partial information, requiring retrieval of missing details from
+linked documents.
+For each dataset, we select the first 300 examples for testing and evaluate performance using F1 score
+for IIRC and Accuracy for SQA as metrics. Both datasets provide with ground-truth passages which
+indicate a more rigorous evaluation setting. For IIRC, we adopt the few-shot prompts from [40],
+while SQA is evaluated in a zero-shot setting. Notably, the same prompt format (in Figure 14 and
+15) from the main experiment is used to ensure a fair comparison.
+15
+
+===== PAGE 15 =====
+Table 6: The experimental results of DyPRAG are compared with other effective RAG methods. All
+metrics are reported as F1 scores (%). The best performance is bolded, while the second-best is
+underlined. The evaluation is conducted on 2WQA and HQA datasets, focusing exclusively on the
+total sub-task.
+Base LLM
+Method
+2WQA
+HQA
+Avg
+Total
+Total
+LLaMA3.2-1B
+Standard RAG
+23.12
+27.14
+25.13
+DRAGIN
+21.73
+12.50
+17.12
+FLARE
+21.55
+19.38
+20.47
+DyPRAG (ours)
+25.31
+19.97
+22.64
+DyPRAG-Combine (ours)
+29.18
+26.58
+27.88
+Qwen2.5-1.5B
+Standard RAG
+24.31
+20.73
+22.52
+DRAGIN
+25.01
+8.51
+16.76
+FLARE
+21.56
+7.97
+14.77
+DyPRAG (ours)
+26.46
+19.67
+23.07
+DyPRAG-Combine (ours)
+25.18
+27.57
+26.38
+LLaMA3-8B
+Standard RAG
+34.55
+24.23
+29.39
+DRAGIN
+35.69
+12.16
+23.93
+FLARE
+34.62
+29.43
+32.03
+DyPRAG (ours)
+37.25
+22.55
+29.90
+DyPRAG-Combine (ours)
+45.17
+38.35
+41.76
+Implementation of RAGTruth Experiment.
+RAGTruth [35] is a benchmark dataset designed to
+evaluate the extent of hallucination in models. For our evaluation, we randomly select 100 QA-type
+subsets from RAGTruth, ensuring alignment with the training data of F′
+ϕ. Notably, some questions in
+RAGTruth require the provided documents to be answerable which are more difficult. Interestingly,
+during evaluation, we observe that F′
+ϕ with fewer trained parameters perform better in such scenarios.
+Specifically, we train only 480 examples for LLaMA3.2-1B and Qwen2.5-1.5B, and 240 examples
+for LLaMA3-8B. We use GPT-40 as judge using prompt template in Figure 17.
+C
+Supplement Experiment Results
+Comparison with effective RAG baselines.
+To compare our DyPRAG with effective RAG methods,
+we introduce two powerful baselines:
+• FLARE [19] is a multi-round retrieval augmentation method that triggers retrieval whenever
+it encounters an uncertain token. The query is defined as the last generated sentence
+excluding the uncertain tokens.
+• DRAGIN [40] improves multi-round retrieval by triggering only when an uncertain token
+has semantic significance and strongly influences subsequent tokens. It formulates queries
+using the model’s internal state and preceding context.
+The experimental results are presented in Table 6. Compared to standard RAG, DRAGIN and
+FLARE do not demonstrate significant performance advantages when the model size is smaller
+(e.g., LLaMA3.2-1B and Qwen2.5-1.5B). However, as the model size increases (e.g., LLaMA3-8B),
+DRAGIN achieves the best performance on the 2WQA dataset, while FLARE performs best on
+the HQA dataset comparing with RAG baseline. This indicates that effective RAG methods are
+often constrained by the model’s inherent capabilities and lack robust generalization. In contrast,
+our proposed DyPRAG consistently delivers superior performance in most cases, demonstrating the
+effectiveness of our approach. Furthermore, when combined with in-context injection, DyPRAG
+achieves an average improvement of 6.54% over standard RAG, highlighting the tremendous potential
+of integrating parametric knowledge with contextual knowledge.
+Varying Number of Injected Documents
+For standard RAG, the number of retrieved documents,
+denoted as c, is a crucial hyperparameter to tune. Recent studies [23; 49] have investigated the impact
+of longer context lengths on standard RAG. However, the effect of the number of injected documents
+in parametric form remains underexplored. Our proposed DyPRAG framework can seamlessly adapt
+to this scenario due to its inherent flexibility.
+16
+
+===== PAGE 16 =====
+1
+3
+5
+10
+15
+20
+0.240
+0.242
+0.244
+0.246
+0.248
+F1 Score
+HQA
+1
+3
+5
+10
+15
+20
+0.24
+0.25
+0.26
+0.27
+0.28
+0.29
+2WQA
+1
+3
+5
+10
+15
+20
+0.075
+0.100
+0.125
+0.150
+0.175
+0.200
+PQA
+1
+3
+5
+10
+15
+20
+0.29
+0.30
+0.31
+0.32
+CWQ
+Transformed Document Number
+DyPRAG
+PRAG
+Standard RAG
+Figure 4: Performance of Qwen2.5-1.5B with varying number of injected documents.
+1
+2
+4
+8
+10
+Alignment Dataset Size (×480)
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+0.40
+F1 Score
+Performance of Llama with different alignment dataset size
+HQA (avg)
+2WQA (avg)
+PQA (total)
+CWQ (total)
+Figure 5: Ablation study of varying train-
+ing dataset size for DyPRAG. The backbone
+model is the LLaMA3.2-1B.
+1
+2
+4
+8
+10
+Alignment Dataset Size (×480)
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+F1 Score
+Performance of Qwen with different alignment dataset size
+HQA (avg)
+2WQA (avg)
+PQA (total)
+CWQ (total)
+Figure 6: Ablation study of varying training
+dataset size for DyPRAG. The backbone model
+is the Qwen2.5-1.5B.
+As shown in Figure 4, the performance of DyPRAG does not significantly improve as the number of
+injected documents increases. For instance, in the 2WQA and CWQ datasets, the best performance is
+achieved when using only the top-1 document. This indicates that the most relevant document, as
+determined by the retriever R, is sufficient to provide the knowledge needed to answer the question
+effectively. On the other hand, in datasets such as HQA and PQA, the best performance is observed
+when c = 3, suggesting that when more relevant information is retrieved, simple averaging of LoRA
+parameters can effectively integrate the knowledge. Additionally, in three out of four datasets (except
+PQA), the model’s performance declines when too many documents are injected. This observation
+aligns with the findings in [38], which suggest that task-irrelevant redundant information can degrade
+the model’s performance, especially the compression of documents is lossy.
+Effect of Doc-Param Pairs Size.
+We adjust the pre-selected size of the training dataset composed
+of Doc-Param pairs, increasing it from 480 to 4800. As shown in Figure 5 and 6, DyPRAG achieves
+strong performance even with just 480 training examples. The performance remains remarkably stable
+across different dataset sizes, indicating that our design, F′
+ϕ, is capable of learning the underlying
+mapping between documents and parameters with minimal data.
+Effect of Alignment Loss.
+In Section 3.2, our alignment loss Lalign is composed of three compo-
+nents: Lpred, Lmse, and Lkl. To investigate which component contributes most to the effectiveness of
+DyPRAG, we conducted ablation studies. As shown in Table 7, removing any single loss component
+negatively impacts the model’s performance. For instance, when Lkl is removed, the model’s perfor-
+mance drops significantly, demonstrating that aligning with the target model’s output distribution is
+an effective strategy [25]. While removing Lmse has the smallest impact, ensuring that F′
+ϕ generates
+p′ values as close as possible to the trained p still proves beneficial for DyPRAG. Furthermore, even
+when only Lpred is retained, DyPRAG maintains stable performance, indicating that the standard
+language modeling loss plays a central role in the overall alignment process.
+Comparison of Response Length.
+Notably, we consider only the context length when calculating
+inference cost. However, in practice, the response length from LLMs also affects inference time. As
+shown in Figure 7, we compare DyPRAG-Combine with RAG across four benchmarks, considering
+17
+
+===== PAGE 17 =====
+Table 7: Ablation study of alignment loss. The backbone model is the LLaMA3.2-1B.
+Methods
+2WQA
+HQA
+PQA
+CWQ
+Avg
+Compare
+Bridge
+Inference
+Compose
+Total
+Bridge
+Compare
+Total
+DyPRAG
+51.25
+48.15
+17.35
+7.54
+25.31
+14.05
+43.9
+19.97
+8.37
+36.86
+25.28
+Ablation Study
+w/o Lkl
+29.54
+37.74
+12.94
+5.78
+20.27
+7.35
+35.28
+13.12
+1.93
+22.85
+18.68
+w/o Lmse
+56.06
+36.96
+17.29
+8.40
+27.28
+12.78
+42.11
+17.65
+5.94
+32.98
+23.38
+w/o Lkl, Lmse
+45.23
+24.84
+16.74
+7.48
+23.43
+12.66
+39.46
+18.26
+2.42
+34.92
+22.54
+2WQA
+HQA
+PQA
+CWQ
+Datasets
+0
+50
+100
+150
+200
+250
+300
+Average Response Length
+245.40
+267.25
+116.53
+212.14
+204.47
+216.97
+42.76
+155.63
+196.23
+223.10
+43.81
+22.59
+Average Response Length Comparison (Qwen2.5-1.5B)
+RAG
+DyPRAG
+DyPRAG-Combine
+Figure 7: Comparison of response length across var-
+ious datasets. The backbone model is the Qwen2.5-
+1.5B.
+CWQ
+2WQA (total)
+HQA (total)
+PQA
+SQA
+IIRC
+1.68
+1.56
+1.63
+2.26
+1.77
+1.65
+1.52
+1.45
+1.44
+1.38
+1.63
+1.52
+1.63
+1.72
+1.79
+1.87
+1.69
+1.90
+1.47
+1.52
+1.51
+1.33
+1.50
+1.62
+Average PPL Comparison (LLaMA3.2-1B)
+Methods
+Vanilla
+RAG
+DyPRAG (ours)
+DyPRAG-Combine (ours)
+Figure 8:
+Comparison of average PPL.
+Smaller PPL means less conflict. The back-
+bone model is the LLaMA3.2-1B.
+the average response length. DyPRAG-Combine significantly reduces response length, by 20% in
+2WQA and up to 90% in CWQ. This demonstrates that DyPRAG-Combine can answer questions
+correctly with fewer tokens, thereby lowering inference costs and avoiding redundant information.
+D
+Exploring Metrics for RAG Hallucination Detection
+Can Perplexity Reflects Knowledge Conflict?
+Recent studies have explored methods to detect
+hallucinations in LLMs and RAG systems by leveraging various metrics [6; 42]. Among these, we
+first adopt the simplest yet effective metric which only need single generation, Perplexity (PPL) [37],
+to evaluate knowledge conflicts. As illustrated in Figure8, Vanilla and DyPRAG exhibit higher PPL,
+while DyPRAG-Combine and RAG demonstrate significantly lower PPL. However, these results are
+inconsistent with the findings in Table 1 and Table 2. For instance, although DyPRAG-Combine
+achieves the best performance on IIRC, its calculated PPL suggests a higher probability of knowledge
+conflicts, which is clearly incorrect. We hypothesize that this discrepancy primarily stems from
+variations in model parameters introduced by parameter injection in DyPRAG, which cannot be
+detected using the simple PPL method. Given that different tokens contribute unequally to the overall
+semantics of a sentence, the PPL, which calculated as the average of token-level uncertainty, fails to
+effectively capture the uncertainty of the entire sequence.
+Effective Detection with Sentence-Level Metrics.
+Given the limitations of PPL, we decided to
+explore alternative metrics that leverage multiple generations. Research has shown that generating
+multiple outputs for a single input is beneficial for estimating sequence-level uncertainty. To this end,
+we set the temperature to 1.0, top_p to 0.95, and top_k to 20, generating five responses to calculate
+Entropy (EN), Length Normalized Entropy (LEN) [29], and Lexical Similarity (LS) [27] to evaluate
+the probability of RAG hallucination3. As shown in Table 8, our approach demonstrates reduced
+knowledge conflict in most scenarios, especially in our strongest DyPRAG-Combine.
+We observed that both EN and LEN increase when in-context injection is applied, suggesting that in
+RAG systems, the retrieved passages often conflict with the model’s internal knowledge. In contrast,
+utilizing DyPRAG to inject converted parametric knowledge significantly reduces the likelihood of
+knowledge conflict, demonstrating the effectiveness of DyPRAG. However, the LS results indicate
+3We use the implementation in https://github.com/alibaba/eigenscore
+18
+
+===== PAGE 18 =====
+Table 8: We present the experimental results for the knowledge conflict metrics of DyPRAG and
+DyPRAG-Combine, in comparison with Vanilla and Standard RAG. Three multi-generation metrics
+are employed: Entropy (EN), Length Normalized Entropy (LEN), and Lexical Similarity (LS).
+In these metrics, ↑indicates that higher values are better, while ↓indicates the opposite. The best
+performance for each metric is highlighted in bold. The backbone model is the LLaMA3.2-1B.
+Metric
+Method
+2WQA (total)
+HQA (total)
+PQA
+CWQ
+SQA
+IIRC
+EN ↓
+Vanilla
+3.187
+3.176
+3.251
+3.163
+3.178
+3.011
+DyPRAG (ours)
+2.199
+1.999
+1.757
+2.860
+2.805
+2.544
+Standard RAG
+3.565
+3.453
+3.778
+3.619
+3.398
+3.030
+DyPRAG-Combine (ours)
+2.755
+2.470
+3.584
+3.467
+3.136
+2.555
+LEN ↓
+Vanilla
+0.637
+0.635
+0.650
+0.633
+0.636
+0.602
+DyPRAG (ours)
+0.440
+0.400
+0.586
+0.572
+0.561
+0.509
+Standard RAG
+0.713
+0.691
+0.756
+0.724
+0.680
+0.606
+DyPRAG-Combine (ours)
+0.551
+0.494
+0.719
+0.693
+0.627
+0.511
+LS ↑
+Vanilla
+0.923
+0.936
+0.723
+0.730
+0.497
+0.963
+DyPRAG (ours)
+0.915
+0.933
+0.842
+0.859
+0.527
+0.966
+Standard RAG
+0.945
+0.956
+0.936
+0.962
+0.812
+0.966
+DyPRAG-Combine (ours)
+0.953
+0.959
+0.966
+0.988
+0.853
+0.975
+that adding context reduces conflict, which contradicts the established definition of RAG hallucination.
+We argue that EN and LEN are more suitable for effective RAG hallucination detection in DyPRAG
+settings. Exploring more effective detection methods remains an important direction for future work.
+E
+Why Vanilla Outperforms RAG Occasionally ?
+In this section, we provide a detailed analysis of why the vanilla model occasionally outperforms
+RAG. As shown in Table 1, the vanilla model surpasses RAG most significantly in 2WQA, although
+the results vary across different models. For instance, the vanilla model outperforms RAG by 2.62
+and 0.99 in Qwen2.5-1.5B and LLaMA3-8B on average, respectively. After analyzing the cases, we
+identify two key issues that affect RAG’s performance: 1) Poor Retriever. Following [41], we use
+BM25 as the retriever. However, in many cases, the retrieved documents contain only similar words
+rather than relevant content. This results in the provided content being unhelpful or even detrimental
+to the performance of LLMs. 2) Already Seen Data. During the pre-training stages of the selected
+LLMs [51; 33; 32], the external source we use (i.e., Wikipedia) has already been seen. This allows
+LLMs to answer certain questions independently, especially in simpler tasks like 2WQA. Moreover,
+the inclusion of incorrect or irrelevant context further degrades the performance, as observed in
+Table 1.
+A more rigorous evaluation setting should include ground-truth passages and ensure no or less data
+leakage.Under this setting, as shown in Table 2, the performance of the vanilla model is significantly
+lower than that of RAG, which aligns with our hypothesis. For instance, the vanilla model achieves
+only 8.78% and 1.00% accuracy on Qwen2.5-1.5B for IIRC and SQA, respectively. In contrast,
+DyPRAG demonstrates a notable improvement in test-time knowledge, achieving 10.23% and 15.67%
+accuracy on Qwen2.5-1.5B for IIRC and SQA, respectively. These results underscore the critical
+role of RAG while showcasing the ability of our proposed DyPRAG to seamlessly enhance OOD
+knowledge effectively. Furthermore, DyPRAG-Combine establishes a superior RAG paradigm by
+delivering even better performance under these more challenging conditions. In summary, we believe
+that this more rigorous experimental setting better validates our proposed method.
+F
+Further Analysis of Contextual and Parametric Knowledge Conflict
+Parameter Injection Makes LLMs Trust Themselves.
+As shown in Table 9, while vanilla LLMs
+contain accurate parametric knowledge regarding which director was born later, the introduction
+of retrieved documents about each director causes contextual knowledge to mislead M, resulting
+19
+
+===== PAGE 19 =====
+in the incorrect answer "William Lustig" while DyPRAG stays the same. This demonstrates that
+DyPRAG can effectively reduce the knowledge conflict problem. In this case, standard RAG often
+introduces redundant or incorrect information from the context, a phenomenon commonly referred to
+as hallucination [42]. In contrast, our proposed DyPRAG effectively incorporates accurate information
+into parametric knowledge. This allows DyPRAG-Combine to align parametric knowledge with
+contextual knowledge, thereby reducing the likelihood of hallucinations and enabling LLMs to rely
+more consistently on its own knowledge.
+Dynamic Parametric Knowledge Enhances LLMs at Test-time.
+Our DyPRAG serves as an
+effective plug-and-play technique for enhancing knowledge during test-time. As demonstrated in
+Table 10, DyPRAG successfully manipulates the original parametric knowledge of large language
+models (LLMs) in 14.67% of cases. Therefore, it can directly enhance the model’s knowledge during
+inference without the need for further fine-tuning.
+Proportion of Different Combinations.
+Furthermore, as shown in Table 11, when both Vanilla
+LLMs and RAG give incorrect answers, DyPRAG provides the correct answer 26.33% of the time.
+This indicates that DyPRAG can effectively inject missing parametric knowledge and outperforms
+in-context injection methods. Additionally, in cases where the vanilla LLM provides the correct
+answer (i.e., the model possesses accurate internal knowledge), RAG achieves a correct answer rate
+of 5.33%, while DyPRAG performs better with a rate of 6.33%, showing that parameter injection
+leads to lower conflict. Similar trend of DyPRAG-Combine is presented in Table 12.
+These results demonstrate that our proposed DyPRAG injects parametric knowledge successfully
+and mitigates conflicts between internal parametric knowledge and external contextual knowledge
+through the injection of knowledgeable LoRA adapters.
+Figure 9: Case study about contextual and
+parametric knowledge conflict in 2WQA
+(Bridge sub-task) where only standard RAG
+answers wrongly (6.67%).
+The backbone
+model is the LLaMA3.2-1B. 1 :deficiency
+in parametric knowledge, 1 : knowledge con-
+flict, 1 : successful knowledge manipulation.
+Question:
+Which film has the direc-
+tor born later,
+Diary Of A Maniac
+or
+Return Of The Hero ?
+Ground truth: Return Of The Hero
+Retrieved top-1 document:
+Maniac
+(1980 film) Maniac is a 1980 Ameri-
+can psychological slasher film directed
+by William Lustig and written by C. A.
+Rosenberg...
+Method
+Answer
+Status
+Vanilla
+Return Of The Hero
+!
+Standard RAG
+William Lustig
+%
+DyPRAG (ours)
+Return Of The Hero
+!
+DyPRAG-Combine (ours)
+Return Of The Hero
+!
+Figure 10: Case study about contextual and para-
+metric knowledge conflict in 2WQA (Bridge
+sub-task) where only DyPRAG and DyPRAG-
+Combine answer wrongly (14.67%). The back-
+bone model is the LLaMA3.2-1B. 1 :deficiency
+in parametric knowledge, 1 : knowledge con-
+flict, 1 : successful knowledge manipulation
+Question: Which film has the director born
+later, Miss Sloane or Time Changer ?
+Ground truth: Time Changer
+Retrieved top-1 document: production bud-
+get of $13 million. " Miss Sloane " is ranked
+number 75 by per-theater average on Box Of-
+fice...
+Method
+Answer
+Status
+Vanilla
+John Frankenheimer
+%
+Standard RAG
+Miss Sloane
+%
+DyPRAG (ours)
+Time Changer
+!
+DyPRAG-Combine (ours)
+Time Changer
+!
+20
+
+===== PAGE 20 =====
+Figure 11: Right/Wrong answer combinations
+of Vanilla, RAG, DyPRAG and corresponding
+proportional distribution in 2WQA (Bridge Sub-
+task). The backbone model is the LLaMA3.2-1B.
+! indicates a correct answer, while % indicates
+an incorrect answer. The "Ratio (%)" column
+on the right represents the percentage of each
+combination across the dataset (300 examples).
+Vanilla
+RAG
+DyPRAG
+Ratio(%)
+!
+!
+!
+4.67
+%
+%
+%
+34.67
+!
+%
+!
+6.33
+!
+!
+%
+5.33
+%
+!
+!
+8.33
+%
+%
+!
+26.33
+%
+!
+%
+7.67
+!
+%
+%
+6.33
+Figure 12: Right/Wrong answer combinations
+of Vanilla, RAG, DyPRAG-Combine and cor-
+responding proportional distribution in 2WQA
+(Bridge Sub-task). The backbone model is the
+LLaMA3.2-1B. ! indicates a correct answer,
+while % indicates an incorrect answer. The "Ra-
+tio (%)" column on the right represents the per-
+centage of each combination across the dataset
+(300 examples).
+Vanilla
+RAG
+DyPRAG-Combine
+Ratio(%)
+!
+!
+!
+5.33
+%
+%
+%
+35.00
+!
+%
+!
+6.33
+!
+!
+%
+4.67
+%
+!
+!
+8.00
+%
+%
+!
+26.00
+%
+!
+%
+8.00
+!
+%
+%
+6.67
+21
+
+===== PAGE 21 =====
+G
+Visualization of Parameter Translator Workflow.
+To clearly illustrate the workflow of the parameter translator F′
+ϕ, we use the up-proj module in the
+FFN as an example, as shown in Figure 13. This visualization demonstrates the transformation of
+document embeddings into dynamic LoRAs, consistent with Eq. 4.
+Parameter Translator Workflow 
+of up-proj in FFN
+�
+�
+�+ �
+�× �
+�+ �
+Encoded Document
+��⊕����
+�
+�+ �
+�× �
+�
+�����
+�,�
+���
+�,�
+�����
+�,�
+���
+�,�
+�
+�
+�
+�
+��
+��
+⋅
+⋅
+⋅
+Reshape
+Reshape
+LoRA Matrices
+�������
+LoRA
+�=2: hidden size
+�=2: intermediate size of  MLP
+�=2: lora rank
+�=3: intermediate size of FFN
+Figure 13: Visualization of the parameter translator workflow of up-project in FFN. The overall
+process remains consistent with Eq. 4.
+22
+
+===== PAGE 22 =====
+H
+Prompt for Main Experiments Evaluation
+In the main experiments, we used the following prompt to assess the performance of DyPRAG and
+other baseline models in Figure 14 and 15:
+Prompt Format of No-CoT
+You should answer the question by referring to the knowledge provided below and integrating your own
+knowledge.
+Passage 1: {passages[0]}
+Passage 2: {passages[1]}
+Passage 3: {passages[2]}
+Question: {question}
+The answer is {answer}
+Figure 14: Prompt format of No-CoT in our expriments.
+Prompt Format of CoT
+You should reference the knowledge provided below and combine it with your own knowledge to answer
+the question. Please follow the format of the example I provided above. Here are some examples about
+how to answer the questions.
+Question: fewshotq[0]
+Answer: fewshota[0]
+Question: fewshotq[1]
+Answer: fewshota[1]
+Question: fewshotq[2]
+Answer: fewshota[2]
+...
+Here are some reference.
+Passage 1: {passages[0]}
+Passage 2: {passages[1]}
+Passage 3: {passages[2]}
+Let’s think step by step. Answer the questions in the same format as above.
+Question: {question}
+Answer: {answer}
+Figure 15: Prompt format of CoT in our expriments.
+23
+
+===== PAGE 23 =====
+I
+Prompt for Knowledge Internalization Evaluation
+In the knowledge internalization experiments, we used the following prompt to assess the internal-
+ization ability of RAG generation from DyPRAG-Combine and standard RAG method evaluated by
+GPT-4o in Figure 17:
+Prompt Format of Evaluate RAGTruth
+Compare DyPRAG and RAG answers to assess which better internalizes knowledge—integrating its
+own knowledge with the given context for a natural, informed response.
+Evaluation Criteria:
+1. Internalization: Does the answer go beyond repetition to integrate knowledge seamlessly?
+2. Fluency: Is the response well-structured and readable?
+3. Relevance: Does it stay on topic while demonstrating depth?
+Mark the Winner: Identify the superior response. If both are equally strong, mark it as a tie.
+Question: {question}
+Context: {passages}
+DyPRAG Answer: {dyprag_answer}
+RAG Answer: {rag_answer}
+Respond in the following format:
+{{
+"win model": "DyPRAG or RAG or Tie",
+"reason": "Provide a concise explanation of why the selected answer demonstrates better knowledge
+integration, referencing the question, context, and specific details from both answers. If one answer has
+clear advantages in integration, explain them; if there are errors or weaknesses, specify them."
+}}
+Figure 16: Prompt format of evaluate RAGTruth using GPT-4o. We compare answer between
+standard RAG and DyPRAG-Combine.
+Prompt Format of QA Generation
+I will provide a passage of text, and you need to generate three different questions based on the content
+of this passage. Each question should be answerable using the information provided in the passage.
+Additionally, please provide an appropriate answer for each question derived from the passage.
+You need to generate the question and answer in the following format:
+[
+{{
+"question": "What is the capital of France?",
+"answer": "Paris",
+"full_answer": "The capital of France is Paris."
+}},
+]
+This list should have at least three elements. You only need to output this list in the above format.
+Passage: {passage}
+Figure 17: Prompt format of evaluate RAGTruth using GPT-4o. We compare answer between
+standard RAG and DyPRAG-Combine.
+J
+Limitations and Future Directions
+In this study, our proposed Dynamic Parametric RAG (DyPRAG) demonstrates superior performance
+in both IID and OOD settings across various scales of LLMs. However, it is important to note that
+our method focuses exclusively on the QA task. For other challenging tasks, such as mathematical
+24
+
+===== PAGE 24 =====
+reasoning, this remains a highly valuable area for further exploration. Additionally, as we propose
+combining DyPRAG generated parameters with contextual knowledge to mitigate the RAG hallu-
+cination issue, it becomes crucial to conduct in-depth analysis using interpretability tools to better
+understand the internal workflow of the model. Finally, our research represents only the beginning of
+exploring the potential for a powerful and trustworthy RAG solution. Such a system could seamlessly
+enhance parametric knowledge with contextual information, improving knowledge fusion while
+mitigating conflicts. Developing and deploying this RAG system in real-world applications is a
+promising and worthwhile avenue for future work.
+25

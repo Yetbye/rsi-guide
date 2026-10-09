@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>In-Place TTT 深度解读 | 把 W_down 变成快权重：TTT 进 LLM 生态的工程化路线</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  /* === 自组 · 青瓷 Celadon === */
+  --bg-primary:#F6FAF9; --bg-secondary:#EEF5F2; --bg-tertiary:#DDEBE6;
+  --text-primary:#16302B; --text-secondary:#43605A; --text-muted:#7E9691;
+  --color-primary:#0E6E62; --color-secondary:#4A6FA5; --color-tertiary:#3D584C;
+  --accent-warm:#C25E4C; --accent-gold:#B08D57; --accent-soft:#BEE3D8;
+  --font-display:'Noto Serif SC','Source Han Serif SC','Playfair Display',Georgia,serif;
+  --font-body:'Noto Sans SC','PingFang SC','Microsoft YaHei',-apple-system,sans-serif;
+  --font-hand:'Ma Shan Zheng','Zhi Mang Xing',cursive;
+  --font-mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:.4s;
+  --radius-lg:16px;
+  --shadow-sm:0 2px 8px rgba(14,110,98,.08); --shadow-md:0 4px 16px rgba(14,110,98,.12); --shadow-lg:0 8px 32px rgba(14,110,98,.16);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);color:var(--text-primary);background:var(--bg-primary);line-height:1.9;font-size:16.5px;
+  background-image:repeating-linear-gradient(0deg,rgba(14,110,98,.014) 0 1px,transparent 1px 30px),repeating-linear-gradient(90deg,rgba(14,110,98,.014) 0 1px,transparent 1px 30px)}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:900;letter-spacing:-.015em;color:var(--color-primary)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(246,250,249,.9);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--bg-tertiary);padding:0 24px}
+.nav-inner{max-width:1140px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:54px}
+.nav-logo{font-family:var(--font-display);font-weight:900;font-size:15px;color:var(--color-primary)}
+.nav-logo em{font-style:normal;color:var(--accent-warm)}
+.nav-links{display:flex;gap:11px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--text-muted);text-decoration:none;letter-spacing:.5px;position:relative;padding:3px 0}
+.nav-links a::after{content:'';position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--accent-warm);transform:scaleX(0);transform-origin:left;transition:transform var(--duration) var(--ease-out)}
+.nav-links a:hover{color:var(--color-primary)}.nav-links a:hover::after{transform:scaleX(1)}
+.hero{position:relative;min-height:94vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:110px 24px 70px;
+  background:linear-gradient(178deg,#ecf5f1 0%,#F6FAF9 42%,#eef6f2 100%)}
+.hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 600px 300px at 12% 16%,rgba(14,110,98,.10),transparent 62%),
+             radial-gradient(ellipse 500px 300px at 88% 82%,rgba(74,111,165,.09),transparent 62%),
+             radial-gradient(ellipse 420px 240px at 78% 8%,rgba(176,141,87,.12),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:860px;text-align:center}
+.hero-badge{display:inline-flex;background:rgba(255,255,255,.74);backdrop-filter:blur(10px);border:1px solid rgba(14,110,98,.25);color:var(--color-primary);padding:7px 20px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:3px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
+.hero h1{font-size:clamp(2.3rem,6.6vw,4.2rem);line-height:1.16;margin:10px 0 12px}
+.hero h1 .mark{background:linear-gradient(135deg,var(--color-primary),#159a8a);color:#F6FAF9;padding:.05em .28em;border-radius:.16em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.hero-tagline{font-family:var(--font-display);font-size:clamp(1rem,2.4vw,1.26rem);color:var(--color-secondary);font-weight:800;margin-bottom:8px}
+.hero-desc{font-size:14.5px;color:var(--text-secondary);max-width:680px;margin:0 auto 24px}
+.hero-art{margin:6px auto 4px;max-width:820px;width:100%;border-radius:24px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid rgba(14,110,98,.14);background:#f2f8f5}
+.hero-art svg{display:block;width:100%;height:auto}
+.hero-caption{font-size:11.5px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:26px;border-radius:var(--radius-lg);overflow:hidden;border:2px solid var(--color-primary);position:relative}
+.hero-stats::before{content:'';position:absolute;inset:6px;border:1px solid rgba(194,94,76,.45);pointer-events:none;border-radius:10px}
+.hstat{background:linear-gradient(180deg,#fbfdfc,#ecf4f0);padding:15px 8px;border-left:1px solid var(--bg-tertiary)}
+.hstat:first-child{border-left:none}
+.hstat b{display:block;font-family:var(--font-display);font-size:1.5rem;color:var(--color-primary)}
+.hstat span{font-size:11px;color:var(--text-secondary)}
+.scroll-hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-size:10.5px;letter-spacing:3px;color:var(--text-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.7s infinite;font-size:14px}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+main{max-width:880px;margin:0 auto;padding:60px 24px 30px}
+section{margin-bottom:72px;position:relative}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--accent-warm);font-weight:800;margin-bottom:8px;font-family:var(--font-mono)}
+h2{font-size:clamp(1.5rem,3.6vw,2rem);margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--bg-tertiary);position:relative}
+h2::after{content:'';position:absolute;left:0;bottom:-2px;width:64px;height:2px;background:var(--accent-warm)}
+h3{font-size:1.14rem;margin:26px 0 10px;color:var(--color-tertiary)}
+p{margin-bottom:13px;color:var(--text-secondary)}
+p strong,li strong{color:var(--text-primary)}
+ul,ol{margin:0 0 13px 22px;color:var(--text-secondary)}
+li{margin-bottom:6px}
+figure{margin:24px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid var(--bg-tertiary);box-shadow:var(--shadow-md);background:#fff}
+figcaption{font-size:12.5px;color:var(--text-muted);margin-top:9px;line-height:1.75;text-align:left}
+figcaption b{color:var(--color-tertiary)}
+.svgbox{background:#fff;border:1px solid var(--bg-tertiary);border-radius:var(--radius-lg);padding:16px 10px;margin:24px 0;box-shadow:var(--shadow-sm)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#dff0eb,#c8e4db);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--color-primary);box-shadow:var(--shadow-sm)}
+.insight-box .tag{background:var(--color-primary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.insight-box h4{margin:10px 0 6px;color:#0a4038;font-size:1.03rem}
+.insight-box p{color:#14544a;margin-bottom:5px}
+.critique-box{background:linear-gradient(135deg,#faf0e9,#f4dfd4);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--accent-warm);box-shadow:var(--shadow-sm)}
+.critique-box .tag{background:var(--accent-warm);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.critique-box h4{margin:10px 0 6px;color:#7d3a2c;font-size:1rem}
+.critique-box p{color:#8f4c3c;margin-bottom:5px;font-size:14.5px}
+.research-question{background:#fff;border:1px solid rgba(74,111,165,.4);border-radius:var(--radius-lg);padding:20px 22px;margin:20px 0;box-shadow:var(--shadow-sm);transition:transform var(--duration) var(--ease-out),box-shadow var(--duration)}
+.research-question:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
+.research-question .tag{background:var(--color-secondary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:800}
+.research-question h4{margin:10px 0 6px;color:#33506e}
+.research-question p{color:#4a6076;margin-bottom:7px;font-size:14.5px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow-sm)}
+th{background:linear-gradient(135deg,var(--color-primary),#159a8a);color:#f6faf9;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--bg-secondary);text-align:center;color:var(--text-secondary)}
+tr:last-child td{border-bottom:none}
+td.hl{background:#e2f0ec;font-weight:700;color:var(--color-primary)}
+td.best{background:#d5ece5;font-weight:800;color:#0a4038}
+td.bad{background:#f6e3dd;color:#7d3a2c}
+.mathcard{background:#fff;border:1px solid var(--bg-tertiary);border-left:4px solid var(--color-primary);border-radius:14px;padding:18px 22px;margin:20px 0;overflow-x:auto;box-shadow:var(--shadow-sm)}
+.mathcard h4{font-size:1rem;color:var(--color-primary);margin-bottom:7px}
+.mathcard .note{font-size:13.5px;color:var(--text-muted)}
+.mathcard .cf{font-size:13.5px;color:#7d3a2c;background:#faf0e9;border-radius:8px;padding:8px 12px;margin-top:10px}
+.code-head{display:flex;gap:10px;align-items:center;margin:24px 0 8px;flex-wrap:wrap}
+.code-head .cred{font-size:11px;font-weight:700;padding:3px 12px;border-radius:10px;color:#fff}
+.cred.run{background:var(--color-secondary)}.cred.ill{background:var(--accent-gold)}
+.code-note{background:#e2f0ec;border:1px dashed var(--bg-tertiary);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--color-primary);margin-bottom:8px}
+pre.code-block{background:#122a26;color:#e2efe9;border-radius:14px;padding:18px 20px;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);margin-bottom:8px}
+pre.code-block .kw{color:#8fd4c4;font-weight:700}
+pre.code-block .fn{color:#e0cf9a}
+pre.code-block .cm{color:#729a90;font-style:italic}
+pre.code-block .num{color:#eab8a0}
+.roadmap{counter-reset:step}
+.step{position:relative;padding:0 0 24px 46px;counter-increment:step}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--color-primary),var(--accent-gold));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step::after{content:'';position:absolute;left:15px;top:36px;bottom:0;width:2px;background:var(--bg-tertiary)}
+.step:last-child::after{display:none}
+.step h4{font-size:1rem;margin-bottom:5px}
+.step p{font-size:14.5px}
+footer{background:#122a26;color:#c5dbd3;padding:50px 24px 58px;margin-top:30px}
+footer .inner{max-width:880px;margin:0 auto}
+footer h3{color:#f6faf9;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.85}
+footer a{color:var(--accent-soft);text-decoration:none}
+footer .fin{margin-top:24px;font-size:12px;color:#729a90;border-top:1px solid #23524a;padding-top:16px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">In-Place TTT <em>·</em> 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">三大壁垒</a><a href="#s2">in-place</a><a href="#s3">chunk 更新</a><a href="#s4">目标函数</a><a href="#s5">定理 1</a>
+    <a href="#s6">工程</a><a href="#s7">drop-in</a><a href="#s8">从头训练</a><a href="#s9">消融</a><a href="#s10">批判</a>
+    <a href="#s11">谱系</a><a href="#s12">科研问题</a><a href="#s13">路线图</a><a href="#s14">结语</a>
+  </div>
+</div></nav>
+
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">arXiv:2604.06169 · PREPRINT · APR 2026 · BYTEDANCE SEED / PKU</div>
+    <h1>In-Place TTT：<span class="mark">W_down 就是</span><br>快权重</h1>
+    <p class="hero-tagline">MLP 就地改造 · NTP 对齐目标 · 闭式 chunk 更新 · CP 原生</p>
+    <p class="hero-desc">TTT 进 LLM 生态的三堵墙：要新架构、逐 token 更新太慢、重建目标与语言建模错配。这篇的解法出乎意料地简单——门控 MLP 的最终投影矩阵 W_down 直接当快权重，更新规则是一行闭式外积，热启动 Qwen3-4B 后 128K RULER 提升 2.2 分、256K 外推再涨。</p>
+    <div class="hero-art">
+      <svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="青瓷风：MLP 块的就地改造与 chunk-wise 快权重更新">
+        <defs>
+          <linearGradient id="cg1" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#0E6E62" stop-opacity=".85"/><stop offset="1" stop-color="#4A6FA5" stop-opacity=".6"/>
+          </linearGradient>
+          <filter id="cgb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+        </defs>
+        <rect width="1200" height="520" fill="#f2f8f5"/>
+        <ellipse cx="280" cy="130" rx="280" ry="80" fill="#0E6E62" opacity=".08" filter="url(#cgb)"/>
+        <ellipse cx="900" cy="380" rx="320" ry="90" fill="#4A6FA5" opacity=".08" filter="url(#cgb)"/>
+        <g transform="translate(80,110)">
+          <rect x="0" y="0" width="330" height="300" rx="16" fill="#ffffff" stroke="#0E6E62" stroke-width="3"/>
+          <text x="165" y="36" text-anchor="middle" font-weight="900" fill="#0E6E62" font-size="14">gated MLP（改前）</text>
+          <g stroke="#9ab8ae" stroke-width="2.5" fill="none">
+            <path d="M 40 90 h 90"/><path d="M 40 150 h 90"/><path d="M 130 90 v 60 h 30"/><path d="M 130 150 v -60 h 30"/>
+          </g>
+          <rect x="40" y="72" width="90" height="36" rx="8" fill="#e2f0ec" stroke="#43605A"/><text x="85" y="95" text-anchor="middle" font-size="12" fill="#43605A">H</text>
+          <rect x="40" y="132" width="90" height="36" rx="8" fill="#e2f0ec" stroke="#43605A"/><text x="85" y="155" text-anchor="middle" font-size="12" fill="#43605A">φ⊙</text>
+          <rect x="170" y="66" width="130" height="44" rx="8" fill="#eef5f2" stroke="#43605A"/><text x="235" y="93" text-anchor="middle" font-size="12.5" fill="#43605A">W_gate ❄ W_up ❄</text>
+          <rect x="170" y="126" width="130" height="44" rx="8" fill="#0E6E62"/>
+          <text x="235" y="153" text-anchor="middle" font-size="12.5" fill="#fff" font-weight="800">W_down（改后=快权重）</text>
+          <text x="165" y="212" text-anchor="middle" fill="#7E9691" font-size="11.5">❄ 冻结慢权重　▓ 测试时梯度更新</text>
+          <text x="165" y="240" text-anchor="middle" fill="#C25E4C" font-weight="700" font-size="12">只动一个矩阵，其余原封不动</text>
+          <text x="165" y="270" text-anchor="middle" font-family="'Ma Shan Zheng',cursive" font-size="20" fill="#0E6E62">就地改造，即插即用</text>
+        </g>
+        <g font-family="'JetBrains Mono',monospace">
+          <g transform="translate(480,90)">
+            <rect x="0" y="0" width="620" height="340" rx="16" fill="#122a26"/>
+            <text x="310" y="42" text-anchor="middle" fill="#8fd4c4" font-size="13" font-weight="800">chunk-wise 循环（对每个 chunk i）</text>
+            <text x="40" y="86" fill="#e2efe9" font-size="14">Apply:  O[i] = Z[i] · (W_down⁽ⁱ⁾)ᵀ</text>
+            <text x="40" y="130" fill="#e2efe9" font-size="14">Update: W⁽ⁱ⁺¹⁾ = W⁽ⁱ⁾ + η · V̂ᵢᵀ Zᵢ</text>
+            <text x="40" y="174" fill="#729a90" font-size="12">目标 V̂ = Conv1D(X₀) · W_target</text>
+            <text x="40" y="198" fill="#729a90" font-size="12">　　（Conv1D 控制未来 token 信息 → NTP 对齐）</text>
+            <rect x="40" y="226" width="540" height="2" fill="#23524a"/>
+            <text x="40" y="256" fill="#e0cf9a" font-size="12.5">定理 1：NTP 目标 ⇒ 正确 token 的 logit 期望上升 ≥ λlr·c²·c_align</text>
+            <text x="40" y="282" fill="#eab8a0" font-size="12.5">　　　　重建目标 ⇒ 正确 token 的 logit 变化 ≤ λlr·ε·c_align（无效）</text>
+            <text x="40" y="316" fill="#8fd4c4" font-size="12">三段并行 scan：① 并行算 ΔW ② 前缀和 ③ 并行应用 —— CP 原生、严格因果</text>
+          </g>
+        </g>
+      </svg>
+      <p class="hero-caption">博客主视觉（手绘 SVG）：左——门控 MLP 中只有 W_down 被点亮为快权重；右——方法核心三行：apply/update 循环、NTP 对齐目标、定理 1 的两条 logit 界，以及 CP 并行 scan。</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><b>+2.2</b><span>Qwen3-4B @128K RULER</span></div>
+      <div class="hstat"><b>+16.9</b><span>4B 从头训练 RULER-8k（SWA）</span></div>
+      <div class="hstat"><b>1 行</b><span>闭式更新 η·V̂ᵀZ（无反传）</span></div>
+      <div class="hstat"><b>热启动</b><span>Qwen3-4B / LLaMA-3.1 / Qwen3-14B</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 问题</div>
+  <h2>TTT 进 LLM 生态的三堵墙</h2>
+  <p>TTT（测试时训练）用一小撮<strong>快权重</strong>在推理时持续压缩上下文，概念上直击"train-then-deploy"范式的静态性。但论文开篇把阻碍讲得极清楚——三堵墙，每堵都有明确的技术来源：</p>
+  <ul>
+    <li><strong>墙一 · 架构不兼容</strong>：既有 TTT 把快权重做成独立循环层去<strong>替换注意力</strong>，随机初始化的新层与数十亿预训练参数失衡，必须从头预训练才能达到合格性能——这对生态里现成的 10B 级模型是采纳壁垒。</li>
+    <li><strong>墙二 · 计算低效</strong>：经典 TTT 逐 token 更新、天然串行。chunk-wise 加速已被探索（Titans/LaCT/RetNet 一系），但 TTT 作为<strong>主 token 混合器</strong>时被迫用小 chunk 保性能，卡死现代加速器的并行吞吐。</li>
+    <li><strong>墙三 · 目标错配</strong>：主流快权重目标是<strong>重建</strong>（从 key 重建 value，而 v 通常是当前 token 自己的投影）——它与自回归建模的因果 NTP（Next-Token Prediction，下一 token 预测）目标没有显式对齐，可能存储的是"对未来预测无用"的信息。</li>
+  </ul>
+  <div class="svgbox">
+  <svg viewBox="0 0 920 270" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="w1" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#C25E4C"/></marker></defs>
+    <g font-size="12.5" text-anchor="middle">
+      <rect x="30" y="40" width="260" height="64" rx="12" fill="#faf0e9" stroke="#C25E4C" stroke-width="2.5"/>
+      <text x="160" y="66" font-weight="900" fill="#7d3a2c">墙一 · 架构不兼容</text>
+      <text x="160" y="88" fill="#8f4c3c" font-size="11.5">新层 vs 预训练参数失衡 → 必须从头训</text>
+      <rect x="30" y="116" width="260" height="64" rx="12" fill="#faf0e9" stroke="#C25E4C" stroke-width="2.5"/>
+      <text x="160" y="142" font-weight="900" fill="#7d3a2c">墙二 · 逐 token 串行</text>
+      <text x="160" y="164" fill="#8f4c3c" font-size="11.5">主混合器被迫小 chunk → 并行卡死</text>
+      <rect x="30" y="192" width="260" height="64" rx="12" fill="#faf0e9" stroke="#C25E4C" stroke-width="2.5"/>
+      <text x="160" y="218" font-weight="900" fill="#7d3a2c">墙三 · 重建目标错配</text>
+      <text x="160" y="240" fill="#8f4c3c" font-size="11.5">存"当前 token"≠ 利于"预测下一 token"</text>
+      <g>
+        <rect x="620" y="40" width="270" height="64" rx="12" fill="#e2f0ec" stroke="#0E6E62" stroke-width="2.5"/>
+        <text x="755" y="66" font-weight="900" fill="#0E6E62">解法一 · W_down 就地当快权重</text>
+        <text x="755" y="88" fill="#43605A" font-size="11.5">drop-in 热启动，无新层、无失衡</text>
+        <rect x="620" y="116" width="270" height="64" rx="12" fill="#e2f0ec" stroke="#0E6E62" stroke-width="2.5"/>
+        <text x="755" y="142" font-weight="900" fill="#0E6E62">解法二 · 注意力不动 + 大 chunk</text>
+        <text x="755" y="164" fill="#43605A" font-size="11.5">chunk 512-1024，并行不再受限</text>
+        <rect x="620" y="192" width="270" height="64" rx="12" fill="#e2f0ec" stroke="#0E6E62" stroke-width="2.5"/>
+        <text x="755" y="218" font-weight="900" fill="#0E6E62">解法三 · NTP 对齐目标 V̂</text>
+        <text x="755" y="240" fill="#43605A" font-size="11.5">Conv1D 控未来信息 + 定理 1 背书</text>
+      </g>
+      <line x1="290" y1="72" x2="616" y2="72" stroke="#C25E4C" stroke-width="3" marker-end="url(#w1)"/>
+      <line x1="290" y1="148" x2="616" y2="148" stroke="#C25E4C" stroke-width="3" marker-end="url(#w1)"/>
+      <line x1="290" y1="224" x2="616" y2="224" stroke="#C25E4C" stroke-width="3" marker-end="url(#w1)"/>
+      <text x="450" y="62" font-size="11.5" fill="#C25E4C" font-weight="800">in-place 设计</text>
+      <text x="450" y="138" font-size="11.5" fill="#C25E4C" font-weight="800">注意力兜底</text>
+      <text x="450" y="214" font-size="11.5" fill="#C25E4C" font-weight="800">目标换轴</text>
+      <text x="450" y="264" fill="#43605A" font-size="12">三个解法互相咬合：架构决策（一）解锁目标与并行的自由度（二、三）——见第 3 章的具体机制。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S1（自绘）</b>：三堵墙与三个解法的一一对应。</figcaption>
+  </div>
+  <p><strong>论文对三堵墙各给一个直接解法</strong>，且三个解法互相咬合：<strong>墙一</strong>→ 就地改造（MLP 的 W_down 当快权重，drop-in 热启动）；<strong>墙二</strong>→ 注意力原封不动，TTT 退居配角，chunk 可以开大到 512-1024；<strong>墙三</strong>→ 目标 V̂ 显式含未来 token 信息（NTP 对齐），并有定理 1 背书。这个"咬合"结构是全文最值得学的设计方式：<strong>架构决策解锁了目标决策，目标决策又回报了架构决策</strong>。</p>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 设计 I</div>
+  <h2>in-place：W_down 就是快权重</h2>
+  <div class="mathcard"><h4>门控 MLP 与被征用的矩阵</h4>
+  $$O = \Big(\varphi(H W_{\mathrm{gate}}^\top) \odot (H W_{\mathrm{up}}^\top)\Big)\, W_{\mathrm{down}}^\top$$
+  <p class="note">$H$：隐表示。In-Place TTT 的全部架构改动：<strong>$W_{\mathrm{up}}, W_{\mathrm{gate}}$ 冻结为慢权重，$W_{\mathrm{down}}$（最终投影矩阵）就地充当快权重</strong>，推理时被 chunk-wise 更新。</p></div>
+  <p>为什么选中 $W_{\mathrm{down}}$？论文的论证链条有两环：其一，TTT 框架对快权重的选择本无约束——任何参数都可被测试时更新；其二，Geva et al. 2020 的结论"Transformer FFN 是键值记忆"意味着 MLP 本来就承担着预训练知识（慢权重）的存储——<strong>让同一个模块兼职存储瞬态上下文（快权重）是自然的延伸</strong>，而不是硬加的新部件。反事实对比：若替换注意力层（前人路线），新层的随机初始化与预训练参数的冲突需要昂贵的重训来弥合；若新增旁路层（LongMem 式），则破坏架构完整性。<strong>in-place 是三条路里唯一能热启动的</strong>。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>"drop-in"的精确含义：架构兼容 ≠ 免训练</h4>
+    <p>必须拆清一个容易被摘要误导的点：In-Place TTT 的"drop-in"指<strong>架构兼容、可从预训练 checkpoint 热启动</strong>（warm start），不是说拿到现成模型就免费获得 TTT 能力——Qwen3-4B 的增益来自 ~35B token 的两阶段持续训练（§7）。它省掉的是<strong>从头预训练</strong>（前人 TTT 的必需项），不是全部训练。对照本系列：DnD/D2L 的"生成式适配"才做到了"零持续训练、单次前向"，代价是编辑器本身的元训练；In-Place TTT 用持续训练换通用性。两条路线的成本结构不同，适用场景不同。</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 设计 II</div>
+  <h2>chunk-wise 更新：apply-then-update 循环</h2>
+  <div class="mathcard"><h4>chunk-wise 机制（逐字核对）</h4>
+  <p style="font-size:14px">中间激活 $Z = \varphi(H W_{\mathrm{gate}}^\top) \odot (H W_{\mathrm{up}}^\top) \in \mathbb{R}^{n\times d_{\mathrm{ff}}}$ 切成 $k$ 个大小 $C$ 的 chunk。对每个 chunk $i$：</p>
+  $$\textbf{Apply:}\quad O_{[i]} = Z_{[i]}\big(W^{(i)}_{\mathrm{down}}\big)^\top$$
+  $$\textbf{Update:}\quad W^{(i+1)}_{\mathrm{down}} = W^{(i)}_{\mathrm{down}} - \eta\, \nabla_W L\big(Z_{[i]}(W^{(i)}_{\mathrm{down}})^\top,\ V_{[i]}\big)$$
+  <p class="note">$W^{(0)}_{\mathrm{down}} = W_{\mathrm{down}}$（预训练值）。更新是一次梯度步，损失 $L$ 由 §4 的目标实例化。</p></div>
+  <figure>
+    <img src="figures/fig1_framework.png" alt="论文 Figure 1：In-Place TTT 整体框架">
+    <figcaption><b>图 1（论文 Figure 1 精准裁剪）</b>：整体框架——MLP 块被就地改造：先 Apply（当前 W_down 处理 Z），再 Update（以 NTP 对齐目标 V̂ 做一次梯度步），逐 chunk 严格因果地推进。</figcaption>
+  </figure>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 240" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="c3" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#0E6E62"/></marker></defs>
+    <g font-size="12.5">
+      <rect x="40" y="50" width="360" height="60" rx="12" fill="#e2f0ec" stroke="#0E6E62" stroke-width="2.5"/>
+      <text x="220" y="76" text-anchor="middle" font-weight="900" fill="#0E6E62">Apply：O[i] = Z[i]·(W⁽ⁱ⁾)ᵀ</text>
+      <text x="220" y="98" text-anchor="middle" fill="#43605A" font-size="11.5">当前快权重处理当前 chunk 的激活</text>
+      <rect x="500" y="50" width="360" height="60" rx="12" fill="#fff" stroke="#C4784A" stroke-width="2.5"/>
+      <text x="680" y="76" text-anchor="middle" font-weight="900" fill="#9a5a28">Update：W⁽ⁱ⁺¹⁾ = W⁽ⁱ⁾ − η∇L</text>
+      <text x="680" y="98" text-anchor="middle" fill="#43605A" font-size="11.5">用 Z[i]（key）与 V[i]（value）做一次梯度步</text>
+      <line x1="400" y1="80" x2="496" y2="80" stroke="#0E6E62" stroke-width="3" marker-end="url(#c3)"/>
+      <path d="M 680 110 C 680 170, 220 170, 220 114" fill="none" stroke="#C4784A" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#c3)"/>
+      <text x="450" y="162" text-anchor="middle" fill="#C25E4C" font-size="12" font-weight="700">循环：处理 → 更新 → 处理 → 更新（chunk 粒度，非逐 token）</text>
+      <text x="450" y="200" text-anchor="middle" fill="#43605A" font-size="12">与既有 chunk-wise 工作的本质区别：注意力层完好，chunk 内混合由注意力兜底，</text>
+      <text x="450" y="224" text-anchor="middle" fill="#43605A" font-size="12">快权重只积累跨 chunk 信息 → chunk 可以开到 512-1024（消融 §9 的最优区间）。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S2（自绘）</b>：apply-then-update 循环。"注意力兜底"是 chunk 可以放大的前提（墙一解法解锁墙二解法的机制）。</figcaption>
+  </div>
+  <p>与既有 chunk-wise 工作的本质区别在<strong>自由度</strong>：注意力承担 chunk 内混合，快权重只管跨 chunk，故 $C$ 可开到 512-1024（§9）。</p>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · 设计 III</div>
+  <h2>LM-Aligned 目标：让快权重存"对未来有用的信息"</h2>
+  <div class="mathcard"><h4>NTP 对齐的目标与闭式更新（逐字核对）</h4>
+  $$\hat V = \mathrm{Conv1D}(X_0)\, W_{\mathrm{target}},\qquad X_0 \in \mathbb{R}^{n\times d_{\mathrm{model}}}$$
+  $$L(\cdot,\cdot) = -\langle \cdot,\cdot\rangle_F \quad\Longrightarrow\quad W^{(i)}_{\mathrm{down}} = W^{(i-1)}_{\mathrm{down}} + \eta\, \hat V_{[i]}^\top Z_{[i]} \qquad \text{(式 1)}$$
+  <p class="note">$X_0$：token embedding；$\mathrm{Conv1D}$：因果一维卷积（控制目标里混入多少未来 token 信息——取"下一 token 位置权重为 1、其余为 0"即严格 NTP 目标）；$W_{\mathrm{target}}$：可训练投影。<strong>损失取负内积 → 梯度是闭式外积 $+\eta\hat V^\top Z$，内环没有任何反传</strong>。</p></div>
+  <p>与重建目标的差别一句话说清：重建目标让快权重记住"当前 token 是什么"（$v_t$ 来自 $x_t$ 自身），NTP 对齐目标让快权重记住"当前 token <strong>之后</strong>是什么"。后者才是语言建模在测试时需要压缩的东西。实现上论文没有止步于严格 NTP：核宽固定 5、核权重可学习，学一个<strong>局部未来 token 的组合</strong>（严格 NTP 还需 $W_{\mathrm{target}}$ 取恒等，由核与投影共同实现）——与 DeepSeek-V3 的 Multi-Token Prediction 呼应。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>损失选 $-\langle\cdot,\cdot\rangle_F$ 的隐藏红利：内环消失</h4>
+    <p>若目标仍是 MSE 重建（$g$ 为非线性网络，如 TTT-KVB——以 key-value 重建为目标的 TTT 层统称，Titans/LaCT 属此），chunk 更新需要一次反传；而换成内积损失后，更新是<strong>闭式外积</strong>——内环梯度计算彻底消失，只剩矩阵乘。这不仅是效率：它让整个 chunk-wise 流程退化为"线性注意力的关联规则 + NTP 对齐的目标"，从而天然适配并行 scan（§6）。代价也明确：内积损失对 $\hat V$ 的模长没有惩罚（只对齐方向、可无限放大），数值稳定要靠 §6 的 τ 裁剪兜底——这是选简单损失的隐性账单（F1）。</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 理论</div>
+  <h2>定理 1：在归纳头设定下，NTP 对齐目标赢在期望上</h2>
+  <div class="mathcard"><h4>Theorem 1（附录 A 完整证明；两条假设）</h4>
+  <p style="font-size:14px"><strong>设定</strong>（归纳头：k* 重现时复制其后续 v* 的上下文学习回路）：$(x_{t^*}, x_{t^*+1}) = (k^*, v^*)$ 在 $t^*$ 出现；查询位 $n &gt; t^*$ 处 $x_n = k^*$ 重现，模型需预测 $x_{n+1} = v^*$。快权重更新 $\Delta W = \eta\sum_{t} v_t z_t^\top$，对查询位 logit 的改变 $\Delta\ell_n[w] = e_w^\top (\Delta W) z_n$。</p>
+  <p style="font-size:14px"><strong>假设 1</strong>（嵌入近似正交）：$|e_{w_i}^\top e_{w_j}| \le \epsilon$（$w_i \neq w_j$），且 $\|e_w\|_2 \ge c_{\mathrm{norm}}$（论文原文记 $\|e_w\|_2 \ge c_{\mathrm{norm}}^2$，证明按平方使用——记号不自洽，此处按使定理成立的口径书写）。<strong>假设 2</strong>（key-query 对齐）：$\mathbb{E}[z_{t^*}^\top z_n] = c_{\mathrm{align}} &gt; 0$，其余位置 $\mathbb{E}[(v_t z_t^\top) z_n] = 0$。</p>
+  $$\textbf{NTP 对齐目标（} v_{t^*} = e_{x_{t^*+1}} \textbf{）：}\quad \mathbb{E}[\Delta\ell_n[v^*]] \ge \lambda_{lr}\, c_{\mathrm{norm}}^2\, c_{\mathrm{align}},\qquad |\mathbb{E}[\Delta\ell_n[w]]| \le \lambda_{lr}\, \epsilon\, c_{\mathrm{align}}\ (\forall w \neq v^*)$$
+  $$\textbf{重建目标（} v_{t^*} = e_{x_{t^*}} \textbf{）：}\quad \big|\mathbb{E}[\Delta\ell_n[v^*]]\big| \le \lambda_{lr}\, \epsilon\, c_{\mathrm{align}}$$
+  <p class="note">直觉：正确 token 的 logit 增量正比于 $e_{v^*}^\top e_{v^*} = \|e_{v^*}\|^2$（自内积，大）；错误 token 只剩 $e_w^\top e_{v^*} \le \epsilon$（近正交，小）。重建目标的 $v_{t^*} = e_{k^*}$——归纳任务中 key ≠ value，$e_{k^*}^\top e_{v^*} \le \epsilon$：<strong>存的是键，取的是值，近正交性把功劳抹掉了</strong>。</p></div>
+  <div class="critique-box"><span class="tag">F5 · 取证</span>
+    <h4>两条假设并不"mild"：理想化成分要标价</h4>
+    <p><strong>证据</strong>：假设 2 要求 key 位与查询位的激活对齐期望恰为 $c_{\mathrm{align}}$、其余位置期望<strong>恰为零</strong>——这是把"归纳头是唯一有效通路"理想化为精确等式；假设 1 的近正交对高频共现 token 对（缩写与全称、数字与其写法）不完全成立。<strong>推理</strong>：真实模型里其他通路的期望贡献非零，重建目标并非严格无效、NTP 目标的增益也会被稀释——定理给的是<strong>方向的保证</strong>（NTP 严格优），不是幅度的预测。<strong>影响</strong>：把它当"目标选择的方向性论证"用是安全的；当"增益大小推导"用则越界。消融（§9c：去掉 Conv1D/Proj 的掉分）是经验侧的补救证据。</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 工程</div>
+  <h2>工程：三段并行 scan、因果 padding、文档边界、零初始化、τ 裁剪</h2>
+  <p>式 (1) 的更新<strong>对 chunk 是结合的</strong>（纯加法），这解锁了三段上下文并行（CP）实现：</p>
+  <ol>
+    <li><strong>并行算增量</strong>：所有 chunk 同时算 $Z_{[i]}$ 与 $\Delta W^{(i)}_{\mathrm{down}} = \hat V_{[i]}^\top Z_{[i]}$；</li>
+    <li><strong>前缀和</strong>：$\Delta S_i = \sum_{j&lt;i} \Delta W_j$（结合律保证与串行等价）；</li>
+    <li><strong>并行应用</strong>：$W^{(i-1)}_{\mathrm{down}} = W^{(0)}_{\mathrm{down}} + \eta \Delta S_i$，$O_{[i]} = Z_{[i]}(W^{(i-1)}_{\mathrm{down}})^\top$。</li>
+  </ol>
+  <p>两个正确性细节：<strong>因果 padding</strong>——Conv1D 生成 $\hat V$ 时做因果填充，使 chunk $i$ 的增量不含未来信息（并行 scan 与串行更新数学等价）；<strong>文档边界重置</strong>——跨独立序列时快权重回到预训练状态，防上下文泄漏。两个训练细节：<strong>零初始化</strong>——Conv1D 核置零、$W_{\mathrm{target}}$ 稀疏对角（$N(0,\sigma^2)$），初始时 $\Delta W \approx 0$，TTT 能力"从预训练行为的恒等扰动中平滑生长"（与 LoRA 的 B=0、MEND 的恒等初始化同一条设计原则）；<strong>τ 裁剪</strong>——推理时若 $\|\Delta W^{(i)}_{\mathrm{down}}\|_F &gt; \tau = 10^{-5}$ 则按范数缩放，防止长序列下累积更新无界增长（Qwen3-4B 评测用；F1：τ 未消融）。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>"结合律"是这份工程清单的总钥匙</h4>
+    <p>更新若含非线性项（如 TTT-KVB 的 $g$ 反传、delta-rule 的擦除项），chunk 间不再可加，前缀和失效，并行 scan 要换成更贵的序列化算子。In-Place TTT 的更新是纯加法外积，才换来"三段全并行 + 数学严格等价串行"。对照：TTT-E2E 的内环是真 SGD（非线性），只能做 gradient checkpointing 式的时序折衷（训练延迟随 $\log T$ 增长，见该篇 §10）。<strong>内环的线性程度直接决定并行上限</strong>——这是两篇论文合起来给出的工程定律。</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 实验 I</div>
+  <h2>drop-in 增强：Qwen3-4B / LLaMA-3.1-8B / Qwen3-14B</h2>
+  <p>设置：Qwen3-4B-Base 热启动，两阶段持续训练（~20B token @32k + ~15B token @128k，YaRN 处理位置外推），<strong>基线与 +In-Place TTT 走完全相同的课程</strong>（唯一变量是本方法）。RULER（长上下文检索评测套件）4k-256k：</p>
+  <table>
+    <tr><th>Qwen3-4B（RULER 平均精度 %）</th><th>4k</th><th>8k</th><th>16k</th><th>32k</th><th>64k</th><th>128k</th><th>256k 外推</th></tr>
+    <tr><td>基线</td><td class="best">96.6</td><td>94.1</td><td>92.1</td><td>88.7</td><td>74.3</td><td>74.8</td><td>41.7</td></tr>
+    <tr><td class="hl">+ In-Place TTT</td><td>96.1</td><td class="best">95.6</td><td class="best">92.7</td><td class="best">89.3</td><td class="best">78.7</td><td class="best">77.0</td><td class="best">43.9</td></tr>
+  </table>
+  <table>
+    <tr><th>模型（RULER @64k / @64k+YaRN）</th><th>基线</th><th>+ In-Place TTT</th></tr>
+    <tr><td>LLaMA-3.1-8B</td><td>81.6 / –</td><td class="best">83.7 / –</td></tr>
+    <tr><td>Qwen3-14B</td><td>67.9 / 81.3</td><td class="best">70.6 / 82.5</td></tr>
+  </table>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxip" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#7E9691"/></pattern></defs>
+    <text x="30" y="26" font-size="13.5" font-weight="800" fill="#16302B">Qwen3-4B RULER 四档长度的增益结构（pixel-art，1 柱格 = 7px；4k-16k 略）</text>
+    <g font-size="12" text-anchor="middle">
+      <text x="130" y="58" font-weight="700" fill="#43605A">4k</text>
+      <rect x="88" y="121" width="42" height="169" fill="url(#pxip)"/><text x="110" y="113" font-weight="800" fill="#4A4A4A">96.6</text>
+      <rect x="136" y="122" width="42" height="168" fill="#0E6E62"/><text x="157" y="114" font-weight="800" fill="#0E6E62">96.1</text>
+      <text x="330" y="58" font-weight="700" fill="#43605A">32k</text>
+      <rect x="288" y="135" width="42" height="155" fill="url(#pxip)"/><text x="310" y="127" font-weight="800" fill="#4A4A4A">88.7</text>
+      <rect x="336" y="134" width="42" height="156" fill="#0E6E62"/><text x="357" y="126" font-weight="800" fill="#0E6E62">89.3</text>
+      <text x="530" y="58" font-weight="700" fill="#43605A">64k</text>
+      <rect x="488" y="160" width="42" height="130" fill="url(#pxip)"/><text x="510" y="152" font-weight="800" fill="#4A4A4A">74.3</text>
+      <rect x="536" y="152" width="42" height="138" fill="#0E6E62"/><text x="557" y="144" font-weight="900" fill="#0E6E62">78.7</text>
+      <text x="730" y="58" font-weight="700" fill="#43605A">128k</text>
+      <rect x="688" y="159" width="42" height="131" fill="url(#pxip)"/><text x="710" y="151" font-weight="800" fill="#4A4A4A">74.8</text>
+      <rect x="736" y="155" width="42" height="135" fill="#0E6E62"/><text x="757" y="147" font-weight="900" fill="#0E6E62">77.0</text>
+      <line x1="60" y1="292" x2="840" y2="292" x2="840" y2="292" stroke="#16302B" stroke-width="2.5"/>
+      <text x="450" y="286" fill="#43605A" font-size="0"> </text>
+      <text x="450" y="292" fill="#5C7A72" font-size="0"> </text>
+      <text x="60" y="286" text-anchor="start" fill="#5C7A72" font-size="11.5">灰 = 基线，青 = +In-Place TTT；增益在 64k 达峰（+4.4），128k/256k 维持 +2 左右；4k 略负（持平）。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S3（自绘 pixel-art）</b>：Table 1 核心读数。增益集中于窗口记忆失效处（论文：widening advantage）。</figcaption>
+  </div>
+  <p>读法：短上下文持平——收益只出现在窗口记忆失效处（论文：widening advantage）；跨家族（Qwen/LLaMA）、跨规模（4B-14B）、与 YaRN 正交，"drop-in 增强"主张成立，但以持续训练为前提（F4）。</p>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 实验 II</div>
+  <h2>从头训练：与 TTT 相关方法的正面对比 + 一处异常取证</h2>
+  <figure>
+    <img src="figures/fig2_swp.png" alt="论文 Figure 2：滑窗困惑度随上下文长度">
+    <figcaption><b>图 2（论文 Figure 2 精准裁剪）</b>：500M（左）/1.5B（右），32k 训练，SWA 骨干。Sliding Window Perplexity（固定末块、延长前文）：In-Place TTT 全程低于 SWA/GLA/DeltaNet/LaCT，且持续改善到 32k——快权重确实在压缩并利用上下文。</figcaption>
+  </figure>
+  <p>4B 规模（120B token，8k 窗口，Full Attention 与 SWA 双变体）：常识推理基本持平（HellaSwag/MMLU/PIQA 微升，ARC-C 反降 0.85），长上下文 RULER 大幅波动——</p>
+  <table>
+    <tr><th>4B 模型</th><th>HellaSwag</th><th>ARC-E</th><th>ARC-C</th><th>MMLU</th><th>PIQA</th><th>RULER-4k</th><th>RULER-8k</th><th>RULER-16k</th></tr>
+    <tr><td>Full Attn. 基线</td><td>55.67</td><td>64.52</td><td class="best">33.19</td><td>36.43</td><td>72.63</td><td>45.77</td><td>38.09</td><td class="bad">6.58</td></tr>
+    <tr><td class="hl">+ In-Place TTT</td><td>55.85</td><td>64.98</td><td>32.34</td><td class="best">37.42</td><td class="best">73.29</td><td class="best">49.98</td><td class="best">43.82</td><td class="best">19.99</td></tr>
+    <tr><td>SWA 基线</td><td>54.92</td><td>64.18</td><td>32.85</td><td>36.06</td><td>72.58</td><td>14.77</td><td>9.91</td><td>5.07</td></tr>
+    <tr><td class="hl">+ In-Place TTT</td><td>55.24</td><td>64.60</td><td class="best">33.70</td><td>36.48</td><td>72.03</td><td class="best">28.33</td><td class="best">26.80</td><td class="best">7.57</td></tr>
+  </table>
+  <div class="critique-box"><span class="tag">F2 · 取证</span>
+    <h4>from-scratch 基线的绝对分整体偏低</h4>
+    <p><strong>证据</strong>：SWA 基线 RULER-4k 仅 14.77（4B 模型、8k 窗口训练，4k 检索不应这么低）；FA 基线 RULER-16k=6.58 属 8k 窗口外推的预期失效。<strong>推理</strong>：from-scratch 基线的长上下文能力欠训练，增益数字里混有"训练稳定性收益"与方法收益的混合（FA@16k +13.41 的起点是外推失效，读数偏乐观）。<strong>影响</strong>：与 drop-in 实验（Qwen3-4B，成熟基座）的增益不可直接互比。<strong>补救</strong>：多次种子方差 + 换延续预训练 checkpoint。</p></div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 消融与效率</div>
+  <h2>消融：状态大小、chunk 大小、目标组件</h2>
+  <figure>
+    <img src="figures/fig3_ablation.png" alt="论文 Figure 3：三组消融">
+    <figcaption><b>图 3（论文 Figure 3 精准裁剪）</b>：1.7B 模型，RULER 评测。(a) 状态大小（TTT 层频率：每 6 层一处为 1×）——随状态增大单调改善，支撑"复用大容量 MLP 状态"的核心主张；(b) chunk 大小——512/1024 最优（小了并行差、大了更新粒度粗），C=1024 效率最好；(c) 目标组件——Conv1D 与 W_target 都必要：Conv1D 主长上下文、W_target 主短上下文。</figcaption>
+  </figure>
+  <figure>
+    <img src="figures/fig4_efficiency.png" alt="论文 Figure 4：prefill 吞吐与峰值显存">
+    <figcaption><b>图 4（论文 Figure 4 精准裁剪）</b>：4B 模型 prefill 吞吐与峰值显存（8k-128k，H800，batch 1）：In-Place TTT 相对基线开销可忽略——闭式更新不进反传图，scan 三段全并行。</figcaption>
+  </figure>
+  <p>消融的三个读数各有分量：<strong>状态大小单调有益</strong>直接支撑 in-place 复用（MLP 状态天然大，不必像 TTT-KVB 那样用 LoRA 压状态）；<strong>chunk 512-1024 最优</strong>给出与 TTT-E2E（b=1K）几乎相同的经验区间——两种完全不同的内环在同一个 chunk 尺度上收敛，暗示这是"注意力兜底 + 快权重接管"的平衡点；<strong>目标组件拆解</strong>（Conv1D 管长、W_target 管短）与定理 1 的方向一致但更细——定理只保证下一 token，经验上学习到的组合未来才是主要收益来源。</p>
+  <div class="critique-box"><span class="tag">F8 · 取证</span>
+    <h4>效率只报推理侧，训练期开销缺席</h4>
+    <p><strong>证据</strong>：Figure 4 只测 prefill 吞吐与峰值显存（推理）。持续训练中，Conv1D 与 $W_{\mathrm{target}}$ 是外环可学参数——它们的梯度要穿过"apply 步"（$O_{[i]}$ 依赖更新后的 $W^{(i-1)}$）与整个 scan，代价未报告。<strong>推理</strong>：推理侧开销可忽略 ≠ 训练侧免费；TTT-E2E 篇正是训练延迟栽的跟头。<strong>补救</strong>：报告持续训练的 wall-clock 对比（同 token 预算下 vs 纯 SWA 课程）。</p></div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 批判</div>
+  <h2>批判评估：六条展开（全文 F1-F8 索引）</h2>
+  <p style="font-size:13.5px;color:var(--text-muted)">编号承接全文：F1（本节）、F2（§8）、F3（规划中未展开：500M/1.5B 小窗口取证）、F4（§2）、F5（§5）、F6/F7（本节）、F8（§9）。</p><div class="critique-box"><span class="tag">F1</span><h4>推理期 τ 裁剪未消融</h4><p><strong>证据</strong>：Qwen3-4B 评测用 $\tau = 10^{-5}$ 的 Frobenius 范数裁剪（附录 C.2），无扫描、无去裁剪对照。<strong>影响</strong>：Table 1 的 RULER 增益对 τ 的敏感性未知——τ 既是稳定器也是信息瓶颈（裁掉的更新可能正是远距离依赖）。<strong>补救</strong>：τ 扫描 + 与 delta-rule 衰减门（δ-mem 式）的对照。</p></div>
+  <div class="critique-box"><span class="tag">F4</span><h4>"drop-in" 的训练成本账单</h4><p><strong>证据</strong>：Qwen3-4B 增益来自 ~20B + ~15B token 的两阶段持续训练；LLaMA/14B 各 ~20B。<strong>影响</strong>：成本结构不同于 DnD/D2L 的"元训练一次、编辑零成本"（见 §2 洞察）。<strong>补救</strong>：报告"每 RULER 分的 token 成本"并与持续训练基线归一。</p></div>
+  <div class="critique-box"><span class="tag">F5</span><h4>定理假设的理想化（见 §5）</h4><p>key-query 对齐期望精确、其余项期望为零——方向性保证可信，幅度不可外推。</p></div>
+  <div class="critique-box"><span class="tag">F6</span><h4>"NTP 对齐"按构造成立</h4><p><strong>证据</strong>：损失是 $-\langle\cdot,\cdot\rangle_F$，不是 NTP 交叉熵；"对齐"来自目标 V̂ 的构造（下一 token embedding）。<strong>推理</strong>：定理证明的是"value 嵌入的 logit 上升"，与"困惑度下降"之间隔着 softmax 与残差流——经验上成立（Figure 2），理论链条有一段悬空。</p></div>
+  <div class="critique-box"><span class="tag">F7</span><h4>未与 TTT-E2E 对比</h4><p><strong>证据</strong>：from-scratch 对比的 TTT 系基线只有 LaCT（KVB 系）；TTT-E2E（2025-12，同样改 MLP + 同样 NTP 对齐、真 SGD 内环）缺席。<strong>影响</strong>：两条最近亲路线的"内环非线性程度"之争没有正面数据。<strong>补救</strong>：同框架换内环（闭式 vs SGD）——这正是本系列 Q3 类实验的素材。</p></div>
+  <div class="critique-box"><span class="tag">F2 补</span><h4>from-scratch 基线的质量疑点（见 §8）</h4><p>RULER-8k 基线 6.58 的异常；500M/1.5B 只测到 32k、SWA 窗口 2048/4096 偏小。</p></div>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="kicker">CHAPTER 11 · 谱系</div>
+  <h2>谱系坐标：④/⑤ 边界的坍缩点</h2>
+  <div class="svgbox">
+  <svg viewBox="0 0 940 320" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="ip1" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#0E6E62"/></marker></defs>
+    <text x="30" y="28" font-size="13.5" font-weight="800" fill="#16302B">测试时适配的两条控制回路 × 一个新交点</text>
+    <g font-size="12" text-anchor="middle">
+      <rect x="30" y="50" width="400" height="120" rx="12" fill="#fff" stroke="#4A6FA5" stroke-width="2.5"/>
+      <text x="230" y="78" font-weight="900" fill="#33506e">回路 ⑤ · 真梯度内环（TTT-E2E）</text>
+      <text x="230" y="102" fill="#4a6076" font-size="12">内环：对 NTP 交叉熵做真 SGD（非线性，可含多头 MLP）</text>
+      <text x="230" y="126" fill="#4a6076" font-size="12">外环：grad-of-grad 元学习初始化</text>
+      <text x="230" y="150" fill="#8c2c50" font-size="11.5" font-weight="700">代价：训练期二阶自动微分，延迟 log(T) 增长</text>
+      <rect x="500" y="50" width="410" height="120" rx="12" fill="#fff" stroke="#0E6E62" stroke-width="2.5"/>
+      <text x="705" y="78" font-weight="900" fill="#0E6E62">回路 ④ · 解析更新内环（In-Place TTT）</text>
+      <text x="705" y="102" fill="#4a6076" font-size="12">内环：闭式外积 η·V̂ᵀZ（线性，无反传）</text>
+      <text x="705" y="126" fill="#4a6076" font-size="12">外环：只学目标构造（Conv1D + W_target）</text>
+      <text x="705" y="150" fill="#0a4038" font-size="11.5" font-weight="700">红利：结合律 → 并行 scan → CP 原生、大 chunk</text>
+      <line x1="430" y1="110" x2="496" y2="110" stroke="#0E6E62" stroke-width="3" marker-end="url(#ip1)"/>
+      <text x="463" y="98" font-size="11.5" fill="#C25E4C" font-weight="800">内环线性化</text>
+    </g>
+    <g font-size="12.5" fill="#43605A">
+      <text x="30" y="212" font-weight="800" fill="#16302B">交点的精确位置：In-Place TTT 是"④ 的更新规则 × ⑤ 的目标语义"</text>
+      <text x="30" y="240">· 更新规则与 δ-mem/gated delta rule 同族（外积累加），但目标从"重建当前 token"换成"NTP 对齐的未来 embedding"——定理 1 说明这一换影响是本质的（归纳头设定下重建目标对正确 logit 无效）；</text>
+      <text x="30" y="268">· 与 TTT-E2E 同改 MLP、同 NTP 对齐，分歧只在内环形式：真 SGD（表达力强、二阶训练贵）vs 闭式外积（并行友好、无模长约束 → 需 τ 裁剪）；</text>
+      <text x="30" y="296">· 五容器坐标：容器⑤中"线性内环"的占位者——比 ④（固定解析规则 + 重建目标）多一个可学目标，比 ⑤（真 SGD）少一份表达力。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S4（自绘）</b>（TTT-E2E / δ-mem / DnD / D2L 均为本系列已解读论文）：In-Place TTT 把 TTT-E2E 的非线性内环线性化，把 δ-mem 系的重建目标换成 NTP 对齐——两个简化各换来一样东西（并行度 / 方向正确性），也各付一笔（τ 裁剪 / 无模长约束）。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>系列拼图补完：五容器谱系的"线性-非线性内环"轴</h4>
+    <p>把本系列六篇排上"测试时适配"的完整地图：δ-mem（解析更新 + 重建目标 + 8×8 小状态）、In-Place TTT（解析更新 + NTP 目标 + MLP 大状态）、TTT-E2E（真 SGD + NTP 目标 + MLP 状态）、DnD/D2L（前向生成，无测试时更新）。一张二维谱系浮现——<strong>内环形式（解析↔梯度）× 目标语义（重建↔NTP）</strong>，In-Place TTT 恰好占据"解析×NTP"这个此前空着的格子。它证明了这个格子可行，也暴露了它的代价（模长无界、表达力受限于线性更新）。下一篇自然的论文是"解析更新 + 更强目标"或"真 SGD + 更稳实现"——两个方向都已有人站在门口。</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section id="s12">
+  <div class="kicker">CHAPTER 12 · 开放问题</div>
+  <h2>自主科研问题：五个可动手的方向</h2>
+  <div class="research-question"><span class="tag">Q1 · 机制</span><h4>Conv1D 核学到了什么：从 NTP 到 MTP 的 readout 解剖</h4>
+    <p>实现把目标从严格下一 token 扩展为"局部未来 token 的可学习组合"（kernel size 5）。学到的 5 点核是否呈现结构（如偏重 t+1、t+2 的位置衰减）？与 DeepSeek-V3 的 MTP 头、归纳头的移位机制有何对应？</p>
+    <p><strong>下手处</strong>：训练后直接读出 Conv1D 核权重（5 个标量/通道）+ 消融各位置贡献；零训练成本， interpretability 选题。</p></div>
+  <div class="research-question"><span class="tag">Q2 · 理论</span><h4>假设 1/2 在真实模型中的测量：定理的适用半径</h4>
+    <p>定理依赖嵌入近正交（ε 小）与 key-query 激活对齐（c_align 大、其余为零）。实测：真实 LLM 中高频共现 token 对（缩写/全称）的 $|e_{w_i}^\top e_{w_j}|$ 分布、"归纳头"位置之外的 $\mathbb{E}[(v_t z_t^\top) z_n]$ 泄漏量。</p>
+    <p><strong>下手处</strong>：Qwen3-4B 上实测两个假设的参数（ε、c_align、c_norm），检验式 (4)-(6) 的界在真实模型上是否成立（方向性检验，非幅度外推）——给出定理的"适用半径"刻度。</p></div>
+  <div class="research-question"><span class="tag">Q3 · 工程</span><h4>τ 裁剪 vs 门控衰减：稳定机制的正面交锋</h4>
+    <p>τ=1e-5 的 Frobenius 裁剪是全局硬顶；δ-mem 的门控衰减（λ=1−β 逐维）与 gated delta rule 的擦除项是软机制。同数据同规模下对比：硬裁剪是否在长序列上系统性劣于软门控（信息被无差别截断 vs 按维度选择性保留）？</p>
+    <p><strong>下手处</strong>：In-Place TTT 骨干上加逐维衰减门（一个可学向量），RULER-64k/128k + τ 扫描对照——这同时回答 F1 与两篇论文的设计分歧。</p></div>
+  <div class="research-question"><span class="tag">Q4 · 结构</span><h4>内环加擦除项：delta-rule 化的 In-Place TTT</h4>
+    <p>式 (1) 的纯加性外积在多文档场景会叠加干涉（D2L 篇 Q2 同款问题）。把更新换成 delta-rule 形式 $W \leftarrow W + \eta\sum (v_t z_t^\top - (Wz_t)z_t^\top)$（保留因果、仍可 scan，DeltaNet 已给并行算法）能否抑制跨文档干扰？代价是更新不再是纯加法 → 并行 scan 的结合律需要重新推导（DeltaNet 已解决，可直接移植）。</p>
+    <p><strong>下手处</strong>：多文档 RULER（文档间插干扰）对照加性 vs delta-rule 两种更新；预测 delta-rule 版在"文档边界重置关闭"时优势最大。</p></div>
+  <div class="research-question"><span class="tag">Q5 · 综合</span><h4>给生成式适配线装上"测试时漂移"</h4>
+    <p>D2L 生成的 LoRA 是静态的；In-Place TTT 的 W_down 更新是动态的。合流实验：用 D2L 的超网络为 Conv1D/W_target 生成任务特化初始化（而非零初始化），使 TTT 漂移从"任务相关"的起点出发——对应 DnD 篇 Q4（为 δ-mem 生成初始状态）的同族实验，但落点在容器⑤。</p>
+    <p><strong>下手处</strong>：D2L 超网络（开源）改输出头为 Conv1D/W_target；在长文档 QA 上对照零初始化 vs 元学习初始化的 RULER 收益。</p></div>
+</section>
+
+<!-- 13 -->
+<section id="s13">
+  <div class="kicker">CHAPTER 13 · 路线图与代码</div>
+  <h2>小白 → 学者：十天路线图</h2>
+  <div class="roadmap">
+    <div class="step"><h4>第 1-2 天：谱系定位</h4><p>读 TTT-MLP（2407.04620）与 LaCT（2505.23884）理解 chunk-wise 框架；对照本系列 TTT-E2E 篇，标出"in-place / 内环形式 / 目标"三个设计轴。</p></div>
+    <div class="step"><h4>第 3-4 天：复现定理 1 的玩具版</h4><p>2 层小模型 + 合成归纳任务，验证式 (4)-(6) 的方向性（NTP 目标下正确 logit 上升、重建目标下不动）。</p></div>
+    <div class="step"><h4>第 5-7 天：跑通官方 drop-in 管线</h4><p>官方代码（github.com/ByteDance-Seed/In-Place-TTT）：Qwen3-4B + 持续训练两阶段（算力不足可缩到 1B/1B）；复现 Table 1 的 64k/128k 增益。</p></div>
+    <div class="step"><h4>第 8-9 天：做一个消融或探针</h4><p>Q1 的 Conv1D 核读出（零成本）或 Q3 的 τ 扫描（一次训练多点评测）。</p></div>
+    <div class="step"><h4>第 10 天：proposal</h4><p>从 Q1-Q5 选一个：形式化、最小实验、预期曲线、与 TTT-E2E/LaCT 的差异表。</p></div>
+  </div>
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>A. LM-Aligned 闭式 chunk 更新（式 1，经维度自检）</h4></div>
+  <div class="code-note">自检：Z[i] [C,d_ff]，V̂[i] [C,d_model]，∂L/∂W = −V̂ᵀZ（[d_model,d_ff]，与 W_down 同形）→ 上升步取 +η·V̂ᵀZ ✓。变量先定义后使用。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch
+
+<span class="kw">def</span> <span class="fn">inplace_ttt_chunk</span>(Z, V_hat, W_down, eta=<span class="num">1e-2</span>):
+    <span class="cm"># Z: [C, d_ff] 门控激活；V_hat: [C, d_model] NTP 对齐目标；W_down: [d_model, d_ff]</span>
+    O = Z @ W_down.T                                  <span class="cm"># Apply：O[i] = Z[i] (W⁽ⁱ⁾)ᵀ [C, d_model]</span>
+    W_down = W_down + eta * (V_hat.T @ Z)             <span class="cm"># Update：式(1) 闭式外积 [d_model, d_ff]</span>
+    <span class="kw">return</span> O, W_down
+
+<span class="kw">def</span> <span class="fn">ntp_target</span>(X0, conv_kernel, W_target):
+    <span class="cm"># X0: [C, d_model] token embedding；conv_kernel: [K] 因果卷积核（K=5）</span>
+    <span class="kw">return</span> causal_conv1d(X0, conv_kernel) @ W_target  <span class="cm"># V̂ = Conv1D(X₀)·W_target [C, d_model]</span></code></pre>
+
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>B. 三段并行 scan（附录 Alg 1 的最小实现，经因果性自检）</h4></div>
+  <div class="code-note">自检：ΔW 的因果 padding 使 chunk i 的增量不含未来信息 → 前缀和 scan 与串行逐步更新数学等价（对齐测试：并行版输出 ≡ 逐 chunk 串行循环输出）。文档边界处 W 回到 W⁽⁰⁾。</div>
+<pre class="code-block"><code><span class="kw">def</span> <span class="fn">parallel_scan</span>(chunks_Z, chunks_Vhat, W0, eta):
+    dW = [chunks_Vhat[i].T @ chunks_Z[i] <span class="kw">for</span> i <span class="kw">in</span> range(len(chunks_Z))]   <span class="cm"># ① 并行算增量</span>
+    S = torch.cumsum(torch.stack(dW), dim=<span class="num">0</span>)                              <span class="cm"># ② 含端前缀和 cumsum；应用时取 S[i-1] 即 Σ_{j&lt;i} ΔWⱼ</span>
+    outs, W = [], W0
+    <span class="kw">for</span> i, Z <span class="kw">in</span> enumerate(chunks_Z):                                       <span class="cm"># ③ 并行应用（此处示意串行展开）</span>
+        W_i = W0 + eta * S[i - <span class="num">1</span>] <span class="kw">if</span> i &gt; <span class="num">0</span> <span class="kw">else</span> W0                    <span class="cm"># W⁽ⁱ⁻¹⁾：只用 &lt; i 的增量（因果）</span>
+        outs.append(Z @ W_i.T)
+    <span class="kw">return</span> outs</code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>C. 零初始化与 τ 裁剪（附录 C.2/C.3）</h4></div>
+  <div class="code-note">自检：Conv1D 零初始化 + W_target 稀疏对角 → 初始 ΔW≈0（预训练行为保留）；τ 裁剪按 Frobenius 范数缩放（Qwen3-4B 评测 τ=1e-5，论文未消融——F1）。</div>
+<pre class="code-block"><code>conv1d = nn.Conv1d(d_model, d_model, kernel_size=<span class="num">5</span>, padding=<span class="num">4</span>, bias=<span class="kw">False</span>,
+                   groups=d_model, padding_mode=<span class="st">"causal"</span>)         <span class="cm"># 因果 padding：chunk 内无未来泄漏</span>
+nn.init.zeros_(conv1d.weight)                                     <span class="cm"># 零初始化 → 初始 V̂=0 → ΔW≈0</span>
+W_target = torch.zeros(d_model, d_model)
+W_target[torch.arange(d_model), torch.arange(d_model)] = torch.randn(d_model) * sigma  <span class="cm"># 稀疏对角</span>
+
+<span class="kw">def</span> <span class="fn">clip_delta</span>(dW, tau=<span class="num">1e-5</span>):                                     <span class="cm"># 推理期稳定（未消融，F1）</span>
+    nrm = dW.norm()
+    <span class="kw">return</span> dW * (tau / nrm) <span class="kw">if</span> nrm &gt; tau <span class="kw">else</span> dW</code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>D. 两阶段持续训练课程（附录 C.2）</h4></div>
+  <div class="code-note">自检：基线与 +In-Place TTT 走同一课程（公平对照的唯一变量）；阶段 2 用 YaRN 外推；文档边界重置快权重。</div>
+<pre class="code-block"><code><span class="kw">for</span> stage, (tokens, ctx, yarn) <span class="kw">in</span> [(<span class="num">1</span>, (<span class="num">20</span>B, <span class="num">32</span>K, <span class="kw">False</span>)), (<span class="num">2</span>, (<span class="num">15</span>B, <span class="num">128</span>K, <span class="kw">True</span>))]:
+    train(model, continual_data, ctx=ctx, yarn=yarn, lr=<span class="num">5e-6</span>,
+          reset_fast_weights_at_doc_boundary=<span class="kw">True</span>)              <span class="cm"># 基线：同课程、TTT 模块旁路</span></code></pre>
+</section>
+
+<!-- 14 -->
+<section id="s14">
+  <div class="kicker">CHAPTER 14 · 结语</div>
+  <h2>结语</h2>
+  <p>一句话：<strong>In-Place TTT 用"复用 W_down + 闭式外积更新 + NTP 对齐目标"三件套，把 TTT 从架构研究变成了 LLM 生态的工程选项</strong>——热启动三个现成模型、256K 外推仍领先、推理开销可忽略；代价清单见 F1/F4/F8。</p>
+  <p>本系列的拼图至此完整：五容器谱系中"解析更新 × NTP 目标"的空格被它填上，与 TTT-E2E（真 SGD × NTP）、δ-mem（解析 × 重建）、DnD/D2L（前向生成）共同构成一张二维设计地图。下一步最值得做的两件事：Q3 的稳定机制正面对决（硬裁剪 vs 软门控）与 Q4 的 delta-rule 化改造——前者决定工程选型，后者可能定义这条路线的容量的上限。</p>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献（关键条目经论文正文/参考文献核对）</h3>
+  <ol>
+    <li>Feng, Luo, Hua, Zhang, He, Huang, Cai. <em>In-Place Test-Time Training</em>. <a href="https://arxiv.org/abs/2604.06169">arXiv:2604.06169</a>, 2026. 代码：github.com/ByteDance-Seed/In-Place-TTT</li>
+    <li>Sun et al. <em>Learning to (Learn at Test Time)</em> (TTT-MLP，重建目标阵营). <a href="https://arxiv.org/abs/2407.04620">arXiv:2407.04620</a>, 2024；Tandon et al. <em>End-to-End Test-Time Training</em> (TTT-E2E，本系列解读篇). <a href="https://arxiv.org/abs/2512.23675">arXiv:2512.23675</a>, 2025</li>
+    <li>Zhang et al. <em>Test-Time Training Done Right</em> (LaCT). <a href="https://arxiv.org/abs/2505.23884">arXiv:2505.23884</a>, 2025；Behrouz et al. <em>Titans</em>. <a href="https://arxiv.org/abs/2501.00663">arXiv:2501.00663</a></li>
+    <li>Schlag et al. <em>Linear Transformers are Secretly Fast Weight Programmers</em>. ICML 2021；Yang et al. <em>Gated DeltaNet</em>. ICLR 2025（已核实）；Ba et al. <em>Using Fast Weights to Attend to the Recent Past</em>. NeurIPS 2016</li>
+    <li>Geva et al. <em>Transformer FFNs are Key-Value Memories</em>. 2020；Elhage et al. <em>In-Context Learning and Induction Heads</em>. 2022；Peng et al. <em>YaRN</em>. 2023</li>
+    <li>基准与基座：Hsieh et al. <em>RULER</em>. 2024（已核实）；Qwen3 / LLaMA 3 / Mistral / Phi-3 技术报告；Gao et al. <em>The Pile</em>. 2020；Paster et al. <em>Proof-Pile-2</em>. 2023</li>
+    <li>本系列：δ-mem / DnD / Doc-to-LoRA / TTT-E2E / MEND 解读博客（五容器谱系与交叉引用见各篇）</li>
+  </ol>
+  <div class="fin">In-Place TTT 深度解读 · 青瓷 Celadon 配色 · 图表：论文原图精准裁剪 4 张（PyMuPDF + 验证闭环）+ 自绘内联 SVG · 公式/定理逐项提取自 PDF 核对 · 8 条取证均标注证据与出处 · 2026-09-28</div>
+</div></footer>
+</body>
+</html>

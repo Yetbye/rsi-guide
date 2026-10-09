@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doc-to-LoRA 深度解读 | 把上下文蒸馏元学习成一次前向传播</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  /* === Venus · 配方 B 水墨丹青 === */
+  --bg-primary:#F8F6F0; --bg-secondary:#F0EDE4; --bg-tertiary:#E2DDD0;
+  --text-primary:#1A1A1A; --text-secondary:#4A4A4A; --text-muted:#8A8A8A;
+  --color-primary:#2D2D2D; --color-secondary:#3C5A4A; --color-tertiary:#6B4C3B;
+  --accent-warm:#C44D3F; --accent-gold:#B8956A; --accent-soft:#D4A574;
+  --ink-line:rgba(26,26,26,.1);
+  --font-display:'Noto Serif SC','Source Han Serif SC','Playfair Display',Georgia,serif;
+  --font-body:'Noto Sans SC','PingFang SC','Microsoft YaHei',-apple-system,sans-serif;
+  --font-hand:'Ma Shan Zheng','Zhi Mang Xing',cursive;
+  --font-mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:.4s;
+  --radius-lg:16px;
+  --shadow-sm:0 2px 8px rgba(26,26,26,.07); --shadow-md:0 4px 16px rgba(26,26,26,.11); --shadow-lg:0 8px 32px rgba(26,26,26,.15);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);color:var(--text-primary);background:var(--bg-primary);line-height:1.9;font-size:16.5px;
+  background-image:repeating-linear-gradient(0deg,rgba(26,26,26,.014) 0 1px,transparent 1px 30px),repeating-linear-gradient(90deg,rgba(26,26,26,.014) 0 1px,transparent 1px 30px)}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:900;letter-spacing:-.015em;color:var(--color-primary)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(248,246,240,.88);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--bg-tertiary);padding:0 24px}
+.nav-inner{max-width:1140px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:54px}
+.nav-logo{font-family:var(--font-display);font-weight:900;font-size:15px;color:var(--color-primary)}
+.nav-logo em{font-style:normal;color:var(--accent-warm)}
+.nav-links{display:flex;gap:11px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--text-muted);text-decoration:none;letter-spacing:.5px;position:relative;padding:3px 0}
+.nav-links a::after{content:'';position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--accent-warm);transform:scaleX(0);transform-origin:left;transition:transform var(--duration) var(--ease-out)}
+.nav-links a:hover{color:var(--color-primary)}.nav-links a:hover::after{transform:scaleX(1)}
+.hero{position:relative;min-height:94vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:110px 24px 70px;
+  background:linear-gradient(178deg,#f2efe6 0%,#F8F6F0 40%,#f6f1e6 100%)}
+.hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 620px 300px at 14% 12%,rgba(26,26,26,.06),transparent 62%),
+             radial-gradient(ellipse 480px 300px at 86% 84%,rgba(60,90,74,.09),transparent 62%),
+             radial-gradient(ellipse 400px 240px at 80% 10%,rgba(196,77,63,.07),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:860px;text-align:center}
+.hero-badge{display:inline-flex;background:rgba(255,255,255,.7);backdrop-filter:blur(10px);border:1px solid rgba(26,26,26,.22);color:var(--color-primary);padding:7px 20px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:3px;margin-bottom:18px}
+.hero h1{font-size:clamp(2.3rem,6.6vw,4.2rem);line-height:1.16;margin:10px 0 12px}
+.hero h1 .mark{background:var(--color-primary);color:#F8F6F0;padding:.05em .28em;border-radius:.16em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.hero-tagline{font-family:var(--font-display);font-size:clamp(1rem,2.4vw,1.26rem);color:var(--color-secondary);font-weight:800;margin-bottom:8px}
+.hero-desc{font-size:14.5px;color:var(--text-secondary);max-width:680px;margin:0 auto 24px}
+.hero-art{margin:6px auto 4px;max-width:820px;width:100%;border-radius:24px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid rgba(26,26,26,.12);background:#f4f1e8}
+.hero-art svg{display:block;width:100%;height:auto}
+.hero-caption{font-size:11.5px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:26px;border-radius:var(--radius-lg);overflow:hidden;border:2px solid var(--color-primary);position:relative}
+.hero-stats::before{content:'';position:absolute;inset:6px;border:1px solid rgba(196,77,63,.45);pointer-events:none;border-radius:10px}
+.hstat{background:linear-gradient(180deg,#fbf9f3,#f1ede2);padding:15px 8px;border-left:1px solid var(--bg-tertiary)}
+.hstat:first-child{border-left:none}
+.hstat b{display:block;font-family:var(--font-display);font-size:1.5rem;color:var(--color-primary)}
+.hstat span{font-size:11px;color:var(--text-secondary)}
+.scroll-hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-size:10.5px;letter-spacing:3px;color:var(--text-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.7s infinite;font-size:14px}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+main{max-width:880px;margin:0 auto;padding:60px 24px 30px}
+section{margin-bottom:72px;position:relative}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--accent-warm);font-weight:800;margin-bottom:8px;font-family:var(--font-mono)}
+h2{font-size:clamp(1.5rem,3.6vw,2rem);margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--bg-tertiary);position:relative}
+h2::after{content:'';position:absolute;left:0;bottom:-2px;width:64px;height:2px;background:var(--accent-warm)}
+h3{font-size:1.14rem;margin:26px 0 10px;color:var(--color-tertiary)}
+p{margin-bottom:13px;color:var(--text-secondary)}
+p strong,li strong{color:var(--text-primary)}
+ul,ol{margin:0 0 13px 22px;color:var(--text-secondary)}
+li{margin-bottom:6px}
+figure{margin:24px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid var(--bg-tertiary);box-shadow:var(--shadow-md);background:#fff}
+figcaption{font-size:12.5px;color:var(--text-muted);margin-top:9px;line-height:1.75;text-align:left}
+figcaption b{color:var(--color-tertiary)}
+.svgbox{background:#fff;border:1px solid var(--bg-tertiary);border-radius:var(--radius-lg);padding:16px 10px;margin:24px 0;box-shadow:var(--shadow-sm)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#e8efe8,#d8e5da);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--color-secondary);box-shadow:var(--shadow-sm)}
+.insight-box .tag{background:var(--color-secondary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.insight-box h4{margin:10px 0 6px;color:#26402f;font-size:1.03rem}
+.insight-box p{color:#33503f;margin-bottom:5px}
+.critique-box{background:linear-gradient(135deg,#f9e8e4,#f3d9d2);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--accent-warm);box-shadow:var(--shadow-sm)}
+.critique-box .tag{background:var(--accent-warm);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.critique-box h4{margin:10px 0 6px;color:#7d2c21;font-size:1rem}
+.critique-box p{color:#8f4335;margin-bottom:5px;font-size:14.5px}
+.research-question{background:#fff;border:1px solid rgba(184,149,106,.45);border-radius:var(--radius-lg);padding:20px 22px;margin:20px 0;box-shadow:var(--shadow-sm);transition:transform var(--duration) var(--ease-out),box-shadow var(--duration)}
+.research-question:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
+.research-question .tag{background:var(--accent-gold);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:800}
+.research-question h4{margin:10px 0 6px;color:#6b4c3b}
+.research-question p{color:#6e5a44;margin-bottom:7px;font-size:14.5px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow-sm)}
+th{background:linear-gradient(135deg,#2d2d2d,#4a4a4a);color:#f8f6f0;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--bg-secondary);text-align:center;color:var(--text-secondary)}
+tr:last-child td{border-bottom:none}
+td.hl{background:#efece2;font-weight:700;color:var(--color-primary)}
+td.best{background:#e2ebe2;font-weight:800;color:#26402f}
+td.bad{background:#f6e3df;color:#7d2c21}
+.mathcard{background:#fff;border:1px solid var(--bg-tertiary);border-left:4px solid var(--color-primary);border-radius:14px;padding:18px 22px;margin:20px 0;overflow-x:auto;box-shadow:var(--shadow-sm)}
+.mathcard h4{font-size:1rem;color:var(--color-primary);margin-bottom:7px}
+.mathcard .note{font-size:13.5px;color:var(--text-muted)}
+.mathcard .cf{font-size:13.5px;color:#7d2c21;background:#f9ede9;border-radius:8px;padding:8px 12px;margin-top:10px}
+.code-head{display:flex;gap:10px;align-items:center;margin:24px 0 8px;flex-wrap:wrap}
+.code-head .cred{font-size:11px;font-weight:700;padding:3px 12px;border-radius:10px;color:#fff}
+.cred.run{background:var(--color-secondary)}.cred.ill{background:var(--accent-gold)}
+.code-note{background:#efece2;border:1px dashed var(--bg-tertiary);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--color-tertiary);margin-bottom:8px}
+pre.code-block{background:#23231f;color:#ece9df;border-radius:14px;padding:18px 20px;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);margin-bottom:8px}
+pre.code-block .kw{color:#b8cfae;font-weight:700}
+pre.code-block .fn{color:#e8cf9e}
+pre.code-block .cm{color:#8a887c;font-style:italic}
+pre.code-block .num{color:#e2a69a}
+.roadmap{counter-reset:step}
+.step{position:relative;padding:0 0 24px 46px;counter-increment:step}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#2d2d2d,var(--accent-gold));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step::after{content:'';position:absolute;left:15px;top:36px;bottom:0;width:2px;background:var(--bg-tertiary)}
+.step:last-child::after{display:none}
+.step h4{font-size:1rem;margin-bottom:5px}
+.step p{font-size:14.5px}
+footer{background:#23231f;color:#cfcabb;padding:50px 24px 58px;margin-top:30px}
+footer .inner{max-width:880px;margin:0 auto}
+footer h3{color:#f8f6f0;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.85}
+footer a{color:var(--accent-soft);text-decoration:none}
+footer .fin{margin-top:24px;font-size:12px;color:#8a887c;border-top:1px solid #45443c;padding-top:16px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">D2L <em>·</em> 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">定义</a><a href="#s2">元学习 CD</a><a href="#s3">架构</a><a href="#s4">NIAH</a><a href="#s5">短文 QA</a>
+    <a href="#s6">长文档 QA</a><a href="#s7">模拟 CD</a><a href="#s8">极端泛化</a><a href="#s9">消融</a><a href="#s10">批判</a>
+    <a href="#s11">理论</a><a href="#s12">科研问题</a><a href="#s13">路线图</a><a href="#s14">代码</a><a href="#s15">结语</a>
+  </div>
+</div></nav>
+
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">arXiv:2602.15902 · PREPRINT · FEB 2026 · SAKANA AI</div>
+    <h1>Doc-to-LoRA：<span class="mark">把上下文蒸馏</span><br>元学习成一次前向传播</h1>
+    <p class="hero-tagline">Context Distillation 的摊销 · Perceiver 超网络 · 秒级知识内化</p>
+    <p class="hero-desc">上下文留在窗口里要付二次注意力与 KV 缓存的账；蒸馏进参数要付数分钟的训练账。D2L 把后者元学习成一次前向：读完一篇 32K 文档，0.5 秒产出 LoRA，此后回答问题不再需要原文。</p>
+    <div class="hero-art">
+      <svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="水墨风：文档卷轴化为墨流注入 LoRA 晶格">
+        <defs>
+          <linearGradient id="ink" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#1a1a1a" stop-opacity=".85"/><stop offset="1" stop-color="#3c5a4a" stop-opacity=".55"/>
+          </linearGradient>
+          <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#f4f1e8" stop-opacity="0"/><stop offset="1" stop-color="#e2ddd0" stop-opacity=".9"/>
+          </linearGradient>
+          <filter id="blur6" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
+          <filter id="blur2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2"/></filter>
+        </defs>
+        <rect width="1200" height="520" fill="#f4f1e8"/>
+        <ellipse cx="240" cy="150" rx="300" ry="90" fill="#1a1a1a" opacity=".05" filter="url(#blur6)"/>
+        <ellipse cx="880" cy="360" rx="330" ry="100" fill="#3c5a4a" opacity=".07" filter="url(#blur6)"/>
+        <path d="M 0 470 Q 180 380 360 440 T 720 430 T 1200 460 L 1200 520 L 0 520 Z" fill="#1a1a1a" opacity=".08" filter="url(#blur6)"/>
+        <g transform="translate(80,120) rotate(-4)">
+          <rect x="0" y="0" width="230" height="170" rx="8" fill="#fbf8ef" stroke="#b8956a" stroke-width="2.5"/>
+          <rect x="0" y="0" width="230" height="30" rx="8" fill="#6b4c3b" opacity=".85"/>
+          <g fill="#4a4a4a" opacity=".6">
+            <rect x="18" y="48" width="180" height="5" rx="2.5"/><rect x="18" y="62" width="150" height="5" rx="2.5"/><rect x="18" y="76" width="170" height="5" rx="2.5"/>
+            <rect x="18" y="90" width="120" height="5" rx="2.5"/><rect x="18" y="104" width="165" height="5" rx="2.5"/><rect x="18" y="118" width="140" height="5" rx="2.5"/>
+            <rect x="18" y="132" width="175" height="5" rx="2.5"/><rect x="18" y="146" width="95" height="5" rx="2.5"/>
+          </g>
+          <circle cx="196" cy="16" r="8" fill="#C44D3F"/>
+        </g>
+        <g fill="none" stroke="url(#ink)" stroke-linecap="round" filter="url(#blur2)">
+          <path d="M 330 190 C 450 140, 560 200, 640 240" stroke-width="10" opacity=".8"/>
+          <path d="M 350 240 C 470 200, 580 250, 660 285" stroke-width="6" opacity=".6"/>
+          <path d="M 340 300 C 460 270, 570 310, 650 330" stroke-width="4" opacity=".4"/>
+          <path d="M 380 150 C 500 110, 600 160, 680 200" stroke-width="3" opacity=".3"/>
+        </g>
+        <g fill="#1a1a1a" opacity=".5">
+          <circle cx="530" cy="185" r="3.5" filter="url(#blur2)"/><circle cx="590" cy="230" r="2.5"/><circle cx="480" cy="240" r="2"/><circle cx="620" cy="270" r="3"/>
+        </g>
+        <g transform="translate(760,120)">
+          <rect x="-10" y="-10" width="220" height="280" rx="16" fill="#fbf9f3" stroke="#6b4c3b" stroke-width="2.5"/>
+          <g>
+            <g transform="translate(0,0)"><rect x="10" y="10" width="44" height="60" rx="5" fill="#2d2d2d" opacity=".9"/><rect x="10" y="80" width="44" height="60" rx="5" fill="#2d2d2d" opacity=".55"/><rect x="10" y="150" width="44" height="60" rx="5" fill="#2d2d2d" opacity=".75"/><rect x="10" y="220" width="44" height="40" rx="5" fill="#2d2d2d" opacity=".4"/></g>
+            <g transform="translate(54,0)"><rect x="10" y="10" width="44" height="60" rx="5" fill="#3c5a4a" opacity=".8"/><rect x="10" y="80" width="44" height="60" rx="5" fill="#3c5a4a" opacity=".45"/><rect x="10" y="150" width="44" height="60" rx="5" fill="#3c5a4a" opacity=".65"/><rect x="10" y="220" width="44" height="40" rx="5" fill="#3c5a4a" opacity=".35"/></g>
+            <g transform="translate(108,0)"><rect x="10" y="10" width="44" height="60" rx="5" fill="#C44D3F" opacity=".7"/><rect x="10" y="80" width="44" height="60" rx="5" fill="#C44D3F" opacity=".4"/><rect x="10" y="150" width="44" height="60" rx="5" fill="#C44D3F" opacity=".55"/><rect x="10" y="220" width="44" height="40" rx="5" fill="#C44D3F" opacity=".3"/></g>
+            <text x="110" y="262" text-anchor="middle" font-size="13" font-weight="800" fill="#2d2d2d" font-family="'JetBrains Mono',monospace">B·A  ← rank 8K</text>
+          </g>
+        </g>
+        <path d="M 660 285 C 700 300, 720 290, 748 275" fill="none" stroke="#C44D3F" stroke-width="3.5" stroke-dasharray="1 7" stroke-linecap="round" opacity=".9"/>
+        <g transform="translate(1040,60)" font-family="'Ma Shan Zheng',cursive" fill="#2d2d2d">
+          <text x="0" y="0" font-size="34" opacity=".85">文 读一遍</text>
+          <text x="0" y="46" font-size="34" opacity=".85">墨 入参数</text>
+          <text x="0" y="92" font-size="20" fill="#C44D3F">此后不再看原文</text>
+        </g>
+      </svg>
+      <p class="hero-caption">博客主视觉（手绘 SVG，水墨风）：左侧文档卷轴研开为墨（token 激活），墨流经 Perceiver 超网络凝成右侧按秩拼接的 LoRA 晶格——rank 8×K 随文档分块增长。</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><b>0.2-0.6 s</b><span>内化一篇 32K 文档</span></div>
+      <div class="hstat"><b>79→3.8 GB</b><span>对比 5-query CD 的更新显存</span></div>
+      <div class="hstat"><b>256→40K</b><span>NIAH 训练→推理长度外推</span></div>
+      <div class="hstat"><b>75.0%</b><span>VLM→纯文本 LLM 零样本跨模态</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 定义</div>
+  <h2>Internalization 的严格定义：从单查询蒸馏到查询无关蒸馏</h2>
+  <p>ICL 的成本结构：$N$ 个上下文 token 意味着 $O(N^2)$ 注意力与 $O(N)$ 的 KV 缓存，且长上下文伴随质量退化（lost-in-the-middle、context rot）。把上下文"内化"进参数是出路，标准做法是 SFT——但需要采集数据集且易过拟合。上下文蒸馏（CD）不需要数据集：模型蒸馏自己。</p>
+  <div class="mathcard"><h4>式 (1)：query-dependent CD（单查询）</h4>$$\min_{\theta_c}\ \mathbb{E}\Big[\mathrm{KL}\big(p_\theta(y \mid x, c)\ \big\|\ p_{\theta_c}(y \mid x)\big)\Big]$$
+  <p class="note">$c$：上下文；$x$：查询；$y \sim p_\theta(\cdot|x,c)$：教师（带上下文的自己）采样；$\theta_c$ 从 $\theta$ 初始化。同一模型自为师生——区别只在教师看得到 $c$。</p>
+  <div class="cf">反事实：只用单个 $(c,x,y)$ 三元组训练 = 过拟合该查询，泛化到新查询无保证。这就是式 (2) 存在的理由。</div></div>
+  <div class="mathcard"><h4>式 (2)：query-independent CD = 论文对 internalization 的定义</h4>$$\min_{\theta_c}\ \mathbb{E}_{(x,y)\sim\mathcal{D}_c}\Big[\mathrm{KL}\big(p_\theta(y \mid x, c)\ \big\|\ p_{\theta_c}(y \mid x)\big)\Big]$$
+  <p class="note">$\mathcal{D}_c=\{(x_i,y_i)\}_{i=1}^n$：针对上下文 $c$ 生成的 $n$ 个查询与教师自答（查询由另一个 LLM 生成，答案被丢弃、由目标模型自采样）。<strong>internalization ≡ 优化式 (2)</strong>：此后 $\theta_c$ 在无 $c$ 时表现得"像 $c$ 还在上下文里"。典型候选场景：需要常驻窗口的安全/对齐提示、用户偏好、长文档。</p></div>
+  <div class="svgbox">
+  <svg viewBox="0 0 940 240" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="tl2" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#2d2d2d"/></marker></defs>
+    <line x1="40" y1="70" x2="910" y2="70" stroke="#2d2d2d" stroke-width="3" marker-end="url(#tl2)"/>
+    <g font-size="12" text-anchor="middle">
+      <g><circle cx="90" cy="70" r="6.5" fill="#6b4c3b"/><text x="90" y="46" font-weight="800">MEND</text><text x="90" y="60" fill="#8a8a8a">ICLR 2024</text><text x="90" y="96" fill="#4a4a4a">few-shot → prefix</text></g>
+      <g><circle cx="230" cy="70" r="6.5" fill="#6b4c3b"/><text x="230" y="46" font-weight="800">Gisting</text><text x="230" y="60" fill="#8a8a8a">NeurIPS 2023</text><text x="230" y="96" fill="#4a4a4a">指令 → gist token</text></g>
+      <g><circle cx="370" cy="70" r="6.5" fill="#3c5a4a"/><text x="370" y="46" font-weight="800">Cartridges</text><text x="370" y="60" fill="#8a8a8a">2025</text><text x="370" y="96" fill="#4a4a4a">睡眠时 CD → KV</text></g>
+      <g><circle cx="510" cy="70" r="6.5" fill="#3c5a4a"/><text x="510" y="46" font-weight="800">Generative Adapter</text><text x="510" y="60" fill="#8a8a8a">ICLR 2025</text><text x="510" y="96" fill="#4a4a4a">NTP 超网络 → 参数</text></g>
+      <g><circle cx="670" cy="70" r="6.5" fill="#3c5a4a"/><text x="670" y="46" font-weight="800">Text-to-LoRA</text><text x="670" y="60" fill="#8a8a8a">ICML 2025</text><text x="670" y="96" fill="#4a4a4a">任务描述 → LoRA</text></g>
+      <g><circle cx="840" cy="70" r="9" fill="#C44D3F"/><text x="840" y="46" font-weight="900">D2L</text><text x="840" y="60" fill="#8a8a8a">2026</text><text x="840" y="96" fill="#4a4a4a">文档 → LoRA · CD 目标</text></g>
+    </g>
+    <text x="40" y="140" font-size="13" font-weight="800" fill="#2d2d2d">D2L 相对前序的三个独占轴</text>
+    <g font-size="12.5" fill="#4a4a4a">
+      <rect x="40" y="156" width="272" height="56" rx="10" fill="#fff" stroke="#6b4c3b" stroke-width="2"/>
+      <text x="176" y="178" text-anchor="middle" font-weight="800" fill="#6b4c3b">条件最重：整篇任意文档</text>
+      <text x="176" y="199" text-anchor="middle">GA/T2L 用任务描述或短上下文</text>
+      <rect x="334" y="156" width="272" height="56" rx="10" fill="#fff" stroke="#3c5a4a" stroke-width="2"/>
+      <text x="470" y="178" text-anchor="middle" font-weight="800" fill="#3c5a4a">监督最结构化：CD 分布匹配</text>
+      <text x="470" y="199" text-anchor="middle">GA 用 NTP（Table 6 证明更弱）</text>
+      <rect x="628" y="156" width="272" height="56" rx="10" fill="#fff" stroke="#C44D3F" stroke-width="2"/>
+      <text x="764" y="178" text-anchor="middle" font-weight="800" fill="#8c2f24">长度外推：Perceiver + 秩拼接</text>
+      <text x="764" y="199" text-anchor="middle">256 训练 → 40K 推理（5× chunks）</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S1（自绘）</b>：CD 内化方法谱系。D2L 的三个独占轴互相咬合：条件重 → 需要 Perceiver 长度无关性 → 需要 CD 目标保证分布外查询的鲁棒。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>CD 的真实成本在两个被忽视的地方</h4>
+    <p>普遍把 CD 的成本记在"反传"名下，论文的实测拆解更精确：对每个上下文，CD 需要先生成 $n$ 个查询（生成延迟与显存），再对 $n$ 个 $(x,y)$ 做多轮反传。后文 Table 4 的数字：100 个查询的 CD 在 SQuAD 单样本上耗时 <strong>631 秒</strong>、5-query 版在 2Wiki 上要 <strong>79 GB</strong> 显存——查询生成与批量反传是独立的两座山。</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 元学习</div>
+  <h2>元学习 CD：把"每个上下文一次优化"变成"所有上下文共享一个映射"</h2>
+  <div class="mathcard"><h4>式 (3)-(4)：meta-objective</h4>$$\min_{\phi}\ \mathbb{E}_{(c,\mathcal{D}_c)\sim\mathcal{D}}\ \mathbb{E}_{(x,y)\sim\mathcal{D}_c}\ J(x,y,c),\qquad J = \mathrm{KL}\big(p_\theta(y|x,c)\ \big\|\ p_{\theta + H_\phi(c)}(y|x)\big)$$
+  <p class="note">$H_\phi$：从原始字符串到 LoRA 参数的映射（超网络），$\theta_c = \theta + \Delta W_c,\ \Delta W_c = H_\phi(c)$。与式 (2) 唯一区别：不再逐上下文优化独立的 $\Delta W$，而是优化<strong>一个跨上下文泛化的 $H_\phi$</strong>。</p></div>
+  <p>这个转换的实质是<strong>把内层优化整个搬进外层</strong>：训练完成后，查询生成、教师采样、反传全部被 $H_\phi$ 的一次前向替代。代价是元训练本身昂贵——这批数据管线的规模值得记录：</p>
+  <ul>
+    <li>语料：FineWeb-Edu 子集约 <strong>9 亿 token</strong> + PwC/SQuAD/ROPES/DROP 段落，过滤后约 <strong>320 万个唯一上下文</strong>；</li>
+    <li>FineWeb-Edu 每篇由 <strong>gemma-3-12b-it</strong>（比目标模型大的裁判）经两轮提示生成 <strong>10 个</strong> grounding 查询（Listing 4/5：第二轮把已生成的 QA 作为上下文示例，要求非重叠、更难、含反转推理）；QA 数据集段落自带问题；答案丢弃；</li>
+    <li>目标模型 gemma-2-2b-it 对每个 (context, query) 自采样一个回答，记录 <strong>top-16 token logits</strong> 作为 KL 目标；</li>
+    <li>合计 <strong>101,087,000</strong> 个 (context, query, response) 三元组；上下文长度均值 277 / 中位 274 / 最大 2344 token——<strong>主实验的元训练从未见过超过 2344 token 的文档</strong>（记住这个数，第 6 章要用）。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>为什么"每个上下文只有 10 个查询"反而够用</h4>
+    <p>单个上下文 10 个查询，分布上远不足以让 $\theta_c$ 学全"如何使用 $c$"。但元训练横跨 320 万个上下文，$H_\phi$ 看到的是 <strong>10⁸ 级的 (context, query) 联合分布</strong>——论文的假说：训练样本<strong>集体正则</strong>了 $H_\phi$，使它对"任意未来查询"的鲁棒性超过任何一个单上下文 CD 的水平。第 7 章的 Table 4 直接检验这一点：D2L（等效 10 查询/样本）逼近 100-query CD 而只花其 <strong>1/7300</strong> 的时间。这是摊销推断的标准收益结构：单任务看是欠拟合，跨任务看是正则。</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 架构</div>
+  <h2>架构：逐层共享的 Perceiver 超网络 + 按秩拼接的 chunking</h2>
+  <figure>
+    <img src="figures/fig1_overview.png" alt="论文 Figure 1：D2L 训练总览与下游性能">
+    <figcaption><b>图 1（论文 Figure 1 精准裁剪）</b>：左——冻结 LLM 逐层产生 token 激活 $z^l$，共享超网络为每层生成 $\Delta W_l$，蒸馏损失对齐"带上下文教师 vs 内化后学生"；右上——D2L 与 CD 在性能/延迟/显存三个坐标系的对比（2WikiMultihopQA 与 SQuAD）。</figcaption>
+  </figure>
+  <div class="mathcard"><h4>式 (5)-(8)：逐层生成</h4>
+  $$W'_l = W_l + \alpha_l B_l A_l,\qquad A_l \in \mathbb{R}^{r\times d^{in}_l},\ B_l \in \mathbb{R}^{d^{out}_l \times r}$$
+  $$U^l = \mathrm{XAttn}\big(Q_m,\ K(Z^{l-1}),\ V(Z^{l-1})\big) \in \mathbb{R}^{r\times d_u},\qquad \Delta W_l = B_l A_l = h_\phi(Z^{l-1})$$
+  <p class="note">$Z \in \mathbb{R}^{L\times N\times D}$：上下文过<strong>冻结目标 LLM</strong> 得到的逐层激活（$Z^0$ 为 embedding）；每层用<strong>同一个</strong> $h_\phi$（跨层共享！）；$r$ 个可学习、与输入无关的 latent query 通过交叉注意力把任意长度 $N$ 压成固定 $r$ 条潜在向量，两个输出头分别映射到 $A$ 的行与 $B$ 的列。$\alpha_l$：逐层可学习标量。</p></div>
+  <p>三个实现细节（附录 Listing 1/2）决定了复现成败：① 超网络 = 8 个交叉注意力块、<strong>无</strong> latent 自注意力；② 输出头是一个 EinMix 层，每个 latent 直接输出 $d_{in}+d_{out}=11520$ 维（gemma-2-2b 的 MLP down_proj：$A\in\mathbb{R}^{8\times 9216}, B\in\mathbb{R}^{2304\times 8}$），加逐层缩放参数 scaler_A/B（各 shape $1\times 26\times 8\times 1$，对应 gemma-2-2b 的 26 层）；③ LoRA 只挂在<strong>每层 MLP 的 down_proj</strong> 一个位置。超网络总计 <strong>309M</strong> 可训练参数。推理有两种模式：<strong>batched</strong>（所有层的激活打包一次前向，快）与 <strong>iterative</strong>（逐层生成，省显存）——两者数学等价，差异仅来自浮点非交换性。</p>
+  <div class="mathcard"><h4>式 (9)：chunking——用秩换长度</h4>$$A_l = \begin{bmatrix} A^{(1)}_l \\ \vdots \\ A^{(K)}_l \end{bmatrix},\qquad B_l = \begin{bmatrix} B^{(1)}_l & \cdots & B^{(K)}_l \end{bmatrix}\ \Rightarrow\ B_l A_l = \sum_{k=1}^{K} B^{(k)}_l A^{(k)}_l,\quad \mathrm{rank} = r\cdot K$$
+  <p class="note">$K$ 个连续 chunk 各自独立过超网络（输出形状不变），沿秩维拼接。<strong>外推能力的来源就在这里</strong>：更长的文档 = 更多的 chunk = 更高的秩，超网络本身无需改变。</p>
+  <div class="cf">反事实：若改为把长文档在 token 维压缩成固定形状（对 $N$ 做池化），超网络必须同时学"压缩"与"内化"，长文档信息会被瓶颈掐死。秩拼接把难题分解为"每 chunk 内化 + 线性组合"，代价见第 12 章 Q2（chunk 间零交互）。</div></div>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="ck" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#2d2d2d"/></marker></defs>
+    <g font-size="12.5">
+      <text x="30" y="30" font-weight="800" fill="#2d2d2d">式 (9) 的机制：K 个 chunk 独立内化，秩维拼接</text>
+      <g font-size="11.5">
+        <rect x="30" y="50" width="120" height="46" rx="8" fill="#efece2" stroke="#6b4c3b" stroke-width="2"/><text x="90" y="70" text-anchor="middle">chunk c⁽¹⁾</text><text x="90" y="86" text-anchor="middle" fill="#8a8a8a">≤1024 tok</text>
+        <rect x="30" y="112" width="120" height="46" rx="8" fill="#efece2" stroke="#6b4c3b" stroke-width="2"/><text x="90" y="132" text-anchor="middle">chunk c⁽²⁾</text><text x="90" y="148" text-anchor="middle" fill="#8a8a8a">≤1024 tok</text>
+        <rect x="30" y="174" width="120" height="46" rx="8" fill="#efece2" stroke="#6b4c3b" stroke-width="2"/><text x="90" y="194" text-anchor="middle">chunk c⁽ᴷ⁾</text><text x="90" y="210" text-anchor="middle" fill="#8a8a8a">≤1024 tok</text>
+      </g>
+      <g stroke="#2d2d2d" stroke-width="2.5" fill="none" marker-end="url(#ck)">
+        <line x1="150" y1="73" x2="240" y2="60"/><line x1="150" y1="135" x2="240" y2="135"/><line x1="150" y1="197" x2="240" y2="210"/>
+      </g>
+      <text x="196" y="50" font-size="11.5" fill="#8a8a8a">同一 h_φ</text>
+      <g font-size="11.5">
+        <rect x="246" y="46" width="150" height="34" rx="8" fill="#fff" stroke="#3c5a4a" stroke-width="2"/><text x="321" y="67" text-anchor="middle" fill="#3c5a4a">A⁽¹⁾ [r,d_in]</text>
+        <rect x="246" y="118" width="150" height="34" rx="8" fill="#fff" stroke="#3c5a4a" stroke-width="2"/><text x="321" y="139" text-anchor="middle" fill="#3c5a4a">A⁽²⁾ [r,d_in]</text>
+        <rect x="246" y="190" width="150" height="34" rx="8" fill="#fff" stroke="#3c5a4a" stroke-width="2"/><text x="321" y="211" text-anchor="middle" fill="#3c5a4a">A⁽ᴷ⁾ [r,d_in]</text>
+      </g>
+      <g stroke="#2d2d2d" stroke-width="2.5" fill="none" marker-end="url(#ck)">
+        <line x1="396" y1="63" x2="470" y2="110"/><line x1="396" y1="135" x2="470" y2="135"/><line x1="396" y1="207" x2="470" y2="162"/>
+      </g>
+      <text x="432" y="105" font-size="11.5" fill="#8a8a8a">竖排拼接</text>
+      <rect x="478" y="92" width="110" height="86" rx="10" fill="#2d2d2d"/>
+      <text x="533" y="128" text-anchor="middle" fill="#f8f6f0" font-weight="800">A_l</text>
+      <text x="533" y="148" text-anchor="middle" fill="#b8956a" font-size="11.5">[r·K, d_in]</text>
+      <g transform="translate(620,60)">
+        <rect x="0" y="32" width="110" height="86" rx="10" fill="#2d2d2d"/>
+        <text x="55" y="68" text-anchor="middle" fill="#f8f6f0" font-weight="800">B_l</text>
+        <text x="55" y="88" text-anchor="middle" fill="#b8956a" font-size="11.5">[d_out, r·K]</text>
+        <text x="55" y="18" text-anchor="middle" font-size="11.5" fill="#8a8a8a">横排拼接</text>
+      </g>
+      <line x1="588" y1="135" x2="616" y2="135" stroke="#C44D3F" stroke-width="3" marker-end="url(#ck)"/>
+      <text x="675" y="90" font-size="13" font-weight="900" fill="#C44D3F">B_l A_l = Σₖ B⁽ᴷ⁾A⁽ᴷ⁾</text>
+      <text x="675" y="114" font-size="12.5" fill="#4a4a4a">秩 = r·K：文档更长 → 秩更高</text>
+      <text x="675" y="136" font-size="12.5" fill="#4a4a4a">超网络输出形状不变 → 免重训</text>
+      <text x="675" y="162" font-size="12" fill="#8c2f24" font-weight="700">代价：无交叉项 B⁽ᵏ⁾A⁽ʲ⁾（k≠j）</text>
+      <text x="675" y="182" font-size="12" fill="#8c2f24">chunk 间融合仅靠加性叠加 → Q2</text>
+      <text x="30" y="266" fill="#4a4a4a" font-size="12.5">训练时 chunk 概率：1 chunk 50% · 2 chunks 12% · 3–8 chunks 37.5%（均分）；两阶段：先 80K 步纯单 chunk（稳定性），再 20K 步随机 chunking（组合性）。</text>
+      <text x="30" y="290" fill="#8a8a8a" font-size="12">直接开 chunking 训练不稳定——组合性是要单独学的第二技能（附录 B.2）。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S2（自绘）</b>：chunking 机制全景。红字标出式 (9) 的结构性代价——交叉项缺失，这是 Q2 的出发点。</figcaption>
+  </div>
+  <figure>
+    <img src="figures/fig3_squad.png" alt="论文 Figure 3：SQuAD 上与各基线的性能-延迟-显存对比" style="max-width:820px">
+    <figcaption><b>图 2（论文 Figure 3 精准裁剪）</b>：SQuAD。左——横轴为"实际喂给模型的上下文比例"，Ours(i) 曲线在比例≈0 处仍有 0.8 左右性能（上下文完全移除）；中——更新延迟对数轴，D2L 亚秒级；右——更新显存，D2L 与 CD(oracle) 均 &lt;2GB，CD(gen queries) 40GB+。DROP/ROPES 趋势相同（附录 Fig 7）。</figcaption>
+  </figure>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · NIAH</div>
+  <h2>NIAH：256 token 训练 → 40K token 推理的外推</h2>
+  <figure>
+    <img src="figures/fig2_niah.png" alt="论文 Figure 2：NIAH 检索性能与推理额外显存" style="max-width:520px">
+    <figcaption><b>图 3（论文 Figure 2 精准裁剪）</b>：上——ROUGE-L F1 随 haystack 长度变化；基座 gemma-2-2b-it（8K 窗口）在 8K 后骤降，D2L 维持近满分至 40K；下——推理额外显存：基座在 128K haystack 需 12GB+，D2L 恒定 &lt;50MB。</figcaption>
+  </figure>
+  <ul>
+    <li>设置：RULER 式 NIAH，"magic number" 句插入干扰文档；基座 gemma-2-2b-it（8K 窗口）。</li>
+    <li>训练：32–256 token、随机 1–8 chunks、64 万样本、1 epoch、lr 4e-5、单 H200 约 3 小时。</li>
+    <li>推理：chunk 上限 1024 token（训练最大 chunk 的 4 倍）；近满分维持到 <strong>40 chunks（40K）</strong>——chunk 数量为训练上限的 5 倍；此后平滑退化。</li>
+    <li>外推的两个维度同时成立：<strong>chunk 内长度 ×4</strong>（256→1024）与 <strong>chunk 数 ×5</strong>（8→40）。</li>
+  </ul>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs>
+      <pattern id="pxd2a" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#94a3b8"/></pattern>
+      <pattern id="pxd2b" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#3c5a4a"/></pattern>
+    </defs>
+    <text x="30" y="28" font-size="13.5" font-weight="800" fill="#2d2d2d">NIAH 双重外推与显存转移（1 柱格 = 7px 像素块）</text>
+    <g font-size="12">
+      <text x="120" y="62" text-anchor="middle" font-weight="700" fill="#4a4a4a">训练域</text>
+      <rect x="90" y="120" width="60" height="80" fill="url(#pxd2a)"/>
+      <text x="120" y="112" text-anchor="middle" font-weight="800" fill="#4a4a4a">总长 ≤256 tok</text>
+      <text x="120" y="216" text-anchor="middle" fill="#8a8a8a">≤8 chunks</text>
+      <text x="450" y="62" text-anchor="middle" font-weight="700" fill="#3c5a4a">推理域（chunk ×4 · 数 ×5）</text>
+      <rect x="360" y="70" width="60" height="130" fill="url(#pxd2b)"/>
+      <text x="390" y="216" text-anchor="middle" fill="#4a4a4a">1024 tok/chunk（×4）</text>
+      <rect x="440" y="46" width="60" height="154" fill="url(#pxd2b)"/>
+      <text x="530" y="216" text-anchor="middle" fill="#4a4a4a">40 chunks（×5）</text>
+      <text x="470" y="38" text-anchor="middle" font-weight="800" fill="#3c5a4a">40K tok · 近满分</text>
+      <text x="750" y="62" text-anchor="middle" font-weight="700" fill="#8c2f24">显存转移</text>
+      <rect x="700" y="100" width="52" height="100" fill="url(#pxd2a)"/><text x="726" y="92" text-anchor="middle" font-weight="800" fill="#475569">ICL@128K：12 GB+</text>
+      <rect x="790" y="192" width="52" height="8" fill="url(#pxd2b)"/><text x="816" y="184" text-anchor="middle" font-weight="900" fill="#3c5a4a">D2L：&lt;50 MB</text>
+      <line x1="50" y1="200" x2="860" y2="200" stroke="#2d2d2d" stroke-width="2.5"/>
+      <text x="450" y="252" text-anchor="middle" font-size="12.5" fill="#4a4a4a">左：两个外推维度（chunk 大小 ×4、chunk 数 ×5）同时成立；右：KV 缓存成本从"每次问答"挪到"每次内化"。</text>
+      <text x="450" y="276" text-anchor="middle" font-size="12" fill="#8c2f24">读写比决定适用性：一文档多问答 → 数量级省；每问换文档 → 不划算。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S3（自绘 pixel-art）</b>：NIAH 的两个外推轴与成本结构变化。</figcaption>
+  </div>
+  <div class="critique-box"><span class="tag">C2 · 取证</span>
+    <h4>NIAH 的完美数字来自一个与主方法不同的简化管线</h4>
+    <p>附录 A：该实验用<strong>交叉熵（ ground-truth token 上的 NTP）</strong>而非 KL 自蒸馏，激活只取<strong>第 6 层</strong>映射到所有层，训练查询 = 评测查询。而 §9 的 Table 6 恰恰证明 NTP 目标的泛化显著弱于 KL（0.763 vs 0.819；极端泛化 0.235 vs 0.385）。NIAH 是教学性实验（论文自称 pedagogical），它的"近满分外推"<strong>不能直接为主 KL 管线背书</strong>——但它确实隔离验证了两件事：Perceiver 的长度外推与 chunking 机制本身。读摘要时需把这层归因分开。</p>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>50MB 恒定显存的含义：KV 缓存被"预付"了</h4>
+    <p>基座答 128K haystack 需 12GB+ 额外显存（KV 缓存随长度线性涨）；D2L 路径下这个成本被转移到<strong>内化时刻</strong>（读文档一次、产 LoRA），回答时只剩 query 的几行 KV。这不只是省内存——它把成本从"每次问答"搬到"每次文档更新"，对"一份文档、多次问答"的负载是数量级省，对"每次问答换文档"的负载反而不划算。<strong>适用性由读写比决定</strong>，这是部署判断的第一公式。</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 短文 QA</div>
+  <h2>短文 QA：82.5% 的 ICL 上界，零上下文</h2>
+  <p>真实文档管线（KL 目标）下的三个阅读理解基准（SQuAD/DROP/ROPES），指标为相对"基座带截断上下文"上界的 ROUGE-L F1（绝对值：0.8692/0.4541/0.7457）：</p>
+  <ul>
+    <li>D2L 在 SQuAD 达 ICL 上界的 <strong>82.5%</strong>（0.814），三个基准全部优于所有 in-parameter 基线；</li>
+    <li>与 <strong>LLMLingua-2</strong> 对比：性能约等于把上下文压到 40%——但 D2L 之后<strong>彻底移除上下文</strong>；</li>
+    <li><strong>T2L</strong>（同组前作，SFT/NTP 目标训练）无法有效内化——训练分布（SFT 数据集）与任务（文档内化）错位，直接证明<strong>训练目标（CD vs NTP）是成败变量</strong>；</li>
+    <li>效率：亚秒内化（0.086 s，Table 4；0.2–0.55 s，Table 1），更新显存 &lt;2GB（短文基准）；<strong>CD(oracle)</strong>——在评测查询上直接优化式 (1) 的上界基线、部署不可得——约 40 秒；CD(生成查询) &gt;100 秒。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>归一化的两面：82.5% 很体面，绝对值才是瓶颈</h4>
+    <p>DROP 归一化 0.655 看似中等，但其上界绝对值仅 0.4541（F1）——离散推理（计数/排序/算术）是绝对瓶颈；这与 rank 消融中 DROP 增益最大（0.655→0.711）互证：容量上去，推理型内化才动。另一面：归一化分母是<strong>截断</strong> ICL，本身偏松——与完整 ICL 的真实比值会更低。两个方向一起读，数字才不骗人。</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 长文档 QA</div>
+  <h2>长文档 QA：最好与最差的情形</h2>
+  <figure>
+    <img src="figures/fig4_longdoc.png" alt="论文 Figure 4：长文档 QA 性能-显存对比" style="max-width:820px">
+    <figcaption><b>图 4（论文 Figure 4 精准裁剪）</b>：LongBench 三基准（2WikiMultihopQA / MultiFieldQA / QASPER，测试样本最长 32K token）。横轴为回答阶段的生成显存：in-parameter 方法 &lt;100MB，ICL 约 1GB。</figcaption>
+  </figure>
+  <p>测试长度远超元训练上限（2344 token）。CD 用截断文档 + 生成查询。2Wiki 上的完整对照：</p>
+  <table>
+    <tr><th>方法（2WikiMultihopQA）</th><th>归一化性能 ↑</th><th>更新显存 GB ↓</th><th>更新延迟 s ↓</th></tr>
+    <tr><td>CD (oracle query)</td><td class="best">0.901</td><td>7.820</td><td>40.171</td></tr>
+    <tr><td class="hl">D2L (batched)</td><td class="hl">0.857</td><td class="bad">11.522</td><td class="best">0.209</td></tr>
+    <tr><td class="hl">D2L (iterative)</td><td>0.844</td><td class="best">3.791</td><td>0.551</td></tr>
+    <tr><td>CD (25 generated queries)</td><td>0.745</td><td>59.925</td><td>465.454</td></tr>
+    <tr><td>CD (5 generated queries)</td><td>0.704</td><td class="bad">79.371</td><td>72.537</td></tr>
+  </table>
+  <p>两面的读法：<strong>2Wiki 是最好情形</strong>——D2L 逼近 oracle（0.857 vs 0.901），且比 5-query CD 高 15 个点、显存省 21 倍。<strong>MFQA/QASPER 是最差情形</strong>：D2L 只有 0.481（batched）/0.543（iterative），oracle 却有 1.041/0.945（MultiFieldQA 上 oracle 甚至超过截断 ICL 本身）——gap 达 <strong>41-56 个点</strong>（实算 41.1/56.0）。区别在哪？2Wiki 是多跳组合型问题、答案短；MFQA/QASPER 是抽取型长文档、信息密度高且分散。第 12 章 Q2 给出机制假说：chunking 的秩拼接对"分散在多 chunk、需跨 chunk 组合"的信息有结构优势（多跳），对"需要精确复述某处细节"的信息则受秩瓶颈约束（rank=LoRA 的表达预算：$r \cdot K$ 个秩位要装下整篇文档）。</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 310" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxd2c" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#94a3b8"/></pattern></defs>
+    <text x="30" y="28" font-size="13.5" font-weight="800" fill="#2d2d2d">2Wiki 内化方法全景：性能 × 更新显存 × 更新延迟（柱高 = 性能，柱下 = 显存/延迟）</text>
+    <g font-size="12" text-anchor="middle">
+      <text x="110" y="60" font-weight="700" fill="#4a4a4a">CD oracle</text>
+      <rect x="84" y="92" width="52" height="128" fill="url(#pxd2c)"/><text x="110" y="84" font-weight="800" fill="#475569">0.901</text><text x="110" y="240" fill="#475569">7.8 GB · 40.2 s</text>
+      <text x="270" y="60" font-weight="700" fill="#3c5a4a">D2L batched</text>
+      <rect x="244" y="98" width="52" height="122" fill="#3c5a4a"/><text x="270" y="90" font-weight="900" fill="#3c5a4a">0.857</text><text x="270" y="240" fill="#8c2f24" font-weight="700">11.5 GB · 0.21 s</text>
+      <text x="430" y="60" font-weight="700" fill="#3c5a4a">D2L iterative</text>
+      <rect x="404" y="102" width="52" height="118" fill="#3c5a4a"/><text x="430" y="94" font-weight="900" fill="#3c5a4a">0.844</text><text x="430" y="240" fill="#3c5a4a" font-weight="700">3.8 GB · 0.55 s</text>
+      <text x="590" y="60" font-weight="700" fill="#4a4a4a">CD 25q</text>
+      <rect x="564" y="120" width="52" height="100" fill="url(#pxd2c)"/><text x="590" y="112" font-weight="800" fill="#475569">0.745</text><text x="590" y="240" fill="#475569">59.9 GB · 465 s</text>
+      <text x="750" y="60" font-weight="700" fill="#8c2f24">CD 5q</text>
+      <rect x="724" y="126" width="52" height="94" fill="url(#pxd2c)"/><text x="750" y="118" font-weight="800" fill="#8c2f24">0.704</text><text x="750" y="240" fill="#8c2f24" font-weight="700">79.4 GB · 72.5 s</text>
+      <line x1="50" y1="220" x2="850" y2="220" stroke="#2d2d2d" stroke-width="2.5"/>
+      <text x="450" y="274" text-anchor="middle" font-size="12.5" fill="#4a4a4a">D2L 的取舍轴是显存模式而非性能：batched 快 2.6 倍但贵 3 倍显存；两者性能差仅 0.013（浮点非交换性所致）。</text>
+      <text x="450" y="296" text-anchor="middle" font-size="12" fill="#8c2f24" font-weight="700">取证提醒：&lt;2GB 的说法只对短文基准成立（C1）。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S4（自绘 pixel-art）</b>：Table 1 可视化。CD 的延迟随查询数爆炸（5→25 queries：72.5→465 s），显存始终是 D2L iterative 的 16-21 倍；D2L 把这两条曲线同时删掉。</figcaption>
+  </div>
+  <p>一个反直觉现象：<strong>"Ours + 截断上下文" 比 "Ours" 更好</strong>（2Wiki/MFQA 上）。论文假说：长上下文的注意力噪声（lost-in-the-middle）会压制 ICL；内化后的模型带着参数化知识再读原文，注意力噪声把生成"推向"参数侧，反而两种知识源互补。短文基准无此现象（无注意力噪声）。</p>
+  <div class="critique-box"><span class="tag">C1 · 取证</span>
+    <h4>"&lt;2GB 更新显存"的话域：长文档上 D2L batched 反超 CD(oracle)</h4>
+    <p><strong>证据</strong>：§5.1.1 写 "Both use less than 2 GB of VRAM"——只对三个短文基准成立。Table 1/9/10：2Wiki batched 11.5GB、MFQA 19.4GB、QASPER 31.2GB，全部高于 CD(oracle) 的 7.7-7.8GB；仅 iterative 模式（3.7-4.8GB）真正省显存。<strong>推理</strong>：batched 模式要把所有层的激活同时喂给超网络，显存随文档长度增长；iterative 逐层释放。<strong>影响</strong>：引用"低显存"必须注明模式与基准。<strong>补救</strong>：以 Table 1/9/10 为准——速度选 batched（0.2s/11-31GB），显存选 iterative（0.5s/3.8-4.8GB），二者数学等价。</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 分析 I</div>
+  <h2>D2L ≈ 大预算 CD 的模拟：一次对照实验</h2>
+  <div class="mathcard"><h4>Table 4（SQuAD 100 样本）：查询预算换性能，还是换映射？</h4>
+  <table style="margin:8px 0">
+    <tr><th>方法</th><th>归一化性能</th><th>更新延迟</th></tr>
+    <tr><td>CD (oracle)</td><td class="best">0.988</td><td>8.763 s</td></tr>
+    <tr><td class="hl">D2L</td><td class="hl">0.866</td><td class="best">0.086 s</td></tr>
+    <tr><td>CD (100 generated queries)</td><td>0.650</td><td>631.101 s</td></tr>
+    <tr><td>CD (50 generated queries)</td><td>0.601</td><td>311.661 s</td></tr>
+    <tr><td>CD (20 generated queries)</td><td>0.506</td><td>129.044 s</td></tr>
+  </table>
+  </div>
+  <p>D2L 等效只见过 10 query/上下文，性能却压过 100-query CD（+0.216），时间 1/7300。论文给出两个互补解释：① <strong>跨上下文正则</strong>——10⁸ 级 (context, query) 对让 $H_\phi$ 学到"平均意义上的 CD 算子"，比单上下文的有限查询更鲁棒；② <strong>有偏 CD</strong>——$H_\phi$ 学到强先验"未来查询必与内化知识相关"（数据管线只生成相关查询），这个先验在分布内是免费午餐，在分布外是失效点（第 9 章知识干扰实验直接命中）。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>sub-second 区间是 D2L 的"生态位"，不是全面胜利</h4>
+    <p>把预算轴拉到极限：CD 用几百上千查询、几十分钟，最终会超过 D2L（论文自己承认）。D2L 的真实主张是<strong>响应性约束下的最优</strong>：交互式/设备端场景里，超过 1 秒的内化等于不可用，此时 D2L 是唯一在场的选项。一句话总结权衡：<strong>D2L = CD 的质量 × 1/7300 的时间 × 分布外风险</strong>。</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 分析 II</div>
+  <h2>极端泛化：交换查询、跨模态、替换参数化</h2>
+  <h3>把查询内化进参数（swapped 设定）</h3>
+  <p>反向使用 D2L：内化 query、直接看文档。<span style="color:var(--text-muted)">（recall=输出覆盖金标答案的比例；precision=输出不掺无关内容的比例。）</span>Base w/ ctx 0.886/0.876 → D2L 0.740/0.720 → <strong>swapped 0.587/0.044</strong>（base 无上下文仅 0.185）。swapped 下模型偶尔答对但输出冗长——precision 崩、recall 存活。这说明 $H_\phi$ 学到的不是"文档专用"映射，而是更一般的"信息→参数"算子；但分布外的输出风格失控（元训练全是"简洁答案"分布）。</p>
+  <h3>VLM → 纯文本 LLM：跨模态零样本</h3>
+  <table>
+    <tr><th>编码器 → 目标</th><th>SQuAD</th><th>DROP</th><th>ROPES</th><th>Imagenette（10 类，随机 10%）</th></tr>
+    <tr><td>D2L (LLM ⇒ LLM)</td><td>0.814</td><td>0.655</td><td>0.906</td><td>—</td></tr>
+    <tr><td class="hl">D2L (VLM ⇒ LLM)</td><td>0.705</td><td>0.568</td><td>0.772</td><td class="best">75.03%</td></tr>
+  </table>
+  <p>用 gemma-3-4b-it 的语言塔前 26 层激活做编码器（训练只用文本），零样本给纯文本 gemma-2-2b-it 内化<strong>图像</strong>：目标模型只凭生成的 LoRA 做 10 类图像分类，75.03%。代价是文本 QA 掉 10-13 个点——编码器换模态的税。机制上这是 Perceiver 结构的红利：它对"任意来源的激活序列"一视同仁。</p>
+  <h3>换成生成 KV 缓存（HyperKV）</h3>
+  <figure>
+    <img src="figures/fig9_hyperkv.png" alt="论文 Figure 9：HyperKV 的 RoPE 陷阱" style="max-width:480px">
+    <figcaption><b>图 5（论文 Figure 9 精准裁剪）</b>：蓝=超网络直接生成 key（4K 后骤降）；绿=生成的 key 先过基座的 key-norm+RoPE 层（外推延至 8K）。</figcaption>
+  </figure>
+  <p>这个失败的变体暴露了一个值得记住的机制：<strong>直接输出 key 的超网络被迫隐式模拟 RoPE 的位置依赖</strong>——而 RoPE 是长度的函数，训练只到 8 chunks，于是 8K 后崩溃；把生成 key 重新过一遍目标模型的 norm+RoPE 层，位置依赖交还给目标模型，超网络只需输出"位置无关"的内容，外推立竿见影。<strong>原则：让超网络预测与位置无关的量，位置变换留给基座</strong>——适用于一切"生成注入物"类方法（LoRA 本身位置无关，所以主方法没踩这个坑）。</p>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 消融</div>
+  <h2>消融与失败模式：四个可迁移的结论</h2>
+  <table>
+    <tr><th>消融</th><th>对照</th><th>结果</th><th>结论</th></tr>
+    <tr><td>训练目标（50% checkpoint）</td><td>KL vs NTP</td><td>SQuAD 0.819 vs 0.763；swapped recall 0.385 vs 0.235</td><td class="best">KL 匹配整个教师分布，保留不确定性与多峰；NTP 只匹配 argmax</td></tr>
+    <tr><td>LoRA 秩</td><td>8 vs 16</td><td>SQuAD 0.814→0.896；DROP 0.655→0.711；ROPES 持平</td><td>秩是有效容量轴，性能未饱和</td></tr>
+    <tr><td>训练数据</td><td>去掉 QA 数据</td><td>SQuAD/ROPES 反升（0.838/0.923），DROP 降 8 个点</td><td>对数据格式不敏感；纯预训练语料可训</td></tr>
+    <tr><td>知识干扰</td><td>无关上下文</td><td>D2L 0.096/0.126 vs base 0.201/0.175 vs CD 0.211/0.203</td><td class="bad">D2L 伤基座：内化无关知识后，相关查询外全部退化</td></tr>
+  </table>
+  <div class="critique-box"><span class="tag">C8 · 失败模式</span>
+    <h4>知识干扰：D2L 比"什么都不做"更差</h4>
+    <p><strong>证据</strong>：把 SQuAD 上下文替换成"You are a useful assistant."或 4K 无关文本后，D2L 内化它们再答原问题——0.096/0.126，低于 base 的 0.201/0.175，也低于 CD 的 0.211/0.203。<strong>推理</strong>：元训练只见过"查询与内化内容相关"的分布，$H_\phi$ 把"强先验：查询必关于内化知识"烧进了权重；无关内化激活了这个先验，输出被引向不相关参数记忆。CD 没有这个先验（它只优化当前分布）。<strong>影响</strong>：持续内化多份文档（个人助理的真实负载）时，旧知识被新 adapter 覆盖、无关文档污染回答。<strong>补救</strong>：论文只有假设（加入无关查询正则）与远方引用（约束编辑、稀疏记忆微调），无实验——这是全文最大的未解决问题。</p>
+  </div>
+  <p>附录还给出两个工程事实：两阶段训练是必要的（直接开 chunking 不稳定：先 80K 步单 chunk，再 20K 步随机 1-8 chunk）；批量打包 4K token 序列 × 8 GPU、累计 20 万+ 上下文 token 的 batch 规模是关键（"否则过早收敛"）。整次元训练 <strong>5 天 × 8 H200</strong>。</p>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 批判</div>
+  <h2>批判评估：八条带证据的保留意见</h2>
+  <div class="critique-box"><span class="tag">C3</span><h4>与 oracle 的差距跨基准 4-56 个点，摘要未给边界</h4><p>2Wiki gap 4.4 点、MFQA/QASPER gap <strong>41-56 点</strong>（证据见第 6 章表格）；机制假说（多跳受益于秩拼接的加性结构 vs 抽取受秩瓶颈）见 Q2。"outperforms standard CD" 成立，但逼近 oracle 只在部分基准成立。</p></div>
+  <div class="critique-box"><span class="tag">C4</span><h4>Mistral-7B 长上下文内部化全线失败，未解释</h4><p><strong>证据</strong>：附录 E："all internalization methods struggle … we offer no explanation"。<strong>影响</strong>：方法对骨干的适用边界（gemma/Qwen 可、Mistral 长文不可）未知；跨骨干稳健性主张要打折。<strong>补救</strong>：排查 Mistral 的激活几何（outlier 维度/attention sink）与 down_proj 位置是否是内化瓶颈。</p></div>
+  <div class="critique-box"><span class="tag">C5</span><h4>top-16 logits 截断了教师分布</h4><p><strong>证据</strong>：元训练用 top-16 token logits 计算式 (4) 的 KL（推测动机：省显存——论文未陈述）。<strong>推理</strong>：KL 目标缺少尾部质量——对"多峰合理答案"的保留正是 KL 优于 NTP 的理由（Table 6），截断可能悄悄侵蚀这一优势；影响未量化。<strong>补救</strong>：对比 top-16 vs top-64 的元训练。</p></div>
+  <div class="critique-box"><span class="tag">C6</span><h4>单参数化、单注入点</h4><p><strong>证据</strong>：主实验只挂 MLP down_proj、只生成 LoRA；App D 自己证明 KV/prefix 参数化可行。<strong>推理</strong>：LoRA 与 prefix 的内化容量-遗忘特性不同（Cartridges 的结论是 prefix 对 CD 很有效），无系统对比。<strong>影响</strong>："LoRA 是内化的正确载体"未被论证。</p></div>
+  <div class="critique-box"><span class="tag">C7</span><h4>每个目标 LLM 重训一次：5 天 × 8 H200</h4><p><strong>证据</strong>：Limitations 明说需为新目标模型重训 $H_\phi$。<strong>推理</strong>：与 T2L 的"一个生成器服务多模型"路线相反，也与"利用现成检查点"的 DnD 愿景相反——D2L 的超网络绑定 (基座, 注入点) 二元组。<strong>影响</strong>：总拥有成本 = 元训练 + 每次换基座的 5 天；论文未给摊销经济学（多少文档/查询才回本）。</p></div>
+  <div class="critique-box"><span class="tag">C1/C2/C5 复述</span><h4>另见前文三条</h4><p>C1（&lt;2GB 话域）、C2（NIAH 用 CE 简化管线）、C8（知识干扰无修复实验）分别见第 6、4、9 章。三条都指向同一类问题：<strong>有利结论的适用条件藏在附录</strong>。</p></div>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="kicker">CHAPTER 11 · 理论</div>
+  <h2>理论视角：D2L 学的是条件期望 $\mathbb{E}[\Delta W_{CD} \mid c]$</h2>
+  <div class="mathcard"><h4>类比假说（非定理）：D2L 逼近 $\mathbb{E}[\Delta W_{CD} \mid c]$</h4>
+  <p style="font-size:14px">D2L 的 KL 目标与 DnD（Drag-and-Drop LLMs，本仓库另一篇解读博客）的 MSE 目标在结构上同构：都是让一个条件化映射 $H_\phi(c)$ 逼近"逐样本优化"的解分布。把 CD 的解写成 $\Delta W_{CD}(c, \mathcal{Q})$（依赖上下文与查询集 $\mathcal{Q}$ 的随机性：查询采样、教师采样、SGD 轨迹）。</p>
+  $$H^*(c) \;\approx\; \mathbb{E}\big[\Delta W_{CD} \mid c\big] \;=\; \underbrace{\bar\Delta W_{\mathcal{D}(c)}}_{\text{上下文均值项}} + \underbrace{\mathbb{E}[\varepsilon \mid c]}_{\text{查询/采样特异项}}$$
+  <p style="font-size:14px"><strong>诚实标注</strong>：条件期望等价仅在 MSE 目标下是定理；KL 的最优解是分布匹配条件，参数空间中一般<strong>不等于</strong>逐样本 CD 解的均值——上式应读作类比假说，价值在它的可检验推论：</p>
+  <ul style="font-size:14px">
+    <li><strong>正效应</strong>：CD 解的随机性（查询集、采样）被平均，条件期望落在平坦盆地，泛化优于单次 CD——可解释 Table 4 中 D2L &gt; 100-query CD 的部分增益；<strong>检验</strong>：$\mathrm{Var}(\Delta W_{CD}\mid c)$ 越大的数据集，D2L 相对单点 CD 的增益应越大；</li>
+    <li><strong>风险</strong>：若 $\mathbb{P}(\Delta W_{CD} \mid c)$ 多峰，"均值"落在流形之间——可注解第 9 章知识干扰的失效（just-so 解释，未经检验）。</li>
+  </ul>
+  <p class="note">与 DnD 篇（Drag-and-Drop LLMs 解读，H1"轨迹平均"）的对照检验法相同。</p></div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>本仓库四篇论文构成"测试时适配"的完整设计空间</h4>
+    <p>把知识放进模型有四个容器：<strong>上下文</strong>（ICL，灵活/昂贵/易失）、<strong>静态参数</strong>（LoRA/SFT，持久/慢）、<strong>生成的参数</strong>（DnD：任务→LoRA；D2L：文档→LoRA；T2L：任务描述→LoRA——都是"把适配算子元学习化"）、<strong>在线状态</strong>（δ-mem：Efficient Online Memory，本仓库另一篇解读；8×8 在线记忆矩阵）。D2L 与 DnD 的分野最值得注意：<strong>条件语义不同</strong>（文档内容 vs 任务指纹）、<strong>监督不同</strong>（CD 自蒸馏分布 vs 检查点回归）、<strong>架构不同</strong>（Perceiver 交叉注意力 vs 超卷积）。共同点：都把"每任务一次优化"摊销成"一次前向"。这个设计空间还缺一角：条件化<strong>在线状态生成器</strong>（为 δ-mem 生成初始记忆矩阵）——见 Q4。</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section id="s12">
+  <div class="kicker">CHAPTER 12 · 开放问题</div>
+  <h2>自主科研问题：五个可动手的方向</h2>
+  <div class="research-question"><span class="tag">Q1 · 表征</span><h4>$H_\phi$ 对文档的什么敏感：语义还是表面统计？</h4>
+    <p>对同一文档做 paraphrase、句序打乱、格式重排，测生成 $\Delta W$ 的余弦相似度与下游性能变化。若表面统计主导（呼应 DnD Q1 的指纹假说），乱序文档的 adapter 应显著漂移；若语义主导，则 D2L 有资格称为"理解"。<strong>反向判据</strong>：若乱序不漂移，表面统计假说被证伪——下一步改测答案实体词汇重叠度（更细粒度的指纹成分分解）。</p>
+    <p><strong>下手处</strong>：SQuAD 500 样本 × 4 种扰动 × 测 $\cos(\Delta W, \Delta W')$ 与 ROUGE-L 变化的相关结构；零训练成本。</p></div>
+  <div class="research-question"><span class="tag">Q2 · 结构</span><h4>chunk 秩拼接的容量-交互权衡</h4>
+    <p>式 (9) 的 $K$ 个 chunk <strong>独立</strong>生成后拼接——适配器构造层面无交叉项（$B^{(k)}A^{(j)},\ k \neq j$ 不存在），跨 chunk 融合完全委托给基座前向的非线性混合。假说：这解释了 2Wiki（多跳、chunk 间信息组合）相对好而 MFQA/QASPER（细节精确复述）差。检验：打乱 chunk 顺序，测多跳 vs 抽取型任务的性能损伤差异。</p>
+    <p><strong>形式化</strong>：$\Delta W = \sum_k B^{(k)}A^{(k)}$ 无交叉项 $B^{(k)}A^{(j)}, k \neq j$；补一个"chunk 间轻量注意力"变体，测两型任务的增益差。</p></div>
+  <div class="research-question"><span class="tag">Q3 · 推广</span><h4>D2L 初始化 + 少步 CD：摊销经济学</h4>
+    <p>论文 Limitations 自己提出该组合但未实验。定量问题：从 $H_\phi(c)$ 出发，达到 oracle−$\varepsilon$ 需要几步 SGD / 几个查询？设 $\Delta W_{D2L}$ 与 oracle 解的线性连通性成立（DnD 篇 H1 同款假设），预期 <1 step × 10 query 即可。</p>
+    <p><strong>下手处</strong>：2Wiki 上 D2L 初始化 vs 随机初始化的 CD 收敛曲线；报告"达到 0.95×oracle"的 wall-clock 比值——这决定 D2L 是 CD 的替代品还是加速器。</p></div>
+  <div class="research-question"><span class="tag">Q4 · 综合</span><h4>跨容器生成：给 δ-mem 生成初始记忆矩阵</h4>
+    <p>本仓库 δ-mem 的在线记忆需要"冷启动"：状态从零开始累积历史。把 D2L 的架构用来生成 δ-mem 的 8×8 初始状态（而非 LoRA）——"读一遍文档 → 预填记忆状态 → 在线 delta rule 接管漂移"。App D 已证明该架构可输出 KV，证明容器无关性；这是把两条测试时适配路线合流的最低成本实验。</p>
+    <p><strong>形式化</strong>：$\min_\phi \mathbb{E}_c\ \mathrm{KL}(p_\theta(\cdot|x,c)\,\|\,p_{\theta, S_0 = G_\phi(c)}(\cdot|x))$，$S_0$ 后接 δ-mem 的门控 delta 更新。</p></div>
+  <div class="research-question"><span class="tag">Q5 · 安全</span><h4>内化即投毒：文档通道的权重后门</h4>
+    <p>D2L 把任意文本映射为可执行权重——文档本身就是攻击载荷。恶意文档（含触发句式的"针"）经内化后，adapter 是否携带可被特定查询激活的后门行为？与 DnD Q5 同源，但 D2L 的攻击面更广：ICL 时代恶意上下文只影响单次推理，内化后影响<strong>所有</strong>后续查询且持久。</p>
+    <p><strong>下手处</strong>：影子超网络 + 触发词搜索（在条件空间对 $H_\phi$ 做 PGD）；防御侧：内化前后在干净基准上的行为差作为"投毒检测器"（利用 C8 的知识干扰现象反向使用）。</p></div>
+</section>
+
+<!-- 13 -->
+<section id="s13">
+  <div class="kicker">CHAPTER 13 · 路线图</div>
+  <h2>小白 → 学者：十天路线图</h2>
+  <div class="roadmap">
+    <div class="step"><h4>第 1-2 天：CD 族谱</h4><p>读 Askell 2021（CD 起源）→ Snell 2023 → Caccia/Cartridges 2025；复推式 (1)(2)，亲手用 gemma-2-2b-it 蒸馏一个 SQuAD 量级短文档（oracle 约 8.8 s/次，Table 4 实测），建立"oracle 基准"直觉。</p></div>
+    <div class="step"><h4>第 3-4 天：超网络元学习</h4><p>Perceiver 原理 + von Oswald 2020（hypernetwork 连续学习）；读 D2L Listing 1-3，理解逐层共享与 EinMix 头。</p></div>
+    <div class="step"><h4>第 5-6 天：复现 NIAH 简化版</h4><p>附录 A 全部公开可复现：CE 损失、第 6 层激活、64 万样本、单 H200 3 小时。跑通后再做第 4 章的两个外推维度（chunk 大小 ×4、chunk 数 ×5）。</p></div>
+    <div class="step"><h4>第 7-8 天：选一个假说动手</h4><p>Q1（扰动探针）或 Q3（D2L 初始化 CD）都是零/低训练成本实验，一周内可出数据。</p></div>
+    <div class="step"><h4>第 9-10 天：写 proposal</h4><p>从 Q1-Q5 选一个：形式化、最小实验、预期曲线、与 D2L/T2L/Cartridges 的差异表。</p></div>
+  </div>
+  <h3>工作区阅读地图</h3>
+  <p style="font-size:13.5px;color:var(--text-muted)">"本仓库"指本博客系列工作区：RPG / δ-mem / DnD 均有配套深度解读，可对照阅读。</p>
+  <table>
+    <tr><th>论文</th><th>与 D2L 的关系</th><th>关键对照</th></tr>
+    <tr><td>Text-to-LoRA（同组，ICML 2025）</td><td>前作：任务描述→LoRA</td><td>条件粒度（描述 vs 全文档）；训练目标（NTP/SFT vs CD）——D2L 用后者证明了前者的失败原因</td></tr>
+    <tr><td>Generative Adapter（本仓库有原文，ICLR 2025）</td><td>最近邻：上下文→参数，单次前向</td><td>目标函数（NTP on ground-truth vs CD 自蒸馏）；附录 Table 12：GA 高 F1 是短输出的假象，recall 低说明事实性差</td></tr>
+    <tr><td>DnD（本仓库有解读博客）</td><td>同族：条件→LoRA 超网络</td><td>条件（任务指纹 vs 文档内容）；监督（检查点回归 vs CD 蒸馏）；架构（超卷积 vs Perceiver）</td></tr>
+    <tr><td>δ-mem（本仓库有解读博客）</td><td>另一容器：在线状态而非参数</td><td>Q4 的合流点：D2L 生成 δ-mem 的初始状态</td></tr>
+    <tr><td>Cartridges（arXiv 2506.06266）</td><td>CD 的 prefix 参数化 + 睡眠时计算</td><td>"KV 也是内化容器"；D2L App D 的对照实验</td></tr>
+  </table>
+</section>
+
+<!-- 14 -->
+<section id="s14">
+  <div class="kicker">CHAPTER 14 · 代码</div>
+  <h2>代码附录</h2>
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>A. chunked LoRA 拼接（式 9，经维度自检）</h4></div>
+  <div class="code-note">自检：K 个 chunk 各产 [r, d_in] 与 [d_out, r]，沿秩拼接后 B@A = Σ B(k)@A(k)，形状 [d_out, d_in] 不变、秩为 r·K。变量先定义后使用。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch
+
+<span class="kw">def</span> <span class="fn">combine_chunk_loras</span>(A_chunks, B_chunks):
+    <span class="cm"># A_chunks: K x [r, d_in];  B_chunks: K x [d_out, r]</span>
+    A = torch.cat(A_chunks, dim=<span class="num">0</span>)          <span class="cm"># [r*K, d_in]  式(9) 竖排</span>
+    B = torch.cat(B_chunks, dim=<span class="num">1</span>)          <span class="cm"># [d_out, r*K] 式(9) 横排</span>
+    <span class="kw">return</span> B @ A                              <span class="cm"># [d_out, d_in] = Σ_k B(k) @ A(k), rank ≤ r*K</span>
+
+<span class="kw">def</span> <span class="fn">apply_lora</span>(W, A, B, alpha):
+    <span class="cm"># W: [d_out, d_in] 冻结;  alpha: 逐层可学习标量（式 5）</span>
+    <span class="kw">return</span> W + alpha * (B @ A)</code></pre>
+
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>B. Perceiver 超网络核心（式 6：r 个 latent query 交叉注意力，经维度自检）</h4></div>
+  <div class="code-note">自检：任意 N 输入 → 固定 r 输出（长度无关性即外推来源）；latent query 与输入无关、可学习。多头注意力用 nn.MultiheadAttention 的 batch_first 接口。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+
+<span class="kw">class</span> <span class="fn">PerceiverLatents</span>(nn.Module):
+    <span class="cm"># 式 (6): U = XAttn(Q_m, K(Z), V(Z)) — Z: [B, N, D] → U: [B, r, d_u]</span>
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d_model=<span class="num">2304</span>, d_u=<span class="num">512</span>, r=<span class="num">8</span>, heads=<span class="num">8</span>):
+        super().__init__()
+        self.q = nn.Parameter(torch.randn(r, d_u) * <span class="num">0.02</span>)      <span class="cm"># r 个输入无关 latent</span>
+        self.kv_proj = nn.Linear(d_model, d_u, bias=<span class="kw">False</span>)
+        self.attn = nn.MultiheadAttention(d_u, heads, batch_first=<span class="kw">True</span>)
+    <span class="kw">def</span> <span class="fn">forward</span>(self, Z, pad_mask=<span class="kw">None</span>):                     <span class="cm"># Z: [B, N, d_model]</span>
+        K = self.kv_proj(Z)                                   <span class="cm"># [B, N, d_u]（V 与 K 共享此线性，式 6 的 K(·),V(·) 简化）</span>
+        Q = self.q.unsqueeze(<span class="num">0</span>).expand(Z.shape[<span class="num">0</span>], <span class="num">-1</span>, <span class="num">-1</span>)    <span class="cm"># [B, r, d_u]</span>
+        U, _ = self.attn(Q, K, K, key_padding_mask=pad_mask)   <span class="cm"># [B, r, d_u] — N 被吸收，输出形状恒定</span>
+        <span class="kw">return</span> U</code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>C. 元训练损失（式 4：KL 对 top-16 logits）</h4></div>
+  <div class="code-note">自检：教师分布 = 冻结基座带上下文的 top-16 logits（附录 B.1 预录）；学生 = 基座加 H_φ(c) 生成的 LoRA 后的同位置分布。top-16 之外的尾部质量被截断（C5）。</div>
+<pre class="code-block"><code><span class="kw">def</span> <span class="fn">meta_loss</span>(base_llm, hypernet, ctx_ids, query_ids, teacher_topk_logits, K_T=<span class="num">16</span>):
+    feats  = base_llm.encode(ctx_ids).detach()             <span class="cm"># 逐层激活 Z（冻结，不回传）</span>
+    lora   = hypernet(feats)                               <span class="cm"># H_φ(c): 每层 B_l A_l（代码 A/B 组装）</span>
+    logits = base_llm.forward_with_lora(query_ids, lora)   <span class="cm"># 学生：θ + H_φ(c)，无上下文</span>
+    student = torch.log_softmax(logits[..., :K_T] / T, dim=<span class="num">-1</span>)     <span class="cm"># top-16 截断</span>
+    teacher  = torch.softmax(teacher_topk_logits / T, dim=<span class="num">-1</span>)      <span class="cm"># 元训练时预录；T=2.0 蒸馏温度（论文未给出，示意值）</span>
+    <span class="kw">return</span> (teacher * (teacher.clamp_min(<span class="num">1e-9</span>).log() - student)).sum(<span class="num">-1</span>).mean()  <span class="cm"># KL(T‖S)</span></code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>D. 两阶段训练日程（附录 B.2）</h4></div>
+  <div class="code-note">自检：阶段一稳定单 chunk 内化（80K 步），阶段二引入组合性（20K 步）；chunk 采样概率与论文一致。</div>
+<pre class="code-block"><code><span class="kw">for</span> step <span class="kw">in</span> range(<span class="num">100_000</span>):
+    stage2 = step >= <span class="num">80_000</span>
+    K = <span class="num">1</span> <span class="kw">if</span> <span class="kw">not</span> stage2 <span class="kw">else</span> sample_chunks(p1=<span class="num">0.50</span>, p2=<span class="num">0.12</span>, p3_8=<span class="num">0.375</span>)  <span class="cm"># 1 chunk 50% · 2 chunks 12% · 3-8 chunks 均分 37.5%</span>
+    chunks = split_contiguous(context_ids, K)              <span class="cm"># 连续等分为 K 段</span>
+    loss = meta_loss(base_llm, hypernet, chunks, q, teacher_topk)
+    loss.backward(); opt.step()                            <span class="cm"># 4K-token 打包 × 8 GPU，累计 &gt;200K ctx tokens</span></code></pre>
+</section>
+
+<!-- 15 -->
+<section id="s15">
+  <div class="kicker">CHAPTER 15 · 结语</div>
+  <h2>结语：一句话与一张图</h2>
+  <p>一句话：<strong>D2L 把 context distillation 从"每文档一次训练"变成"每文档一次前向"，用 10⁸ 级 (context, query) 分布把 CD 算子元学习进一个 309M 的 Perceiver 超网络</strong>——代价是 5 天×8 H200 的元训练、每基座一次重训、以及分布外的知识干扰。</p>
+  <p>位置见第 11 章谱系；跟进：Q3（D2L-init CD，把替代品变加速器）、Q4（跨容器生成，与 δ-mem 合流）、Q5（内化投毒——随内化技术成熟只会变大的攻击面）。</p>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献（关键条目经论文参考文献与此前核实）</h3>
+  <ol>
+    <li>Charakorn, Cetin, Uesaka, Lange. <em>Doc-to-LoRA: Learning to Instantly Internalize Contexts</em>. <a href="https://arxiv.org/abs/2602.15902">arXiv:2602.15902</a>, 2026. 项目：github.com/SakanaAI/doc-to-lora</li>
+    <li>Charakorn et al. <em>Text-to-LoRA: Instant Transformer Adaption</em>. ICML 2025. <a href="https://arxiv.org/abs/2506.06105">arXiv:2506.06105</a></li>
+    <li>Chen et al. <em>Generative Adapter: Contextualizing Language Models in Parameters with a Single Forward Pass</em>. ICLR 2025（本仓库存原文 PDF）</li>
+    <li>Eyuboglu et al. <em>Cartridges: Lightweight and General-Purpose Long Context Representations via Self-Study</em>. <a href="https://arxiv.org/abs/2506.06266">arXiv:2506.06266</a>, 2025</li>
+    <li>Li et al. <em>MEND: Meta Demonstration Distillation</em>. ICLR 2024；Mu et al. <em>Learning to Compress Prompts with Gist Tokens</em>. NeurIPS 2023</li>
+    <li>Hu et al. <em>LoRA</em>. ICLR 2022；Jaegle et al. <em>Perceiver</em>. ICML 2021；Ha et al. <em>HyperNetworks</em>. 2016</li>
+    <li>Hsieh et al. <em>RULER</em>. COLM 2024；Liu et al. <em>Lost in the Middle</em>. TACL 2024；Bai et al. <em>LongBench</em>. 2023</li>
+    <li>Askell et al. 2021（CD 起源）；Snell et al. 2023；Caccia et al. 2025（COLM）；Padmanabhan et al. 2023（NeurIPS）</li>
+    <li>基准：SQuAD (EMNLP 2016)；DROP (NAACL 2019)；ROPES (MRQA 2019)；2WikiMultihopQA (COLING 2020)；QASPER (NAACL 2021)；Imagenette (Howard 2019)</li>
+    <li>Tao et al. <em>When Context Leads but Parametric Memory Follows</em>. EMNLP 2024；Su et al. <em>RoFormer</em> (RoPE). Neurocomputing 2024</li>
+  </ol>
+  <div class="fin">Doc-to-LoRA 深度解读 · Venus 水墨丹青配方 · 图表：论文原图精准裁剪 5 张（PyMuPDF + 验证闭环）+ 自绘内联 SVG · 公式 Eq(1)-(9) 全部提取自 PDF 核对 · 8 条取证均标注证据与出处 · 2026-09-28</div>
+</div></footer>
+</body>
+</html>

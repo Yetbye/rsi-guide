@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>δ-mem 深度解读 | 一块 8×8 的在线联想记忆，如何撬动冻结大模型的历史</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  --am-50:#f5f3ff;--am-100:#ede9fe;--am-200:#ddd6fe;--am-300:#c4b5fd;--am-400:#a78bfa;
+  --am-500:#8b5cf6;--am-600:#7c3aed;--am-700:#6d28d9;--am-800:#5b21b6;--am-900:#4c1d95;
+  --gold-100:#fef3c7;--gold-200:#fde68a;--gold-300:#fcd34d;--gold-400:#fbbf24;--gold-500:#f59e0b;--gold-600:#d97706;
+  --mint-100:#d1fae5;--mint-200:#a7f3d0;--mint-400:#34d399;--mint-500:#10b981;
+  --coral-100:#ffe4e6;--coral-400:#fb7185;--coral-500:#f43f5e;
+  --ink:#1e1b4b;--ink-soft:#433f63;--ink-muted:#7b7894;
+  --paper:#ffffff;--paper-warm:#faf8f4;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;color:var(--ink);background:var(--paper-warm);line-height:1.9;font-size:16.5px}
+h1,h2,h3,h4{font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:900;letter-spacing:-0.02em;color:var(--ink)}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(255,255,255,0.82);backdrop-filter:blur(16px) saturate(1.6);border-bottom:1px solid rgba(124,58,237,0.18);padding:0 24px}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px}
+.nav-logo{font-family:'Noto Serif SC',serif;font-weight:900;font-size:15px;background:linear-gradient(135deg,var(--am-700),var(--gold-500));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.nav-links{display:flex;gap:10px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--ink-muted);text-decoration:none;letter-spacing:0.5px;transition:color .2s}
+.nav-links a:hover{color:var(--am-600)}
+/* ============ Hero: 模板 A 浅色渐变 + 图片卡片 ============ */
+.hero{position:relative;min-height:96vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:120px 24px 80px;background:linear-gradient(135deg,#faf5ff 0%,#f3e8ff 18%,#fdf4e3 50%,#fffbeb 100%)}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 520px 320px at 12% 22%,rgba(139,92,246,0.16),transparent 60%),radial-gradient(ellipse 520px 320px at 88% 78%,rgba(251,191,36,0.13),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:820px;text-align:center}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.6);backdrop-filter:blur(12px) saturate(1.5);border:1px solid rgba(139,92,246,0.3);color:var(--am-700);padding:7px 20px;border-radius:100px;font-size:11px;font-weight:600;letter-spacing:3px;margin-bottom:20px;box-shadow:0 4px 20px rgba(139,92,246,0.12)}
+.hero h1{font-size:clamp(2.6rem,7.5vw,4.6rem);font-weight:900;letter-spacing:-0.03em;line-height:1.12;margin:12px 0 10px;background:linear-gradient(135deg,var(--ink) 0%,var(--am-600) 38%,var(--coral-500) 62%,var(--gold-500) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-tagline{font-family:'Noto Serif SC',serif;font-size:clamp(1rem,2.6vw,1.3rem);color:var(--ink-soft);font-weight:700;margin-bottom:8px}
+.hero-desc{font-size:14px;color:var(--ink-muted);max-width:640px;margin:0 auto 26px}
+.hero-art{margin:8px auto 8px;max-width:780px;width:100%}
+.hero-img{width:100%;height:auto;border-radius:24px;box-shadow:0 24px 70px -24px rgba(30,27,75,0.25);border:1px solid rgba(139,92,246,0.15)}
+.hero-caption{font-size:11px;color:var(--ink-muted);margin-top:10px;font-style:italic}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:26px}
+.hstat{background:rgba(255,255,255,0.65);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.18);border-radius:16px;padding:14px 8px}
+.hstat b{display:block;font-family:'Noto Serif SC',serif;font-size:1.5rem;color:var(--am-700)}
+.hstat span{font-size:11px;color:var(--ink-muted)}
+.scroll-hint{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:3px;color:var(--ink-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.6s infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+/* ============ 正文 ============ */
+main{max-width:860px;margin:0 auto;padding:70px 24px 40px}
+section{margin-bottom:74px}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--am-600);font-weight:700;margin-bottom:8px}
+h2{font-size:clamp(1.5rem,4vw,2.1rem);margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid var(--am-100)}
+h3{font-size:1.18rem;margin:28px 0 12px;color:var(--am-800)}
+p{margin-bottom:14px;color:var(--ink-soft)}
+p strong,li strong{color:var(--ink)}
+ul,ol{margin:0 0 14px 22px;color:var(--ink-soft)}
+li{margin-bottom:6px}
+figure{margin:26px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid rgba(124,58,237,0.15);box-shadow:0 10px 34px -14px rgba(30,27,75,0.18);background:#fff}
+figcaption{font-size:12.5px;color:var(--ink-muted);margin-top:10px;line-height:1.7}
+figcaption b{color:var(--am-700)}
+.svgbox{background:#fff;border:1px solid rgba(124,58,237,0.14);border-radius:16px;padding:18px 10px;margin:26px 0;box-shadow:0 8px 28px -16px rgba(30,27,75,0.14)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid #10b981}
+.insight-box .tag{background:#10b981;color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.insight-box h4{margin:12px 0 8px;color:#064e3b;font-size:1.05rem}
+.insight-box p{color:#065f46;margin-bottom:6px}
+.critique-box{background:linear-gradient(135deg,#ffe4e6,#fecdd3);border-radius:16px;padding:22px 24px;margin:24px 0;border-left:4px solid var(--coral-500)}
+.critique-box .tag{background:var(--coral-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.critique-box h4{margin:12px 0 8px;color:#881337;font-size:1.05rem}
+.critique-box p{color:#9f1239;margin-bottom:6px}
+.research-question{background:#fff;border:1px solid rgba(245,158,11,0.4);border-radius:16px;padding:22px 24px;margin:22px 0;box-shadow:0 8px 26px -16px rgba(180,83,9,0.25)}
+.research-question .tag{background:var(--gold-500);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.research-question h4{margin:12px 0 8px;color:#92400e}
+.research-question p{color:#78350f;margin-bottom:8px;font-size:15px}
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:22px 0}
+.ccard{background:#fff;border-radius:14px;padding:18px;border-top:4px solid var(--am-400);box-shadow:0 6px 22px -14px rgba(30,27,75,0.2)}
+.ccard.g{border-top-color:var(--mint-400)}.ccard.o{border-top-color:var(--gold-400)}.ccard.c{border-top-color:var(--coral-400)}
+.ccard h4{font-size:1rem;margin-bottom:8px}
+.ccard p{font-size:13.5px;margin-bottom:6px}
+table{width:100%;border-collapse:collapse;margin:20px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 6px 22px -14px rgba(30,27,75,0.18)}
+th{background:linear-gradient(135deg,var(--am-600),var(--am-500));color:#fff;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--am-50);text-align:center;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+td.hl{background:var(--am-50);font-weight:700;color:var(--am-800)}
+td.best{background:var(--mint-100);font-weight:800;color:#065f46}
+.mathcard{background:#fff;border:1px solid var(--am-100);border-left:4px solid var(--am-500);border-radius:14px;padding:20px 24px;margin:22px 0;overflow-x:auto}
+.mathcard h4{font-size:1rem;color:var(--am-800);margin-bottom:8px}
+.mathcard .note{font-size:13.5px;color:var(--ink-muted)}
+.code-head{display:flex;gap:10px;align-items:center;margin:26px 0 8px;flex-wrap:wrap}
+.code-head .cred{font-size:11px;font-weight:700;padding:3px 12px;border-radius:10px;color:#fff}
+.cred.run{background:var(--mint-500)}.cred.ill{background:var(--gold-500)}
+.code-head h4{font-size:1rem}
+.code-note{background:var(--am-50);border:1px dashed var(--am-300);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--am-800);margin-bottom:8px}
+pre.code-block{background:#1e1b4b;color:#e9e6ff;border-radius:14px;padding:18px 20px;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono','Cascadia Code',Consolas,monospace;margin-bottom:8px}
+pre.code-block .kw{color:#c4b5fd;font-weight:700}
+pre.code-block .fn{color:#fcd34d}
+pre.code-block .cm{color:#8f8bb0;font-style:italic}
+pre.code-block .st{color:#6ee7b7}
+pre.code-block .num{color:#fda4af}
+.roadmap{counter-reset:step}
+.step{position:relative;padding:0 0 26px 46px;counter-increment:step}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--am-500),var(--gold-400));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step::after{content:'';position:absolute;left:15px;top:36px;bottom:0;width:2px;background:var(--am-100)}
+.step:last-child::after{display:none}
+.step h4{font-size:1.02rem;margin-bottom:6px}
+.step p{font-size:14.5px}
+footer{background:var(--ink);color:#c7c3e8;padding:50px 24px 60px;margin-top:40px}
+footer .inner{max-width:860px;margin:0 auto}
+footer h3{color:#fff;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.8}
+footer a{color:var(--gold-300);text-decoration:none}
+footer .fin{margin-top:26px;font-size:12px;color:#8f8bb0;border-top:1px solid #37335c;padding-top:18px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">δ-mem · 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">记忆问题</a><a href="#s2">三范式</a><a href="#s3">delta rule</a><a href="#s4">总架构</a>
+    <a href="#s5">投影与门</a><a href="#s6">读与引导</a><a href="#s7">写入</a><a href="#s8">粒度</a>
+    <a href="#s9">训练</a><a href="#s10">主结果</a><a href="#s12">状态里有记忆吗</a><a href="#s13">消融</a>
+    <a href="#s14">效率</a><a href="#s15">工作地图</a><a href="#s16">批判</a><a href="#s17">科研问题</a><a href="#s18">路线图与代码</a>
+  </div>
+</div></nav>
+
+<!-- ================= HERO（模板 A） ================= -->
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">arXiv:2605.12357 · PREPRINT · MAY 2026</div>
+    <h1>δ-mem：一块 8×8 的记忆水晶</h1>
+    <p class="hero-tagline">在线联想记忆状态 × delta-rule 写入 × 低秩注意力引导</p>
+    <p class="hero-desc">不给模型扩上下文、不换骨干、不全量微调——只用一个 64 个浮点数的在线状态矩阵，让冻结的大模型在测试时"想起"历史。本篇从零讲透这条路线的全部数学、架构、实验与开放问题。</p>
+    <div class="hero-art">
+      <img src="assets/hero_cover.jpg" alt="对话之河汇入 8×8 记忆水晶的水彩封面" class="hero-img">
+      <p class="hero-caption">封面（AI 绘制，qwen-image-3.0-pro）：左侧是无穷无尽的对话之河，右侧是被压缩进 8×8 晶格的星光——δ-mem 的全部隐喻：历史不被保存，而被凝结。</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><b>1.10×</b><span>vs 冻结骨干平均分</span></div>
+      <div class="hstat"><b>1.31×</b><span>MemoryAgentBench</span></div>
+      <div class="hstat"><b>26→50</b><span>TTL 子任务近乎翻倍</span></div>
+      <div class="hstat"><b>0.12%</b><span>可训练参数占比</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- ================= 1 ================= -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 问题</div>
+  <h2>记忆问题不是上下文问题</h2>
+  <p>先建立一个直觉。你把一位朋友十年的聊天记录全部塞进一个房间里，然后要求他在三秒内回答"我上次说想看什么电影？"——房间越大，找得越慢，而且实验反复表明：<strong>房间大到一定程度后，他反而开始答错</strong>。这就是 LLM 长期记忆的现状。</p>
+  <p>论文的开篇论证链条非常清晰，值得逐环拆开：</p>
+  <ul>
+    <li><strong>需求侧</strong>：长期个性化助手与长程 agent 系统（MemGPT、ReAct 一脉）的生命周期不再是"一问一答"，而是持续地<strong>积累、更新、复用</strong>历史信息。</li>
+    <li><strong>朴素方案的代价一</strong>：把历史全部放进上下文 → 标准注意力对上下文长度是<strong>二次复杂度</strong>，32K 提示的开销已经可观，百万 token 更是天文数字。</li>
+    <li><strong>朴素方案的代价二</strong>：更隐蔽也更致命——<strong>context rot（上下文腐烂）</strong>。Chroma 的技术报告与 Du et al. (2025) 都指出：即使检索完美，上下文变长本身就会拉低模型表现。模型"看得到"不等于"用得上"。</li>
+    <li><strong>推论</strong>：百万 token 上下文窗口<strong>原则上</strong>不解决记忆问题。需要的是一种机制：在给定上下文窗口内<strong>更紧凑地表示</strong>历史、<strong>跨交互动态维护</strong>它、并在测试时<strong>真正被骨干用上</strong>。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>"记忆"与"检索"是两回事：本文的问题定义决定了全部设计</h4>
+    <p>把记忆问题还原为长上下文问题，等于假设"信息只要在视野里就能被利用"；而 context rot 的证据否定了这个假设。δ-mem 因此把问题重新定义为：<em>如何维护一个与注意力计算直接耦合的、常数大小的历史摘要状态</em>。注意这个定义里的三个关键词——<strong>常数大小</strong>（对抗二次复杂度）、<strong>动态维护</strong>（对抗静态参数的僵化）、<strong>直接耦合注意力</strong>（对抗检索噪声与融合错位）。后文所有设计选择都能回溯到这三个词。</p>
+  </div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 坐标系</div>
+  <h2>统一视角：记忆状态 × 记忆引导 → 三大范式</h2>
+  <p>论文第 2 节给出的分类框架是阅读本文（以及整个 agent 记忆领域）的钥匙。在给定上下文窗口下，任何记忆机制都可以用两个轴刻画：</p>
+  <ul>
+    <li><strong>记忆状态（memory state）</strong>：历史以什么形式存储？文本？潜向量？参数？</li>
+    <li><strong>记忆引导（memory steering）</strong>：存储的信息通过什么路径影响骨干推理？拼进输入？外挂通道？改写权重？还是直接参与注意力计算？</li>
+  </ul>
+  <div class="svgbox">
+  <svg viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="ax" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#4c1d95"/></marker></defs>
+    <line x1="70" y1="370" x2="880" y2="370" stroke="#4c1d95" stroke-width="3" marker-end="url(#ax)"/>
+    <line x1="70" y1="370" x2="70" y2="30" stroke="#4c1d95" stroke-width="3" marker-end="url(#ax)"/>
+    <text x="880" y="395" font-size="14" fill="#4c1d95" text-anchor="end" font-weight="700">记忆引导路径 →（离注意力计算越近越右）</text>
+    <text x="26" y="40" font-size="14" fill="#4c1d95" font-weight="700" transform="rotate(-90 26 40)" text-anchor="end">记忆状态形式 →</text>
+    <text x="150" y="395" font-size="12" fill="#7b7894" text-anchor="middle">拼入输入上下文</text>
+    <text x="390" y="395" font-size="12" fill="#7b7894" text-anchor="middle">外挂检索/编码通道</text>
+    <text x="620" y="395" font-size="12" fill="#7b7894" text-anchor="middle">写入参数</text>
+    <text x="810" y="395" font-size="12" fill="#7b7894" text-anchor="middle">耦合注意力计算</text>
+    <text x="52" y="330" font-size="12" fill="#7b7894" text-anchor="end">文本</text>
+    <text x="52" y="210" font-size="12" fill="#7b7894" text-anchor="end">潜向量</text>
+    <text x="52" y="100" font-size="12" fill="#7b7894" text-anchor="end">参数</text>
+    <g font-size="12.5" text-anchor="middle">
+      <circle cx="150" cy="320" r="9" fill="#34d399"/><text x="150" y="300">BM25 RAG / Mem0 / MemoryBank</text>
+      <circle cx="215" cy="335" r="9" fill="#34d399"/><text x="232" y="355">LLMLingua-2（压缩文本）</text>
+      <circle cx="390" cy="205" r="9" fill="#60a5fa"/><text x="390" y="185">Memorizing Transformers</text>
+      <circle cx="430" cy="230" r="9" fill="#60a5fa"/><text x="452" y="252">LongMem</text>
+      <circle cx="360" cy="160" r="9" fill="#60a5fa"/><text x="360" y="140">MLP Memory</text>
+      <circle cx="620" cy="100" r="9" fill="#fbbf24"/><text x="620" y="80">LoRA / ROME / MEMIT</text>
+      <circle cx="660" cy="130" r="9" fill="#fbbf24"/><text x="690" y="152">Context2LoRA（δ-mem 基线）</text>
+      <circle cx="560" cy="205" r="9" fill="#fb7185"/><text x="545" y="185">MemGen（生成潜记忆）</text>
+      <rect x="770" y="185" width="86" height="46" rx="12" fill="#8b5cf6"/>
+      <text x="813" y="205" fill="#fff" font-weight="800" font-size="14">δ-mem</text>
+      <text x="813" y="222" fill="#ede9fe" font-size="10.5">8×8 在线状态</text>
+      <text x="813" y="252" fill="#6d28d9" font-size="11.5">潜状态 × 注意力耦合</text>
+    </g>
+    <path d="M 660 140 Q 740 160 775 190" stroke="#8b5cf6" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+    <path d="M 566 212 Q 660 215 766 208" stroke="#8b5cf6" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+  </svg>
+  <figcaption><b>图 1（自绘）</b>：记忆机制的两轴坐标。δ-mem 占据了一个此前空着的格子：<em>潜向量状态</em> × <em>直接耦合注意力</em>。虚线表示它吸收的两条前人思路。</figcaption>
+  </div>
+  <figure>
+    <img src="figures/ai_paradigms.jpg" alt="三大记忆范式与 δ-mem 的对比概念图">
+    <figcaption><b>图 2（AI 绘制）</b>：三大范式示意。TMM 把检索到的文本当额外 token 拼进上下文；OMM 从外部数据库检索后经旁路晚期融合；PMM 用静态适配器改写权重；δ-mem（右下，紫框高亮）让一个自更新的循环状态直接调制注意力。</figcaption>
+  </figure>
+  <div class="compare-grid">
+    <div class="ccard g"><h4>文本记忆 TMM</h4><p><strong>代表</strong>：RAG、MemGPT、MemoryBank、Mem0、LLMLingua-2</p><p><strong>优点</strong>：灵活、无需改架构</p><p><strong>死穴</strong>：受上下文预算限制、检索噪声、压缩必然丢信息</p></div>
+    <div class="ccard o"><h4>外通道记忆 OMM</h4><p><strong>代表</strong>：Memorizing Transformers、LongMem、MLP Memory</p><p><strong>优点</strong>：模块化、保留潜表示</p><p><strong>死穴</strong>：检索开销、融合复杂、存储表示与当前表示错位</p></div>
+    <div class="ccard c"><h4>参数记忆 PMM</h4><p><strong>代表</strong>：LoRA、Prefix-Tuning、ROME/MEMIT、Context2LoRA</p><p><strong>优点</strong>：高效、兼容冻结骨干</p><p><strong>死穴</strong>：训练后静态，无法随交互流式演化</p></div>
+    <div class="ccard"><h4>δ-mem 的位置</h4><p><strong>状态</strong>：固定大小在线联想记忆（潜向量）</p><p><strong>引导</strong>：读出信号→低秩修正→直接进注意力前向</p><p><strong>代价</strong>：每步多一次读+写（见第 14 章）</p></div>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>为什么"引导路径"比"状态形式"更决定成败</h4>
+    <p>对照实验证据：MLP Memory 拥有潜向量状态（形式上不差），却因走"实例级检索+概率插值"的外通道而垫底（平均 22.85）；Context2LoRA 的引导路径（参数）很高效，却因状态静态而在跨任务上崩掉。δ-mem 的胜利不是"状态更小"的胜利，而是<strong>引导路径与骨干内部计算对齐</strong>的胜利——记忆信号以查询修正和输出修正的形式进入注意力，等于用骨干自己的"语言"说话。这解释了一个反直觉现象：64 个浮点数为什么能打赢 30 亿参数的 MLP Memory。</p>
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 数学地基</div>
+  <h2>从 Widrow-Hoff 到 gated delta rule：一条六十年的谱系</h2>
+  <p>δ-mem 的核心更新规则不是凭空发明的。把谱系理清，你才能明白它"站在哪条河上"：</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 960 400" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="t1" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#7c3aed"/></marker>
+    <marker id="t2" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#d97706"/></marker></defs>
+    <text x="30" y="40" font-size="14" font-weight="800" fill="#7c3aed">河流 A：delta rule 线性注意力（状态即记忆）</text>
+    <g font-size="12" text-anchor="middle">
+      <rect x="30" y="60" width="130" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="95" y="82" font-weight="700" fill="#4c1d95">Widrow–Hoff</text><text x="95" y="99" fill="#6d28d9">1960 · LMS 规则</text>
+      <rect x="195" y="60" width="130" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="260" y="82" font-weight="700" fill="#4c1d95">Schlag et al.</text><text x="260" y="99" fill="#6d28d9">2021 · 入线性注意力</text>
+      <rect x="360" y="60" width="130" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="425" y="82" font-weight="700" fill="#4c1d95">DeltaNet</text><text x="425" y="99" fill="#6d28d9">NeurIPS 2024 · 并行训练</text>
+      <rect x="525" y="60" width="140" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="595" y="82" font-weight="700" fill="#4c1d95">Gated DeltaNet</text><text x="595" y="99" fill="#6d28d9">ICLR 2025 · 门控+delta</text>
+      <rect x="700" y="60" width="120" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="760" y="82" font-weight="700" fill="#4c1d95">Qwen3-Next</text><text x="760" y="99" fill="#6d28d9">2025 · 3:1 混合架构</text>
+    </g>
+    <line x1="160" y1="86" x2="192" y2="86" stroke="#7c3aed" stroke-width="3" marker-end="url(#t1)"/>
+    <line x1="325" y1="86" x2="357" y2="86" stroke="#7c3aed" stroke-width="3" marker-end="url(#t1)"/>
+    <line x1="490" y1="86" x2="522" y2="86" stroke="#7c3aed" stroke-width="3" marker-end="url(#t1)"/>
+    <line x1="665" y1="86" x2="697" y2="86" stroke="#7c3aed" stroke-width="3" marker-end="url(#t1)"/>
+    <text x="30" y="170" font-size="14" font-weight="800" fill="#d97706">河流 B：外挂/参数记忆（记忆在模型之外或权重里）</text>
+    <g font-size="12" text-anchor="middle">
+      <rect x="30" y="190" width="140" height="52" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="100" y="212" font-weight="700" fill="#92400e">Memorizing Trans.</text><text x="100" y="229" fill="#b45309">ICLR 2022 · kNN 外存</text>
+      <rect x="200" y="190" width="120" height="52" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="260" y="212" font-weight="700" fill="#92400e">LongMem</text><text x="260" y="229" fill="#b45309">2023 · 冻结编码+侧网</text>
+      <rect x="350" y="190" width="140" height="52" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="420" y="212" font-weight="700" fill="#92400e">MemoryBank/MemGPT</text><text x="420" y="229" fill="#b45309">2023-24 · 文本记忆系统</text>
+      <rect x="520" y="190" width="150" height="52" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="595" y="212" font-weight="700" fill="#92400e">Mem0 / MemGen /</text><text x="595" y="229" fill="#b45309">MLP Memory · 2025-26</text>
+    </g>
+    <line x1="170" y1="216" x2="197" y2="216" stroke="#d97706" stroke-width="3" marker-end="url(#t2)"/>
+    <line x1="320" y1="216" x2="347" y2="216" stroke="#d97706" stroke-width="3" marker-end="url(#t2)"/>
+    <line x1="490" y1="216" x2="517" y2="216" stroke="#d97706" stroke-width="3" marker-end="url(#t2)"/>
+    <rect x="330" y="290" width="300" height="70" rx="16" fill="#8b5cf6"/>
+    <text x="480" y="318" font-size="17" font-weight="900" fill="#fff" text-anchor="middle">δ-mem（2026）＝ 两河合流</text>
+    <text x="480" y="340" font-size="12" fill="#ede9fe" text-anchor="middle">gated delta rule 用作"在线记忆状态" + 冻结骨干低秩引导</text>
+    <path d="M 760 112 Q 700 200 600 292" stroke="#7c3aed" stroke-width="3" fill="none" marker-end="url(#t1)"/>
+    <path d="M 595 242 Q 560 265 520 292" stroke="#d97706" stroke-width="3" fill="none" marker-end="url(#t2)"/>
+  </svg>
+  <figcaption><b>图 3（自绘）</b>：两条研究河流在 δ-mem 合流。关键区分：DeltaNet 系把 delta rule 用作<strong>注意力层本身</strong>的更新规则（替换骨干）；δ-mem 把它用作<strong>挂在冻结骨干旁的在线记忆状态</strong>的更新规则（用途转换）。</figcaption>
+  </div>
+  <p>现在推公式。设某 Transformer 层隐状态序列 $x \in \mathbb{R}^{N \times d}$，单位置 $x_t \in \mathbb{R}^d$。δ-mem 维护矩阵 $S$ 作为在线联想记忆状态，期望它存储键值关联 $k_t \mapsto v_t$（$k_t, v_t \in \mathbb{R}^r$）。旧状态对新键的预测是：</p>
+  <div class="mathcard"><h4>式 (1)：联想记忆的读取即预测</h4>$$\hat{v}_t = S_{t-1} k_t$$<p class="note">把 $S$ 看作一个线性联想记忆矩阵：用键 $k$ 去"点"它，读出对应的值。这是 Hopfield/Kohonen 式联想记忆的最简形式。</p></div>
+  <p>写入 = 对在线回归损失做一步 SGD：</p>
+  <div class="mathcard"><h4>式 (2)：delta rule = 只写"没记住的"</h4>$$\mathcal{L}_t(S) = \tfrac{1}{2}\|S k_t - v_t\|^2,\qquad S_t = S_{t-1} - \beta_t \nabla_{S_{t-1}} \mathcal{L}_t(S_{t-1}) = S_{t-1} + \beta_t (v_t - S_{t-1} k_t) k_t^\top$$<p class="note">核对要点：系数 $\tfrac12$、梯度方向、外积 $k_t^\top$ 在右侧。更新量正比于<strong>预测误差</strong> $(v_t - \hat v_t)$：已经记住的关联几乎不更新，预测不一致时才修正——这就是 "delta" 的含义。</p></div>
+  <p>再引入遗忘门控制长程演化（灵感来自 Qwen3-Next 的门控保留设计；学术锚点为 Gated DeltaNet, Yang et al., ICLR 2025）：</p>
+  <div class="mathcard"><h4>式 (3)：gated delta update</h4>$$S_t = \lambda_t S_{t-1} + \beta_t (v_t - S_{t-1} k_t) k_t^\top$$<p class="note">$\lambda_t$ 控制保留多少旧记忆，$\beta_t$ 控制残差写入强度。二者共同构成"稳定在线记忆动力学"的地基。</p></div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>delta rule 的信息论读法：写入的是" surprisal "，不是数据</h4>
+    <p>把式 (2) 与通信类比：信道只传输<strong>预测残差</strong>。若历史高度可预测（重复、套话、格式符），残差趋近零，状态几乎不动——记忆带宽自动分配给"信息量大的意外"。这解释了第 8 章的一个实验现象：TSW（逐 token 写）容易被格式符号污染，而残差机制本身只是<em>部分</em>缓解它；真正的解药是粒度选择（SSW/MSW）。也解释了为什么 8×8 这么小却够用：状态不需要存储历史本身，只需要存储历史中<strong>不可预测的部分</strong>的压缩痕迹。</p>
+  </div>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · 总架构</div>
+  <h2>δ-mem 总架构：读 → 引导 → 写的单步循环</h2>
+  <p>每个位置的计算顺序固定为三步：<strong>从旧状态读</strong> → <strong>用读出信号引导注意力</strong> → <strong>把当前信息写进状态</strong>。先看论文原图，再看 AI 重绘的简化版与自绘循环图。</p>
+  <figure>
+    <img src="figures/fig1_overview.png" alt="δ-mem 论文 Figure 1 总览">
+    <figcaption><b>图 4（论文 Figure 1 精准裁剪）</b>：左为冻结骨干的注意力计算；中为 δ-mem 的投影、读取、引导与在线更新；右为三种写入粒度（TSW/SSW/MSW）。注意 $S_{t-1}$ 同时供应读取与写入预测——状态是唯一的记忆载体。</figcaption>
+  </figure>
+  <figure>
+    <img src="figures/ai_arch_final.jpg" alt="δ-mem 架构简化示意图（AI 重绘，评审通过）">
+    <figcaption><b>图 5（AI 绘制，严格评审 9/10）</b>：双横带简化版。上带为冻结骨干 $x_t \to$ Attention $\to y_t$；下带为 δ-mem 内部链：投影 $\xrightarrow{k,v}$ 门控 delta 写 $\xrightarrow{\text{update }S}$ 8×8 状态 $\xrightarrow{\text{read}}$ 读 $\xrightarrow{r}$ 引导；引导模块向上注入 $+\Delta q$（查询侧）与 $+\Delta o$（输出侧）。</figcaption>
+  </figure>
+  <div class="svgbox">
+  <svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="cy" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="#1e1b4b"/></marker></defs>
+    <circle cx="380" cy="215" r="150" fill="none" stroke="#ddd6fe" stroke-width="2" stroke-dasharray="6 6"/>
+    <rect x="300" y="175" width="160" height="80" rx="14" fill="#1e1b4b"/>
+    <text x="380" y="208" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">注意力计算</text>
+    <text x="380" y="228" fill="#c4b5fd" font-size="11" text-anchor="middle">（冻结骨干）</text>
+    <text x="380" y="244" fill="#8f8bb0" font-size="10.5" text-anchor="middle">q̃, K≤t, V≤t → a_t</text>
+    <g font-size="13" text-anchor="middle">
+      <rect x="60" y="180" width="150" height="70" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2.5"/>
+      <text x="135" y="208" font-weight="800" fill="#4c1d95">① 读 READ</text>
+      <text x="135" y="228" fill="#6d28d9" font-size="11.5">r_t = S_{t-1} qᵐ_t · O(r²)</text>
+      <rect x="300" y="20" width="160" height="66" rx="12" fill="#d1fae5" stroke="#10b981" stroke-width="2.5"/>
+      <text x="380" y="47" font-weight="800" fill="#065f46">② 引导 STEER</text>
+      <text x="380" y="67" fill="#047857" font-size="11.5">q̃=q⁰+(α/r)Δq · ỹ=a+(α/r)Δo</text>
+      <rect x="550" y="180" width="150" height="70" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2.5"/>
+      <text x="625" y="208" font-weight="800" fill="#9a3412">③ 写 WRITE</text>
+      <text x="625" y="228" fill="#c2410c" font-size="11.5">S_t = λS_{t-1}+β(v−S_{t-1}k)kᵀ</text>
+      <rect x="300" y="344" width="160" height="60" rx="12" fill="#fff" stroke="#8b5cf6" stroke-width="2.5"/>
+      <text x="380" y="370" font-weight="800" fill="#5b21b6">在线状态 S（8×8）</text>
+      <text x="380" y="388" fill="#7c3aed" font-size="11">跨交互持续演化</text>
+    </g>
+    <path d="M 210 200 Q 260 150 300 120" stroke="#1e1b4b" stroke-width="4" fill="none" marker-end="url(#cy)"/>
+    <path d="M 460 120 Q 510 150 560 195" stroke="#1e1b4b" stroke-width="4" fill="none" marker-end="url(#cy)"/>
+    <path d="M 590 250 Q 520 320 462 360" stroke="#1e1b4b" stroke-width="4" fill="none" marker-end="url(#cy)"/>
+    <path d="M 300 366 Q 210 330 150 252" stroke="#1e1b4b" stroke-width="4" fill="none" marker-end="url(#cy)"/>
+    <text x="238" y="140" font-size="11.5" fill="#433f63">r_t</text>
+    <text x="520" y="140" font-size="11.5" fill="#433f63">kᵐ_t, vᵐ_t, β_t, λ_t</text>
+    <text x="505" y="330" font-size="11.5" fill="#433f63">update</text>
+    <text x="196" y="330" font-size="11.5" fill="#433f63">S_{t-1}</text>
+  </svg>
+  <figcaption><b>图 6（自绘）</b>：单步循环。注意①读发生在③写<strong>之前</strong>——当前输入只能看到"过去"的状态，保证因果性；状态在每次交互结束后继续保留，跨会话演化。</figcaption>
+  </div>
+  <h3>系统分解：每个组件的输入/输出/设计取舍</h3>
+  <table>
+    <tr><th>组件</th><th>输入 → 输出</th><th>设计选择</th><th>替代方案</th><th>取舍</th></tr>
+    <tr><td>记忆投影</td><td>$x_t\in\mathbb{R}^d$ → $q^m,k^m,v^m\in\mathbb{R}^r$</td><td>tanh + L2 归一化（q,k）</td><td>直接线性投影</td><td>归一化抑制长递归尺度漂移，代价是损失幅值信息</td></tr>
+    <tr><td>门控</td><td>$x_t$ → $\beta_t,\lambda_t\in\mathbb{R}^r$</td><td>$\beta=\sigma(W_\beta x+b)$，$\lambda=1-\beta$</td><td>独立两门 / 标量门</td><td>互补门零额外参数地实现逐维预算；灵活性略降</td></tr>
+    <tr><td>读取</td><td>$S_{t-1},q^m_t$ → $r_t\in\mathbb{R}^r$</td><td>矩阵-向量乘</td><td>softmax 检索 / kNN</td><td>$O(r^2)$ 与历史长度无关；但无显式"条目"可解释</td></tr>
+    <tr><td>引导</td><td>$r_t$ → $\Delta q_t,\Delta o_t$</td><td>两个固定线性映射 + α/r 缩放</td><td>MLP / 门控融合 / KV 侧修正</td><td>参数极少、状态条件化；消融见第 13 章（qo 已够）</td></tr>
+    <tr><td>写入</td><td>$k^m,v^m,\beta,\lambda$ → $S_t$</td><td>逐维门控 delta rule</td><td>外积累加 / 全量覆写</td><td>先擦后写抑制干扰；需要良好 conditioning 的键</td></tr>
+    <tr><td>粒度策略</td><td>序列 → 写入事件</td><td>TSW / SSW / MSW 三选一</td><td>自适应粒度</td><td>见第 8 章：最优粒度依赖骨干容量</td></tr>
+  </table>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 投影与门</div>
+  <h2>记忆投影与互补门：64 个浮点数的"户籍管理"</h2>
+  <div class="mathcard"><h4>式 (4)：三投影</h4>$$q^m_t = \underset{t}{\mathrm{L2norm}}\big(\tanh(W^m_q x_t)\big),\quad k^m_t = \mathrm{L2norm}\big(\tanh(W^m_k x_t)\big),\quad v^m_t = W^m_v x_t$$<p class="note">核对：仅 $q^m,k^m$ 走 tanh+L2，$v^m$ 是裸线性。$r=8$ 时这三个向量各 8 维。</p></div>
+  <p><strong>为什么 q、k 要归一化而 v 不用？</strong> 论文的答复是"减少长序列递归中的尺度漂移导致的状态不稳定"。展开说：$S$ 的更新含外积 $k k^\top$，若 $\|k\|$ 随层/随时间漂移，写入强度会以 $\|k\|^2$ 速度爆炸或消失；归一化把每次写入的"足迹大小"锁定为常数。而 $v$ 是<strong>被存储的内容</strong>，归一化会把内容的幅值信息（例如"这条信息更重要"）抹掉——所以保留裸线性。</p>
+  <div class="mathcard"><h4>式 (5)：互补门</h4>$$\beta_t = \sigma(W_\beta x_t + b),\qquad \lambda_t = 1 - \beta_t$$<p class="note">$\beta_t,\lambda_t\in\mathbb{R}^r$：逐维向量门，不是标量。</p></div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>$\lambda = 1-\beta$：每个记忆维度持有一份"写入-保留"零和预算</h4>
+    <p>互补约束意味着第 $i$ 维不能"既拼命写新东西又死死保住旧东西"——它必须在每一刻做取舍。这把 continual learning 里的稳定性-可塑性权衡（stability-plasticity dilemma）<strong>下沉到了维度级</strong>：8 个维度可以分工，例如 3 维高 $\beta$（追踪局部事件）、5 维低 $\beta$（保存长期偏好）。对比 Gated DeltaNet 中门与 delta 是独立学习的两个自由度，δ-mem 的互补设计是更强的先验、更少的参数——在只有 2219 个训练样本（第 9 章）时，这种强先验很可能是对的。</p>
+  </div>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 读与引导</div>
+  <h2>读取与低秩引导：让记忆说骨干的语言</h2>
+  <div class="mathcard"><h4>式 (6)：读</h4>$$r_t = S_{t-1} q^m_t$$<p class="note">$S_{t-1}$ 尺寸固定 → 本步成本与历史长度<strong>无关</strong>。这是与注意力（$O(Nd)$）的根本互补：注意力在显式上下文里逐键比较，δ-mem 从压缩状态直接取连续联想信号。</p></div>
+  <div class="mathcard"><h4>式 (7)-(9)：引导与修正后的注意力</h4>$$\Delta q_t = W^\Delta_q r_t,\quad \Delta o_t = W^\Delta_o r_t$$$$q^0_t = W_Q x_t,\quad \tilde q_t = q^0_t + \tfrac{\alpha}{r}\Delta q_t$$$$a_t = \mathrm{Attn}(\tilde q_t, K_{\le t}, V_{\le t}),\quad \tilde y_t = a_t + \tfrac{\alpha}{r}\Delta o_t$$<p class="note">核对：缩放系数为 $\alpha/r$（LoRA 式），实验取 $\alpha=16, r=8$ 即系数 2。注意 $\Delta o$ 加在<strong>注意力输出之后</strong>。</p></div>
+  <h3>与 LoRA 的本质区别：静态低秩 vs 状态条件化低秩</h3>
+  <p>形式上 $\tilde q = q^0 + \frac{\alpha}{r} W^\Delta_q r_t$ 与 LoRA 的 $q^0 + \frac{\alpha}{r} B A x$ 几乎同构。但论文点出关键差异：<strong>$W^\Delta$ 训练后固定，而它的输入 $r_t$ 来自动态状态 $S_{t-1}$</strong>。同一组参数在不同历史下产生不同引导—— LoRA 的低秩更新是<strong>一个实例一个适配器</strong>的静态对象，δ-mem 的低秩修正是<strong>逐 token 流出的函数值</strong>。这就是"参数记忆"与"状态记忆"在数学形式最接近处的分水岭。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>引导 = 给注意力一次"带记忆的预感"</h4>
+    <p>查询侧修正 $\Delta q$ 改变的是"去哪找"：让当前查询在显式上下文中偏向与历史关联的方向；输出侧修正 $\Delta o$ 改变的是"找到之后怎么解读"。消融（第 13 章）显示单侧时 o &gt; q &gt; k，说明<strong>解读侧比检索侧更吃记忆信号</strong>——一个合理的解释是：无上下文场景里"去哪找"已无从找起（K、V 里根本没有历史），而"解读侧偏置"仍能把状态中的联想痕迹直接注入表征。这与第 12 章 context-recovery 实验相互印证。</p>
+  </div>
+</section>
+
+<!-- ================= 7 ================= -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 写入</div>
+  <h2>门控 delta 写入：先擦后写的艺术</h2>
+  <div class="mathcard"><h4>式 (10)-(11)：更新与三项分解</h4>$$S_t = \mathrm{Diag}(\lambda_t) S_{t-1} + \mathrm{Diag}(\beta_t)\,(v^m_t - S_{t-1} k^m_t)(k^m_t)^\top$$$$S_t = \underbrace{\mathrm{Diag}(\lambda_t) S_{t-1}}_{\text{保留}} - \underbrace{\mathrm{Diag}(\beta_t) S_{t-1} k^m_t (k^m_t)^\top}_{\text{沿当前键方向擦除旧预测}} + \underbrace{\mathrm{Diag}(\beta_t) v^m_t (k^m_t)^\top}_{\text{写入新值}}$$</div>
+  <p>三项各有明确职责。第二项是最容易被初学者忽略、却最关键的一项：<strong>在写入新关联之前，先减去旧状态在该键方向上的预测</strong>。若没有它，新旧外积直接叠加，状态会退化为外积和 $\sum v k^\top$，键之间一旦不正交就产生串扰（crosstalk）——经典联想记忆容量崩溃的根源。delta rule 用"误差纠正"代替"无选择累加"，把串扰变成可收敛的残差动力学。</p>
+  <div class="mathcard"><h4>式 (12)：逐行展开，看见逐维门控</h4>$$s^{(i)}_t = \lambda_{t,i}\, s^{(i)}_{t-1} + \beta_{t,i}\big(v^m_{t,i} - s^{(i)}_{t-1} k^m_t\big)(k^m_t)^\top$$<p class="note">$s^{(i)}$ 是 $S$ 的第 $i$ 行：每一行（每个"值维度"）独立决定保留多少、写多狠。</p></div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>把式 (12) 读成 8 个并行的标量联想记忆</h4>
+    <p>逐行展开揭示了一个漂亮的结构：δ-mem 等价于 $r$ 个共享键向量 $k_t$、但各自拥有独立门控与独立值坐标 $v_{t,i}$ 的一维联想记忆的直和。这解释了 MSW（多状态）为何有效：当 8 行仍不够分工时，干脆复制出 4 份完整状态（$N=4$，第 8 章），把"事实/偏好/任务进度/局部事件"物理隔离。也可以预言：若键分布高度各向同性，逐维门控的收益会缩小——这是一个可检验的开放问题（见第 17 章 Q4）。</p>
+  </div>
+</section>
+
+<!-- ================= 8 ================= -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 写入粒度</div>
+  <h2>TSW / SSW / MSW：写入粒度的三个档位</h2>
+  <p>单次写入的数学定了，还要定<strong>多久写一次、写进几个状态</strong>。论文考察三种策略：</p>
+  <div class="mathcard"><h4>式 (13)-(16)</h4>$$\text{TSW: } S_t = \mathrm{Update}(S_{t-1}, x_t)$$$$\text{SSW: } \bar x^{(j)} = \frac{1}{|M(j)|}\sum_{t \in M(j)} x_t,\quad S^{(j)} = \mathrm{Update}(S^{(j-1)}, \bar x^{(j)})$$$$\text{MSW: } S_t = \{S^{(1)}_t,\dots,S^{(N)}_t\},\ S^{(i)}_t = \mathrm{Update}^{(i)}(S^{(i)}_{t-1}, x_t),\ r_t = \mathrm{Concat}(r^{(1)}_t,\dots,r^{(N)}_t)$$<p class="note">MSW 中 $N=4$；每个子状态 $S^{(i)}\in\mathbb{R}^{r\times r}$，读后拼接。</p></div>
+  <figure>
+    <img src="figures/ai_granularity_final.jpg" alt="TSW/SSW/MSW 三种写入粒度示意图（AI 重绘，评审通过）">
+    <figcaption><b>图 7（AI 绘制，严格评审 9/10）</b>：TSW 每 token 一次写入、状态链最细；SSW 按消息分段取均值后每段一次写入；MSW 同一 token 并行写入多个子状态，读出拼接。</figcaption>
+  </figure>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="g1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#433f63"/></marker></defs>
+    <g font-size="12.5">
+      <text x="30" y="30" font-weight="800" fill="#4c1d95">TSW：8 token → 8 次写入</text>
+      <g fill="#60a5fa"><rect x="30" y="45" width="26" height="26" rx="5"/><rect x="66" y="45" width="26" height="26" rx="5"/><rect x="102" y="45" width="26" height="26" rx="5"/><rect x="138" y="45" width="26" height="26" rx="5"/><rect x="174" y="45" width="26" height="26" rx="5"/><rect x="210" y="45" width="26" height="26" rx="5"/><rect x="246" y="45" width="26" height="26" rx="5"/><rect x="282" y="45" width="26" height="26" rx="5"/></g>
+      <g stroke="#433f63" stroke-width="2.5"><line x1="43" y1="73" x2="43" y2="96" marker-end="url(#g1)"/><line x1="79" y1="73" x2="79" y2="96" marker-end="url(#g1)"/><line x1="115" y1="73" x2="115" y2="96" marker-end="url(#g1)"/><line x1="151" y1="73" x2="151" y2="96" marker-end="url(#g1)"/><line x1="187" y1="73" x2="187" y2="96" marker-end="url(#g1)"/><line x1="223" y1="73" x2="223" y2="96" marker-end="url(#g1)"/><line x1="259" y1="73" x2="259" y2="96" marker-end="url(#g1)"/><line x1="295" y1="73" x2="295" y2="96" marker-end="url(#g1)"/></g>
+      <g fill="#8b5cf6"><rect x="30" y="100" width="26" height="26" rx="5"/><rect x="66" y="100" width="26" height="26" rx="5"/><rect x="102" y="100" width="26" height="26" rx="5"/><rect x="138" y="100" width="26" height="26" rx="5"/><rect x="174" y="100" width="26" height="26" rx="5"/><rect x="210" y="100" width="26" height="26" rx="5"/><rect x="246" y="100" width="26" height="26" rx="5"/><rect x="282" y="100" width="26" height="26" rx="5"/></g>
+      <text x="30" y="152" fill="#7b7894" font-size="11.5">最细信息 · 也最易被格式符/复读噪声污染</text>
+      <text x="360" y="30" font-weight="800" fill="#4c1d95">SSW：8 token → 3 次写入</text>
+      <g fill="none" stroke="#7b7894" stroke-dasharray="4 3"><rect x="360" y="42" width="66" height="32" rx="8"/><rect x="432" y="42" width="30" height="32" rx="8"/><rect x="468" y="42" width="102" height="32" rx="8"/></g>
+      <g fill="#60a5fa"><rect x="366" y="46" width="24" height="24" rx="5"/><rect x="396" y="46" width="24" height="24" rx="5"/><rect x="435" y="46" width="24" height="24" rx="5"/><rect x="474" y="46" width="24" height="24" rx="5"/><rect x="504" y="46" width="24" height="24" rx="5"/><rect x="534" y="46" width="24" height="24" rx="5"/></g>
+      <g stroke="#433f63" stroke-width="2.5"><line x1="393" y1="76" x2="393" y2="98" marker-end="url(#g1)"/><line x1="447" y1="76" x2="447" y2="98" marker-end="url(#g1)"/><line x1="519" y1="76" x2="519" y2="98" marker-end="url(#g1)"/></g>
+      <text x="402" y="90" font-size="10.5" fill="#433f63">mean</text><text x="456" y="90" font-size="10.5" fill="#433f63">mean</text><text x="528" y="90" font-size="10.5" fill="#433f63">mean</text>
+      <g fill="#8b5cf6"><rect x="380" y="102" width="26" height="26" rx="5"/><rect x="434" y="102" width="26" height="26" rx="5"/><rect x="506" y="102" width="26" height="26" rx="5"/></g>
+      <text x="360" y="152" fill="#7b7894" font-size="11.5">平滑状态演化 · 牺牲 token 级细节</text>
+      <text x="640" y="30" font-weight="800" fill="#4c1d95">MSW：1 token → 4 个子状态</text>
+      <rect x="650" y="45" width="26" height="26" rx="5" fill="#60a5fa"/>
+      <g stroke="#433f63" stroke-width="2.5"><line x1="663" y1="73" x2="663" y2="86"/><line x1="663" y1="86" x2="700" y2="96" marker-end="url(#g1)"/><line x1="663" y1="86" x2="700" y2="116" marker-end="url(#g1)"/><line x1="663" y1="86" x2="700" y2="136" marker-end="url(#g1)"/><line x1="663" y1="86" x2="700" y2="156" marker-end="url(#g1)"/></g>
+      <g fill="#8b5cf6"><rect x="704" y="88" width="24" height="22" rx="5"/><rect x="704" y="112" width="24" height="22" rx="5"/><rect x="704" y="136" width="24" height="22" rx="5"/><rect x="704" y="160" width="24" height="22" rx="5"/></g>
+      <g stroke="#10b981" stroke-width="2.5"><line x1="730" y1="99" x2="762" y2="120" marker-end="url(#g1)"/><line x1="730" y1="123" x2="762" y2="124" marker-end="url(#g1)"/><line x1="730" y1="147" x2="762" y2="128" marker-end="url(#g1)"/><line x1="730" y1="171" x2="762" y2="132" marker-end="url(#g1)"/></g>
+      <rect x="766" y="112" width="60" height="26" rx="6" fill="#d1fae5" stroke="#10b981" stroke-width="2"/>
+      <text x="796" y="129" font-size="11.5" text-anchor="middle" fill="#065f46" font-weight="700">concat</text>
+      <text x="640" y="205" fill="#7b7894" font-size="11.5">物理隔离干扰 · 参数 ×N</text>
+      <text x="30" y="250" font-weight="800" fill="#92400e" font-size="13">实验事实：最优粒度依赖骨干容量</text>
+      <text x="30" y="275" fill="#78350f" font-size="12.5">Qwen3-8B（强）→ SSW 最佳（50.86）：强骨干怕噪声，平滑胜出</text>
+      <text x="30" y="298" fill="#78350f" font-size="12.5">SmolLM3-3B（弱）→ MSW 最佳（36.96）：弱骨干怕干扰，隔离胜出</text>
+      <text x="30" y="321" fill="#78350f" font-size="12.5">Qwen3-4B-Instruct（中）→ TSW 最佳（51.66）：信息保真度胜出</text>
+    </g>
+  </svg>
+  <figcaption><b>图 8（自绘）</b>：三种粒度的写入计数与实验对应关系。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>粒度是"信噪比旋钮"，而最优档位由骨干容量决定</h4>
+    <p>把写入看作向状态信道发送符号：TSW 符号率最高（信息保真）但噪声也最多（格式符、复读）；SSW 用平均做低通滤波（降噪但损细节）；MSW 不改变符号率而是扩信道（多路并行降干扰）。Table 2 的交叉结果给出了一条可操作的启发式：<strong>骨干越强，记忆通道的瓶颈越在噪声侧（选 SSW）；骨干越弱，瓶颈越在容量/干扰侧（选 MSW）</strong>。这把"记忆设计"与"骨干能力"耦合成了一个联合设计问题——对做 agent 记忆系统的工程师是直接可用的调参法则。</p>
+  </div>
+</section>
+
+<!-- ================= 9 ================= -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 训练</div>
+  <h2>训练：2219 个样本，教会模型"如何使用记忆"</h2>
+  <div class="mathcard"><h4>式 (17)：标准 SFT 损失，但上下文不回放</h4>$$\mathcal{L}_{\mathrm{SFT}} = -\sum_{j=1}^{|Y|} \log p_{\phi,\theta}(y_j \mid Q, y_{&lt;j}, S^C)$$<p class="note">$\theta$：δ-mem 可训练参数；$\phi$：冻结骨干。上下文 token 只被<strong>写入</strong>状态 $S^C$，不作为骨干输入回放；骨干只看到查询 $Q$ 与回复前缀 $y_{&lt;j}$。</p></div>
+  <p>附录 A 的训练配置值得逐条品味（这是复现的关键）：</p>
+  <table>
+    <tr><th>配置项</th><th>值</th><th>解读</th></tr>
+    <tr><td>训练数据</td><td>QASPER 最短 split，2,219 样本，1 epoch</td><td>极端小的监督信号——学的不是知识，是"读写策略"</td></tr>
+    <tr><td>骨干训练序列长</td><td>512</td><td>注意力侧只见短序列</td></tr>
+    <tr><td>记忆写入预算</td><td>8,192 token</td><td>状态侧可消化 16× 于骨干视野的历史</td></tr>
+    <tr><td>rank / α</td><td>r = 8，α = 16</td><td>状态 8×8；引导缩放系数 α/r = 2</td></tr>
+    <tr><td>注入分支</td><td>仅 query + output</td><td>消融后的性价比选择（第 13 章）</td></tr>
+    <tr><td>MSW 状态数</td><td>N = 4</td><td>参数量 4.87M → 19.47M</td></tr>
+    <tr><td>硬件/优化</td><td>8×A800，bf16，ZeRO-2，fused AdamW；lr 2e-4 余弦，warmup 0.1；有效 batch 32；seed 42</td><td>常规 SFT 配方，无特殊技巧</td></tr>
+  </table>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>512 vs 8192：训练时就把"看"与"记"解耦</h4>
+    <p>骨干注意力在训练时最多看 512 token，而记忆写入预算是 8192 token——模型被迫学会<strong>只靠状态回答长历史问题</strong>，因为长历史根本进不了注意力视野。这是一个巧妙的课程：若两者同长，模型会偷懒走注意力捷径，状态沦为装饰。该设计直接预言了第 12 章的 no-context 恢复能力：模型在训练期就经历过"历史只在状态里"的情形。反过来说，这也限制了 δ-mem 的定位——它是<strong>记忆接口</strong>的训练，不是长上下文能力的训练。</p>
+  </div>
+</section>
+
+<!-- ================= 10 ================= -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 实验 I</div>
+  <h2>主结果：小状态打败大模块</h2>
+  <p>所有方法共用 Qwen3-4B-Instruct 骨干。记忆重基准为 MemoryAgentBench（AR/TTL/LRU/SF 四能力）与 LoCoMo（multi-hop/temporal/open/single，按 Mem0 惯例剔除 adversarial）；通用基准为 IFEval、HotpotQA、GPQA-Diamond。</p>
+  <table>
+    <tr><th>方法（Qwen3-4B-Instruct）</th><th>IFEval</th><th>HotpotQA EM</th><th>GPQA-D</th><th>MAB Avg</th><th>MAB TTL</th><th>LoCoMo Avg</th><th>总平均</th></tr>
+    <tr><td>骨干（无记忆）</td><td>81.89</td><td>42.35</td><td>39.39</td><td>29.54</td><td>26.14</td><td>40.79</td><td>46.79</td></tr>
+    <tr><td>+ BM25 RAG（TMM）</td><td>–</td><td>40.35</td><td>–</td><td>–</td><td>9.74</td><td>38.12</td><td>44.56</td></tr>
+    <tr><td>+ LLMLingua-2（TMM）</td><td>–</td><td>36.93</td><td>–</td><td>–</td><td>1.43</td><td>39.07</td><td>42.96</td></tr>
+    <tr><td>+ MemoryBank（TMM）</td><td>–</td><td>–</td><td>–</td><td>–</td><td>7.67</td><td>37.88</td><td>43.88</td></tr>
+    <tr><td>+ Context2LoRA（PMM）</td><td>76.71</td><td>37.85</td><td>29.29</td><td>–</td><td>29.86</td><td>34.99</td><td>44.90</td></tr>
+    <tr><td>+ MemGen（PMM）</td><td>39.37</td><td>5.36</td><td>38.89</td><td>–</td><td>28.45</td><td>33.30</td><td>30.66</td></tr>
+    <tr><td>+ MLP Memory（OMM）</td><td>24.95</td><td>10.94</td><td>22.73</td><td>–</td><td>26.00</td><td>16.72</td><td>22.85</td></tr>
+    <tr><td class="hl">+ δ-mem (TSW)</td><td class="best">82.99</td><td class="best">49.41</td><td class="best">40.40</td><td>36.48</td><td>40.64</td><td>46.53</td><td class="best">51.66</td></tr>
+    <tr><td class="hl">+ δ-mem (SSW)</td><td>81.70</td><td>49.22</td><td>41.41</td><td>37.84</td><td class="best">50.50</td><td>47.05</td><td>51.44</td></tr>
+    <tr><td class="hl">+ δ-mem (MSW)</td><td>81.52</td><td>46.86</td><td>37.37</td><td class="best">38.85</td><td>47.29</td><td class="best">49.12</td><td>50.74</td></tr>
+  </table>
+  <p>注：表中 MAB 列顺序依论文表格版式为 Avg 在前、子项随后（与正文叙述交叉验证一致：骨干 MAB Avg=29.54、TTL=26.14；MSW MAB Avg=38.85；SSW TTL=50.50；MSW LoCoMo Avg=49.12）。</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 420" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs>
+      <pattern id="pxg" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#94a3b8"/></pattern>
+      <pattern id="pxa" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#8b5cf6"/></pattern>
+      <pattern id="pxm" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#10b981"/></pattern>
+    </defs>
+    <text x="30" y="28" font-size="14" font-weight="800" fill="#4c1d95">pixel-art 效果柱状图（1 像素格 = 7px；数值标于柱顶）</text>
+    <g font-size="12" text-anchor="middle">
+      <text x="120" y="60" font-weight="700" fill="#433f63">总平均</text>
+      <rect x="80" y="352" width="42" height="0" fill="none"/>
+      <rect x="76" y="118" width="42" height="234" fill="url(#pxg)"/><text x="97" y="110" fill="#475569" font-weight="700">46.79</text>
+      <rect x="126" y="94" width="42" height="258" fill="url(#pxa)"/><text x="147" y="86" fill="#6d28d9" font-weight="800">51.66</text>
+      <text x="330" y="60" font-weight="700" fill="#433f63">MAB · TTL</text>
+      <rect x="286" y="221" width="42" height="131" fill="url(#pxg)"/><text x="307" y="213" fill="#475569" font-weight="700">26.14</text>
+      <rect x="336" y="100" width="42" height="252" fill="url(#pxm)"/><text x="357" y="92" fill="#047857" font-weight="800">50.50</text>
+      <text x="540" y="60" font-weight="700" fill="#433f63">MAB · Avg</text>
+      <rect x="496" y="204" width="42" height="148" fill="url(#pxg)"/><text x="517" y="196" fill="#475569" font-weight="700">29.54</text>
+      <rect x="546" y="158" width="42" height="194" fill="url(#pxm)"/><text x="567" y="150" fill="#047857" font-weight="800">38.85</text>
+      <text x="750" y="60" font-weight="700" fill="#433f63">LoCoMo · Avg</text>
+      <rect x="706" y="148" width="42" height="204" fill="url(#pxg)"/><text x="727" y="140" fill="#475569" font-weight="700">40.79</text>
+      <rect x="756" y="106" width="42" height="246" fill="url(#pxa)"/><text x="777" y="98" fill="#6d28d9" font-weight="800">49.12</text>
+      <line x1="50" y1="352" x2="860" y2="352" stroke="#1e1b4b" stroke-width="2.5"/>
+      <g font-size="11.5" fill="#7b7894">
+        <rect x="300" y="380" width="14" height="14" fill="url(#pxg)"/><text x="322" y="392" text-anchor="start">冻结骨干</text>
+        <rect x="420" y="380" width="14" height="14" fill="url(#pxa)"/><text x="442" y="392" text-anchor="start">δ-mem 最佳总平均/LoCoMo</text>
+        <rect x="640" y="380" width="14" height="14" fill="url(#pxm)"/><text x="662" y="392" text-anchor="start">δ-mem 最佳 MAB</text>
+      </g>
+    </g>
+  </svg>
+  <figcaption><b>图 9（自绘 pixel-art）</b>：柱高按 5px/点 缩放。TTL（test-time learning）从 26.14 到 50.50，近乎翻倍——这是全文最刺眼的一根柱子，机制解释见第 17 章 Q2。</figcaption>
+  </div>
+  <h3>基线失败模式精读</h3>
+  <ul>
+    <li><strong>TMM 三件套</strong>：BM25/LLMLingua-2/MemoryBank 的 TTL 分别只有 9.74/1.43/7.67（骨干 26.14）——把历史压成文本再塞回上下文，在"从演示中学新映射"这类任务上反而是<strong>负迁移</strong>：检索噪声与压缩损失吃掉了示范信号。</li>
+    <li><strong>Context2LoRA</strong>：总平均 44.90 低于骨干？不，略低于 46.79——静态参数记忆在跨任务上过拟合训练分布；且 IFEval 掉到 76.71，说明固化上下文会<strong>侵蚀通用指令能力</strong>。</li>
+    <li><strong>MemGen / MLP Memory</strong>：一个生成潜记忆触发器、一个检索预训练 MLP，都因与骨干表征错位或丢失序列累积而大幅落后（30.66 / 22.85），MLP Memory 的 IFEval 甚至崩到 24.95。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>δ-mem 的"不降反升"：IFEval 82.99 &gt; 骨干 81.89</h4>
+    <p>记忆增强方法的常见副作用是损害通用能力（Context2LoRA −5.2、MLP Memory −56.9）。δ-mem 三种粒度在 IFEval 上全部持平或微升，原因在于引导是<strong>加性低秩修正</strong>而非输入替换：当状态里没有相关联想（$r_t$ 小）时，修正量自动趋近零，骨干行为几乎不被扰动。这是一条设计层面的"默认无害"性质（do-no-harm by construction），值得所有记忆机制借鉴。</p>
+  </div>
+</section>
+
+<!-- ================= 11 ================= -->
+<section id="s11">
+  <div class="kicker">CHAPTER 11 · 实验 II</div>
+  <h2>跨骨干：容量决定记忆的最优形态</h2>
+  <table>
+    <tr><th>骨干</th><th>无记忆</th><th>+SSW</th><th>+TSW</th><th>+MSW</th><th>+Context2LoRA</th><th>最佳粒度</th></tr>
+    <tr><td>Qwen3-4B-Instruct</td><td>46.79</td><td>51.44</td><td class="best">51.66</td><td>50.74</td><td>44.90</td><td>TSW</td></tr>
+    <tr><td>Qwen3-8B</td><td>47.20</td><td class="best">50.86</td><td>50.68</td><td>50.84</td><td>45.92</td><td>SSW</td></tr>
+    <tr><td>SmolLM3-3B</td><td>26.08</td><td>36.67</td><td>34.74</td><td class="best">36.96</td><td>34.94</td><td>MSW</td></tr>
+  </table>
+  <p>三个观察：其一，δ-mem 在三种规模、两种家族（Qwen / SmolLM）上全部正向，说明机制不依赖特定骨干；其二，<strong>弱骨干的收益最大</strong>（SmolLM3 +10.88 点 vs Qwen3-8B +3.66 点）——记忆对外挂补偿的需求与骨干能力成反比，这对"小模型+好记忆"的部署路线是强支持；其三，最佳粒度随容量迁移（TSW→SSW / MSW），与第 8 章的信噪比分析一致。</p>
+</section>
+
+<!-- ================= 12 ================= -->
+<section id="s12">
+  <div class="kicker">CHAPTER 12 · 实验 III</div>
+  <h2>记忆真的住在状态里吗：no-context 恢复实验</h2>
+  <p>最关键的存在性检验：把显式历史<strong>全部删掉</strong>，只注入压缩状态，模型还能答吗？</p>
+  <figure>
+    <img src="figures/fig2_recovery.png" alt="论文 Figure 2：no-context 恢复性能">
+    <figcaption><b>图 10（论文 Figure 2 精准裁剪）</b>：灰色为 no-context 基线，彩色为 δ-mem 增益。HotpotQA Bridge 子集 EM 0.08→3.97、F1 6.25→11.05；Comparison 子集 F1 16.31→31.70。</figcaption>
+  </figure>
+  <figure>
+    <img src="figures/ai_recovery.jpg" alt="记忆恢复概念图：被擦除的卷轴、8×8 水晶、金线重织答案">
+    <figcaption><b>图 11（AI 绘制）</b>：概念化 no-context 设定——左侧卷轴的字迹已随上下文删除而消散，中间的 8×8 水晶保存着凝结的痕迹，右侧金线把痕迹重织为答案。</figcaption>
+  </figure>
+  <ul>
+    <li>HotpotQA：Overall EM 0.08 → 6.48（+6.40），F1 8.27 → 15.20（+6.93）；Bridge（多跳）F1 6.25 → 11.05。</li>
+    <li>LoCoMo：正文报告 overall 平均 3.49 → 8.05；而 Figure 2 的 Avg 柱读数为 6.89 → 9.62（+2.73，应为 F1 口径）。<strong>正文与图的数值口径不一致</strong>，阅读时以图为准并保留疑问（见第 16 章批判 C2）。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>恢复是"偏置"不是"拷贝"：绝对值低恰恰是设计使然</h4>
+    <p>6.48 的 EM 看起来寒酸，但把它与机制对齐就合理了：8×8 状态每层只有 64 个标量，它物理上不可能存储可逐字复述的上下文；它存储的是<strong>联想方向</strong>——"哪些实体/事实曾共现"。读取信号以加性修正进入注意力，作用方式是把解码分布向历史一致的方向偏置。因此正确的评估问题不是"能复述多少"，而是"偏置是否足以改变答案分布"——Bridge 子集 F1 翻倍说明在多跳证据链场景，这种偏置恰好补上了推理缺失的那一环。这也预言：需要逐字回忆的任务（如精确引用）将是 δ-mem 的能力边界（第 17 章 Q3）。</p>
+  </div>
+</section>
+
+<!-- ================= 13 ================= -->
+<section id="s13">
+  <div class="kicker">CHAPTER 13 · 实验 IV</div>
+  <h2>消融：把记忆注射到哪里？</h2>
+  <table>
+    <tr><th>注入分支</th><th>HotpotQA EM</th><th>HotpotQA F1</th><th>LoCoMo Avg</th><th>总平均</th></tr>
+    <tr><td>q</td><td>45.87</td><td>60.59</td><td>43.15</td><td>44.51</td></tr>
+    <tr><td>k</td><td>43.39</td><td>57.28</td><td>40.98</td><td>42.19</td></tr>
+    <tr><td>v</td><td>46.12</td><td>60.95</td><td>42.35</td><td>44.24</td></tr>
+    <tr><td>o</td><td>48.94</td><td>63.69</td><td>45.15</td><td>47.05</td></tr>
+    <tr><td>qo（默认）</td><td>49.41</td><td>63.66</td><td>46.53</td><td>47.97</td></tr>
+    <tr><td>qkvo（全）</td><td class="best">49.94</td><td class="best">65.01</td><td>46.15</td><td class="best">48.05</td></tr>
+  </table>
+  <table>
+    <tr><th>注入深度（Qwen3-4B 共 36 层）</th><th>HotpotQA EM</th><th>LoCoMo Avg</th><th>总平均</th></tr>
+    <tr><td>前 12 层</td><td>45.52</td><td>43.26</td><td>44.39</td></tr>
+    <tr><td>中 12 层</td><td>47.44</td><td>45.87</td><td>46.66</td></tr>
+    <tr><td>后 12 层</td><td>44.58</td><td>43.53</td><td>44.06</td></tr>
+    <tr><td>全部层</td><td class="best">49.41</td><td class="best">46.53</td><td class="best">47.97</td></tr>
+  </table>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="c2" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#065f46"/></marker></defs>
+    <g font-size="12.5" text-anchor="middle">
+      <rect x="30" y="40" width="150" height="60" rx="12" fill="#fff" stroke="#10b981" stroke-width="2.5"/><text x="105" y="65" font-weight="800" fill="#065f46">单分支 o 最优</text><text x="105" y="84" fill="#047857">47.05（解读侧最吃记忆）</text>
+      <rect x="230" y="40" width="150" height="60" rx="12" fill="#fff" stroke="#10b981" stroke-width="2.5"/><text x="305" y="65" font-weight="800" fill="#065f46">+q → qo</text><text x="305" y="84" fill="#047857">47.97（+0.92，检索侧补充）</text>
+      <rect x="430" y="40" width="170" height="60" rx="12" fill="#fff" stroke="#94a3b8" stroke-width="2.5"/><text x="515" y="65" font-weight="800" fill="#475569">+k,v → qkvo</text><text x="515" y="84" fill="#64748b">48.05（+0.08，边际≈0）</text>
+      <rect x="650" y="40" width="210" height="60" rx="12" fill="#d1fae5" stroke="#065f46" stroke-width="3"/><text x="755" y="65" font-weight="900" fill="#064e3b">决策：默认 qo</text><text x="755" y="84" fill="#065f46">性能/参数最优权衡</text>
+      <line x1="180" y1="70" x2="226" y2="70" stroke="#065f46" stroke-width="3.5" marker-end="url(#c2)"/>
+      <line x1="380" y1="70" x2="426" y2="70" stroke="#065f46" stroke-width="3.5" marker-end="url(#c2)"/>
+      <line x1="600" y1="70" x2="646" y2="70" stroke="#065f46" stroke-width="3.5" marker-end="url(#c2)"/>
+      <rect x="30" y="160" width="180" height="60" rx="12" fill="#fff" stroke="#8b5cf6" stroke-width="2.5"/><text x="120" y="185" font-weight="800" fill="#4c1d95">深度：前12 / 后12</text><text x="120" y="204" fill="#6d28d9">44.39 / 44.06（太局部/太晚）</text>
+      <rect x="250" y="160" width="160" height="60" rx="12" fill="#fff" stroke="#8b5cf6" stroke-width="2.5"/><text x="330" y="185" font-weight="800" fill="#4c1d95">中 12 层</text><text x="330" y="204" fill="#6d28d9">46.66（语义/任务平衡点）</text>
+      <rect x="450" y="160" width="160" height="60" rx="12" fill="#ede9fe" stroke="#4c1d95" stroke-width="3"/><text x="530" y="185" font-weight="900" fill="#4c1d95">全部层</text><text x="530" y="204" fill="#5b21b6">47.97（全深度参与）</text>
+      <text x="650" y="180" font-size="12" fill="#433f63" text-anchor="start">结论：记忆信号需要</text>
+      <text x="650" y="200" font-size="12" fill="#433f63" text-anchor="start">贯穿表征层级全程传播，</text>
+      <text x="650" y="220" font-size="12" fill="#433f63" text-anchor="start">中途注入或末端注入都会衰减。</text>
+      <line x1="210" y1="190" x2="246" y2="190" stroke="#4c1d95" stroke-width="3.5" marker-end="url(#c2)"/>
+      <line x1="410" y1="190" x2="446" y2="190" stroke="#4c1d95" stroke-width="3.5" marker-end="url(#c2)"/>
+    </g>
+  </svg>
+  <figcaption><b>图 12（自绘）</b>：两条消融链与最终设计决策（qo + 全层）。</figcaption>
+  </div>
+  <p>单分支排序 o &gt; v &gt; q &gt; k 提供了一个罕见的"记忆信号解剖"：<strong>输出侧 &gt; 值侧 &gt; 查询侧 &gt; 键侧</strong>。键侧最弱符合直觉——修改 K 会全局重排注意力分布，是最" invasive "的注入点；而 o 侧直接在表征空间加偏置，最安全也最有效。qkvo 相对 qo 的边际增益仅 +0.08，却要翻倍引导参数，故默认 qo——这是一个教科书级的"够用就好"工程决策。</p>
+</section>
+
+<!-- ================= 14 ================= -->
+<section id="s14">
+  <div class="kicker">CHAPTER 14 · 效率</div>
+  <h2>效率与代价：免费的午餐不存在，但这份账单很薄</h2>
+  <figure>
+    <img src="figures/fig3_efficiency.png" alt="论文 Figure 3：解码吞吐与显存">
+    <figcaption><b>图 13（论文 Figure 3 精准裁剪）</b>：左为解码吞吐、右为显存。δ-mem 显存曲线与 Vanilla/Context2LoRA 几乎重合（32K 提示下依然），因为循环状态是常数大小；吞吐低于 Vanilla（每步多一次读+写），但显著快于且稳于 MemGen。</figcaption>
+  </figure>
+  <figure>
+    <img src="figures/fig4_params.png" alt="论文 Figure 4：可训练参数对比">
+    <figcaption><b>图 14（论文 Figure 4 精准裁剪）</b>：δ-mem SSW/TSW 仅 4.87M（0.12%），MSW 19.47M（0.48%）；对照 Context2LoRA 5.90M（0.15%）、MemGen 46.20M（1.13%）、MLP Memory 3078M（76.40%，轴断裂）。</figcaption>
+  </figure>
+  <p>把账单写清楚：<strong>显存</strong>≈vanilla（状态常数大小，不随提示增长）；<strong>吞吐</strong>有可见折扣（每 token 一次 $O(r^2)$ 读 + 一次 $O(r^2)$ 写与 $O(dr)$ 投影，相对注意力是小项但非零）；<strong>参数</strong> 4.87M，比同预算的 Context2LoRA（5.90M）效果更好。对 agent 场景的真实含义：记忆成本从"随会话长度线性/二次增长的 KV 缓存"变成"每步常数开销"——会话越长，δ-mem 的相对优势越大。</p>
+</section>
+
+<!-- ================= 15 ================= -->
+<section id="s15">
+  <div class="kicker">CHAPTER 15 · 相关工作</div>
+  <h2>相关工作地图：两条大河的合流（已逐条网络核实）</h2>
+  <p>以下每一条的性质都经过 arXiv 摘要页/官方来源核实，避免以讹传讹：</p>
+  <ul>
+    <li><strong>delta rule 线</strong>：Widrow–Hoff (1960) LMS 规则 → Schlag et al. (2021) 首次用作线性注意力状态更新 → <strong>DeltaNet</strong> (Yang et al., NeurIPS 2024) 以 Householder 乘积并行化训练 → <strong>Gated DeltaNet</strong> (Yang, Kautz, Hatamizadeh, ICLR 2025) 融合门控与 delta rule → <strong>Qwen3-Next</strong>（官方模型卡：Gated DeltaNet : Gated Attention = 3:1 混合）→ δ-mem 把 gated delta rule <strong>用途转换</strong>为冻结骨干旁的在线记忆状态。</li>
+    <li><strong>外存/参数线</strong>：Memorizing Transformers (ICLR 2022, kNN 外存) → LongMem (2023, 冻结骨干作 memory encoder + 残差侧网) → MemoryBank (AAAI 2024, 艾宾浩斯遗忘曲线) / MemGPT (2023, OS 式虚拟上下文) / Mem0 (2025, 生产级文本抽取记忆) → MemGen (2025, memory trigger + weaver 生成潜记忆) 与 MLP Memory (2025, 检索预训练 MLP 概率插值)。</li>
+    <li><strong>参数编辑线</strong>：LoRA (ICLR 2022, 静态低秩)；ROME (NeurIPS 2022) / MEMIT (2023) 把权重当可写记忆基底做事实编辑——离散编辑步，天然不适合流式在线记忆。</li>
+    <li><strong>基准</strong>：MemoryAgentBench (2025) 四能力 AR/TTL/LRU/SF 及其数据集族（与论文附录 Table 5 完全对应）；LoCoMo (ACL 2024) 五类问题、平均约 300 轮对话；QASPER (NAACL 2021) NLP 论文 QA。</li>
+  </ul>
+  <div class="critique-box"><span class="tag">引用注记 · 已核实</span>
+    <h4>N1：Context2LoRA 不是独立发表的论文</h4>
+    <p>多路检索（arXiv API、OpenReview）均无以此为标题的公开论文。它是 δ-mem 自建的参数化基线（把上下文固化为 LoRA 权重），引用支撑为 LoRA 原文与 Back et al. (2026, arXiv:2603.01097)《Understanding LoRA as Knowledge Memory》。复现或引用时请勿把它当作既有方法。</p>
+    <h4>N2：δ-mem 对 "Qwen-Next gated retention" 的引用锚点错配</h4>
+    <p>论文以 Qwen3 技术报告 (arXiv:2505.09388) 支撑该句，但该技术报告并不描述 Qwen3-Next；Qwen3-Next 的门控 delta 架构出自官方模型卡，学术锚点应为 Gated DeltaNet (ICLR 2025)。这不影响方法正确性，但提醒读者：工业架构博客/模型卡与学术论文之间的引用链需要自行校验。</p>
+  </div>
+</section>
+
+<!-- ================= 16 ================= -->
+<section id="s16">
+  <div class="kicker">CHAPTER 16 · 批判</div>
+  <h2>批判评估：六条带证据的保留意见</h2>
+  <div class="critique-box"><span class="tag">C1</span><h4>恢复能力的绝对水平仍然很低</h4><p>no-context HotpotQA EM 6.48% 意味着状态远不能替代上下文；δ-mem 目前是"增益组件"而非"记忆替代品"。任何宣称"8×8 记住一切"的转述都是过度解读。证据：Figure 2 全柱读数。</p></div>
+  <div class="critique-box"><span class="tag">C2</span><h4>正文与 Figure 2 的 LoCoMo 数值口径不一致</h4><p>正文：3.49 → 8.05；Figure 2 Avg 柱：6.89 → 9.62。两者不可能同时是同一指标。读者复现时应以代码/图为准并向作者求证；博客保留两种读数并标注出处。</p></div>
+  <div class="critique-box"><span class="tag">C3</span><h4>基线公平性：Context2LoRA 与 MemGen 的实现细节缺失</h4><p>Context2LoRA 无公开论文与代码（N1），MemGen 的适配预算/提示策略未 fully 披露；MemGen 总平均 30.66 显著低于其原论文报告水平，怀疑适配不充分。δ-mem _vs_ 强基线的差距（1.15×）因此可能被高估。可核对证据：附录 C 仅给参数量，未给基线超参。</p></div>
+  <div class="critique-box"><span class="tag">C4</span><h4>训练分布极窄：QASPER 2219 样本</h4><p>读写策略只在 NLP 论文 QA 的单一分布上训练；跨域（对话、agent 轨迹）的零样本迁移虽被 LoCoMo/MAB 部分支持，但两者仍偏 QA 形态。真正的多会话 agent 轨迹（工具调用、状态变更）未被覆盖。</p></div>
+  <div class="critique-box"><span class="tag">C5</span><h4>键的 conditioning 假设未被检验</h4><p>delta rule 的擦除-写入依赖键向量近似正交/良条件；论文未报告 $k^m$ 的谱统计或干扰矩阵 $K^\top K$ 的条件数。若真实 hidden state 投影后高度共线（LLM 表征的各向异性是已知现象），擦除项会过度删除无关记忆——这可能是 TTL 之外子项（如 LRU）增益温和的原因之一。</p></div>
+  <div class="critique-box"><span class="tag">C6</span><h4>解码吞吐折扣未量化到可决策粒度</h4><p>Figure 3a 只给曲线，未报 tokens/s 的精确表与每步附加毫秒；对延迟敏感的在线服务，"比 MemGen 快"不足以支撑选型。复现者应自行 benchmark。</p></div>
+</section>
+
+<!-- ================= 17 ================= -->
+<section id="s17">
+  <div class="kicker">CHAPTER 17 · 开放问题</div>
+  <h2>自主科研问题：五个可以立刻动手的谜</h2>
+  <div class="research-question"><span class="tag">Q1 · 理论</span><h4>8×8 状态的信息容量界在哪里？</h4>
+    <p>每层状态仅 $r^2=64$ 个标量。外积型联想记忆的经典容量界（Hopfield 网络约 $0.138\,r$ 个正交模式，$r=8$ 时约 1 个）与实验中"状态能支撑 TTL 翻倍"明显张力十足：门控擦除与残差写入如何绕开静态容量界？</p>
+    <p><strong>分析</strong>：delta rule 的动态使旧模式在被新键擦除前持续可用，容量应理解为<strong>时间加权的同时可检索模式数</strong>，而非静态存储数；rate-distortion 视角下，基准只需低维充分统计量（实体共现标志），失真容忍度高。</p>
+    <p><strong>下手处</strong>：扫描 $r\in\{2,4,8,16,32\}$ × 历史长度 $T$，拟合恢复精度的 $f(r,T)$；用探针估计 $I(S_T;\,\text{历史事实集})$ 随 $T$ 的衰减曲线。</p>
+    <div class="svgbox">
+    <svg viewBox="0 0 860 240" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+      <defs><marker id="f1" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#4c1d95"/></marker></defs>
+      <rect x="20" y="60" width="200" height="110" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2.5"/>
+      <text x="120" y="105" font-size="14" font-weight="800" fill="#4c1d95" text-anchor="middle">历史 T token × d 维</text>
+      <text x="120" y="128" font-size="11.5" fill="#6d28d9" text-anchor="middle">T≈8192, d≈2560</text>
+      <text x="120" y="148" font-size="11.5" fill="#6d28d9" text-anchor="middle">≈ 2×10⁷ 标量</text>
+      <polygon points="220,70 430,105 430,125 220,160" fill="#ddd6fe"/>
+      <rect x="430" y="92" width="150" height="46" rx="10" fill="#8b5cf6"/>
+      <text x="505" y="112" font-size="13" font-weight="900" fill="#fff" text-anchor="middle">S：8×8 = 64</text>
+      <text x="505" y="129" font-size="10.5" fill="#ede9fe" text-anchor="middle">标量 / 层</text>
+      <line x1="580" y1="115" x2="640" y2="115" stroke="#4c1d95" stroke-width="3.5" marker-end="url(#f1)"/>
+      <rect x="645" y="92" width="90" height="46" rx="10" fill="#d1fae5" stroke="#10b981" stroke-width="2.5"/>
+      <text x="690" y="112" font-size="12.5" font-weight="800" fill="#065f46" text-anchor="middle">读出 r_t</text>
+      <text x="690" y="129" font-size="10.5" fill="#047857" text-anchor="middle">8 维</text>
+      <line x1="735" y1="115" x2="790" y2="115" stroke="#4c1d95" stroke-width="3.5" marker-end="url(#f1)"/>
+      <text x="800" y="112" font-size="12" font-weight="800" fill="#4c1d95">引导</text>
+      <text x="800" y="129" font-size="10.5" fill="#6d28d9">Δq, Δo</text>
+      <text x="325" y="92" font-size="11" fill="#6d28d9" text-anchor="middle">压缩比 ≈ 3×10⁵ : 1</text>
+      <text x="430" y="205" font-size="12" fill="#78350f" text-anchor="middle">谜：如此极端的瓶颈下，为什么 TTL 仍能翻倍？——答案或许在"任务只需低维充分统计量"（rate-distortion 视角）</text>
+    </svg>
+    <figcaption><b>图 15（自绘）</b>：信息瓶颈漏斗。压缩比约 30 万比 1，是 Q1 的全部动机。</figcaption>
+    </div></div>
+  <div class="research-question"><span class="tag">Q2 · 机制</span><h4>为什么 TTL 的增益最大（26.14→50.50）？</h4>
+    <p>TTL（test-time learning）要求从上下文中的输入-输出演示学会新映射。delta rule 更新式 (2) <strong>本身就是</strong>对线性映射的在线回归——机制与任务在数学上同构，这是否是增益排序 TTL &gt; AR &gt; LRU 的原因？</p>
+    <p><strong>可检验预言</strong>：合成"线性映射恢复"任务上，δ-mem 应接近贝叶斯在线线性回归最优解；而在需要非线性映射的 TTL 变体上增益应消失。</p>
+    <p><strong>联系</strong>：in-context learning 的隐式回归解释（及 test-time training 文献）；本工作区内的 e2e-TTT / inplace-TTT 论文正是这条线的近亲。</p></div>
+  <div class="research-question"><span class="tag">Q3 · 能力边界</span><h4>跨会话干扰与"逐字回忆"边界</h4>
+    <p>外积写入天然叠加：会话 B 的键若与会话 A 共线，A 的记忆将被擦除项误伤（ retroactive interference ）。MSW 的物理隔离在 LoCoMo Multi/Temp 上最优，间接支持干扰假说。</p>
+    <p><strong>下手处</strong>：构造键重叠度可控的多会话探针（同实体换属性 vs 异实体），测量遗忘曲线 vs 会话间隔；对比 TSW/SSW/MSW 的干扰敏感度；检验"精确引用类"任务是否为零增益（预测：是）。</p></div>
+  <div class="research-question"><span class="tag">Q4 · scaling</span><h4>最优状态大小 $r^*$ 是否随交互熵/ horizon 增长？</h4>
+    <p>参数预算 $\approx 4\,d\,r$ 每层（投影+引导），$r$ 从 8 提到 32 仅 4× 参数，却可能解锁长 horizon。是否存在 $r^*(T, H)$（horizon $T$、历史熵 $H$）的标度律？逐维门控在键各向同性时收益缩小的猜想（第 7 章洞察）也应在同一实验中检验。</p>
+    <p><strong>下手处</strong>：固定算力扫 $(r, T)$ 网格；报告每参数的记忆收益弹性，给出部署选型曲线。</p></div>
+  <div class="research-question"><span class="tag">Q5 · 安全</span><h4>压缩状态里的隐私：状态提取攻击</h4>
+    <p>状态是历史的有损压缩，但"有损"不等于"不可提取"。引导修正 $\Delta q,\Delta o$ 是状态的可观测函数——攻击者能否通过查询模型输出反演 $S$ 中的敏感联想（成员推断/属性推断）？这决定了 δ-mem 能否用于合规场景（遗忘权：删除一条记忆需要重建状态吗？$\lambda$ 门只提供指数衰减而非精确删除）。</p>
+    <p><strong>下手处</strong>：影子模型攻击实验；设计"可机读遗忘"的证书机制（如键空间分片+销毁分片）。</p></div>
+</section>
+
+<!-- ================= 18 ================= -->
+<section id="s18">
+  <div class="kicker">CHAPTER 18 · 路线图与代码</div>
+  <h2>小白 → 学者：十四天路线图与可运行核心</h2>
+  <div class="roadmap">
+    <div class="step"><h4>第 1-2 天：补数学地基</h4><p>线性注意力与联想记忆：重推式 (1)-(3)；读 Widrow–Hoff 的 LMS 叙述与 Schlag et al. (2021)。</p></div>
+    <div class="step"><h4>第 3-5 天：delta rule 家族精读</h4><p>DeltaNet (NeurIPS 2024) 的 Householder 并行化 → Gated DeltaNet (ICLR 2025) 的门控融合；手撕chunk-wise 训练伪代码。</p></div>
+    <div class="step"><h4>第 6-8 天：记忆机制全景</h4><p>Memorizing Transformers → LongMem → MemoryBank/MemGPT/Mem0 → MemGen/MLP Memory；用第 2 章两轴表给每个方法定位。</p></div>
+    <div class="step"><h4>第 9-10 天：基准动手</h4><p>跑通 LoCoMo 与 MemoryAgentBench 的官方评测脚本（至少一个子集），亲手感受 TTL 子任务难度。</p></div>
+    <div class="step"><h4>第 11-12 天：复现 δ-mem 核心</h4><p>用下面的代码块在玩具任务（合成键值流 + 线性映射恢复）上验证：无状态基线 vs δ-mem 的差距是否复现 Q2 的预言。</p></div>
+    <div class="step"><h4>第 13-14 天：提出你的问题</h4><p>从第 17 章五问中选一个，写出你的实验设计（指标/基线/算力预算）。到这一步，你已站在该方向的研究前沿入口。</p></div>
+  </div>
+
+  <h3>代码附录</h3>
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>A. 门控 delta 在线状态（PyTorch，经维度自检）</h4></div>
+  <div class="code-note">自检：S 形状 [r,r]；外积 (v−Sk)⊗k 为 [r,1]×[1,r]→[r,r]；门为 [r] 逐维广播（Diag 左乘 = 行缩放，用 unsqueeze(1) 实现）。变量全部先定义后使用。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn, torch.nn.functional <span class="kw">as</span> F
+
+<span class="kw">class</span> <span class="fn">GatedDeltaState</span>:
+    <span class="cm"># 式 (3)/(10)：S_t = Diag(λ)S_{t-1} + Diag(β)(v - S_{t-1}k)kᵀ</span>
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, r=<span class="num">8</span>):
+        self.r = r
+        self.S = torch.zeros(r, r)          <span class="cm"># [r, r] 在线联想记忆</span>
+    <span class="kw">def</span> <span class="fn">read</span>(self, q):                        <span class="cm"># 式 (6): r_t = S q, [r]</span>
+        <span class="kw">return</span> self.S @ q
+    <span class="kw">def</span> <span class="fn">write</span>(self, k, v, beta):              <span class="cm"># k,v:[r], beta:[r]</span>
+        lam = <span class="num">1.0</span> - beta                      <span class="cm"># 式 (5) 互补门</span>
+        pred = self.S @ k                     <span class="cm"># 旧状态对当前键的预测 [r]</span>
+        resid = v - pred                      <span class="cm"># 只写"没记住的" [r]</span>
+        self.S = (lam.unsqueeze(<span class="num">1</span>) * self.S   <span class="cm"># Diag(λ) 左乘 = 逐行缩放</span>
+                  + beta.unsqueeze(<span class="num">1</span>) * torch.outer(resid, k))  <span class="cm"># [r,1]x[1,r]</span>
+        <span class="kw">return</span> self.S</code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>B. δ-mem 投影 + 引导模块（挂钩到冻结注意力）</h4></div>
+  <div class="code-note">基于论文式 (4)-(9) 构建，非官方代码。自检：q_m/k_m 经 tanh+L2 归一化 [r]；Δq/Δo 为 [d]；缩放 α/r 与 LoRA 同型。</div>
+<pre class="code-block"><code><span class="kw">class</span> <span class="fn">DeltaMem</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d, r=<span class="num">8</span>, alpha=<span class="num">16.0</span>):
+        super().__init__()
+        self.r, self.scale = r, alpha / r
+        self.wq = nn.Linear(d, r); self.wk = nn.Linear(d, r); self.wv = nn.Linear(d, r)
+        self.wb = nn.Linear(d, r)                    <span class="cm"># β 门</span>
+        self.wdq = nn.Linear(r, d, bias=<span class="kw">False</span>)       <span class="cm"># 式 (7)</span>
+        self.wdo = nn.Linear(r, d, bias=<span class="kw">False</span>)
+    <span class="kw">def</span> <span class="fn">project</span>(self, x):                            <span class="cm"># x:[d] → 式 (4)</span>
+        qm = F.normalize(torch.tanh(self.wq(x)), dim=<span class="num">-1</span>)
+        km = F.normalize(torch.tanh(self.wk(x)), dim=<span class="num">-1</span>)
+        vm = self.wv(x); beta = torch.sigmoid(self.wb(x))
+        <span class="kw">return</span> qm, km, vm, beta
+    <span class="kw">def</span> <span class="fn">steer</span>(self, rt):                             <span class="cm"># rt:[r] → 式 (8)(9) 的修正量</span>
+        <span class="kw">return</span> self.scale * self.wdq(rt), self.scale * self.wdo(rt)  <span class="cm"># Δq,Δo:[d]</span>
+<span class="cm"># 挂钩方式（伪代码）：q_tilde = W_Q x + Δq 送入冻结注意力；</span>
+<span class="cm"># y_tilde = attn_out + Δo。单步顺序：read(旧S) → steer → attention → write(新S)。</span></code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>C. 三种写入粒度（TSW / SSW / MSW）</h4></div>
+  <div class="code-note">自检：SSW 的段均值对段内 hidden 求平均 [d]；MSW 维护 N 个独立状态，读出 [N*r] 后 concat（引导线性层输入维度相应为 N*r）。</div>
+<pre class="code-block"><code><span class="kw">def</span> <span class="fn">write_tsw</span>(mem, xs):                       <span class="cm"># 式 (13)：逐 token</span>
+    <span class="kw">for</span> x <span class="kw">in</span> xs:
+        qm, km, vm, b = mem.project(x); mem.write(km, vm, b)
+
+<span class="kw">def</span> <span class="fn">write_ssw</span>(mem, segments):                 <span class="cm"># 式 (14)(15)：段均值，每段一次</span>
+    <span class="kw">for</span> seg <span class="kw">in</span> segments:                      <span class="cm"># seg: [len, d]</span>
+        xbar = seg.mean(dim=<span class="num">0</span>)                <span class="cm"># [d]</span>
+        qm, km, vm, b = mem.project(xbar); mem.write(km, vm, b)
+
+<span class="kw">def</span> <span class="fn">read_msw</span>(mems, x):                        <span class="cm"># 式 (16)：N 个状态并行读后 concat</span>
+    qm, km, vm, b = mems[<span class="num">0</span>].project(x)        <span class="cm"># 各状态可用独立投影（参数×N）</span>
+    outs = []
+    <span class="kw">for</span> i, m <span class="kw">in</span> enumerate(mems):
+        qi, ki, vi, bi = m.project(x)
+        outs.append(m.read(qi)); m.write(ki, vi, bi)
+    <span class="kw">return</span> torch.cat(outs)                    <span class="cm"># [N*r]</span></code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>D. 训练循环：上下文只写不回放（式 17）</h4></div>
+  <div class="code-note">关键不变量：context 只进状态，不进骨干输入；骨干仅见 Q 与 y_&lt;j。梯度只流经 δ-mem 参数 θ（骨干 requires_grad=False）。</div>
+<pre class="code-block"><code><span class="kw">for</span> batch <span class="kw">in</span> loader:                          <span class="cm"># QASPER 2219 样本, 1 epoch</span>
+    S = fresh_state()                          <span class="cm"># 8x8 零初始化</span>
+    <span class="kw">for</span> x <span class="kw">in</span> batch.context_hidden:            <span class="cm"># ≤8192 token 写入预算</span>
+        qm, km, vm, b = mem.project(x)
+        S = mem.write(km, vm, b)               <span class="cm"># 上下文不回放入骨干</span>
+    logits = frozen_backbone(batch.Q, batch.Y, state=S, mem=mem)  <span class="cm"># 引导注入 q/o</span>
+    loss = cross_entropy(logits[:, -Y_len-<span class="num">1</span>:-<span class="num">1</span>], batch.Y)  <span class="cm"># 仅回复 token</span>
+    loss.backward(); opt.step()                <span class="cm"># 仅 θ 更新（4.87M）</span></code></pre>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献与延伸（均经核实）</h3>
+  <ol>
+    <li>Lei, Zhang et al. <em>δ-mem: Efficient Online Memory for Large Language Models</em>. <a href="https://arxiv.org/abs/2605.12357">arXiv:2605.12357</a>, 2026.</li>
+    <li>Yang et al. <em>Parallelizing Linear Transformers with the Delta Rule over Sequence Length</em> (DeltaNet). NeurIPS 2024. <a href="https://arxiv.org/abs/2406.06484">arXiv:2406.06484</a></li>
+    <li>Yang, Kautz, Hatamizadeh. <em>Gated Delta Networks: Improving Mamba2 with Delta Rule</em>. ICLR 2025. <a href="https://arxiv.org/abs/2412.06464">arXiv:2412.06464</a></li>
+    <li>Behrouz, Zhong, Mirrokni. <em>Titans: Learning to Memorize at Test Time</em>. <a href="https://arxiv.org/abs/2501.00663">arXiv:2501.00663</a>, 2024/2025.</li>
+    <li>Wu et al. <em>Memorizing Transformers</em>. ICLR 2022. <a href="https://arxiv.org/abs/2203.08913">arXiv:2203.08913</a></li>
+    <li>Wang et al. <em>Augmenting Language Models with Long-Term Memory</em> (LongMem). <a href="https://arxiv.org/abs/2306.07174">arXiv:2306.07174</a>, 2023.</li>
+    <li>Zhong et al. <em>MemoryBank</em>. AAAI 2024. <a href="https://arxiv.org/abs/2305.10250">arXiv:2305.10250</a>；Packer et al. <em>MemGPT</em>. <a href="https://arxiv.org/abs/2310.08560">arXiv:2310.08560</a>, 2023.</li>
+    <li>Chhikara et al. <em>Mem0</em>. <a href="https://arxiv.org/abs/2504.19413">arXiv:2504.19413</a>, 2025；Zhang et al. <em>MemGen</em>. <a href="https://arxiv.org/abs/2509.24704">arXiv:2509.24704</a>, 2025.</li>
+    <li>Wei et al. <em>MLP Memory: A Retriever-Pretrained Memory for LLMs</em>. <a href="https://arxiv.org/abs/2508.01832">arXiv:2508.01832</a>, 2025/2026.</li>
+    <li>Hu et al. <em>LoRA</em>. ICLR 2022. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a>；Meng et al. ROME (NeurIPS 2022) / MEMIT. <a href="https://arxiv.org/abs/2210.07229">arXiv:2210.07229</a></li>
+    <li>Hu, Wang, McAuley. <em>MemoryAgentBench</em>. <a href="https://arxiv.org/abs/2507.05257">arXiv:2507.05257</a>, 2025；Maharana et al. <em>LoCoMo</em>. ACL 2024. <a href="https://arxiv.org/abs/2402.17753">arXiv:2402.17753</a></li>
+    <li>Dasigi et al. <em>QASPER</em>. NAACL 2021. <a href="https://arxiv.org/abs/2105.03011">arXiv:2105.03011</a>；Back et al. <em>Understanding LoRA as Knowledge Memory</em>. <a href="https://arxiv.org/abs/2603.01097">arXiv:2603.01097</a>, 2026.</li>
+    <li>Hong et al. <em>Context Rot</em> (Chroma, 2025)；Du et al. <em>Context Length Alone Hurts LLM Performance</em>. <a href="https://arxiv.org/abs/2510.05381">arXiv:2510.05381</a></li>
+    <li>Qwen3-Next 官方模型卡（Gated DeltaNet : Gated Attention = 3:1）；Qwen3 Technical Report. <a href="https://arxiv.org/abs/2505.09388">arXiv:2505.09388</a></li>
+  </ol>
+  <div class="fin">δ-mem 深度解读 · 单文件博客 · 图表：论文原图精准裁剪（PyMuPDF）+ AI 概念图（阿里云百炼 qwen-image-3.0-pro，严格评审 ≥9 分收录，迭代稿保留于 figures/）+ 自绘内联 SVG（含 pixel-art 效果图）。公式全部提取自论文 PDF 原文并逐项核对。 · 2026-09-23</div>
+</div></footer>
+</body>
+</html>

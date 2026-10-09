@@ -1,0 +1,27 @@
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.vscode/
+.idea/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- secrets: never commit API keys ---
+.env
+*key*.txt
+!papers/text/*.txt
+
+# --- scratch / verification artifacts ---
+_shot_*.png
+_meander_test*.png
+_*.tmp
+
+# --- unrelated materials kept locally, not part of the guide repo ---
+赛道三_全景鸭先知_作品介绍.html

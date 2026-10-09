@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TTT-E2E 深度解读 | 把长上下文当持续学习：测试时的端到端梯度下降</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  /* === Venus · 配方 C 希腊暖金 === */
+  --bg-primary:#FBF9F3; --bg-secondary:#F5F0E5; --bg-tertiary:#E8DFD0;
+  --text-primary:#2A2520; --text-secondary:#5C544A; --text-muted:#9A8E80;
+  --color-primary:#4A3F2F; --color-secondary:#3D5A5A; --color-tertiary:#7A6B52;
+  --accent-warm:#C4784A; --accent-gold:#C9A86C; --accent-soft:#E8D5B8;
+  --font-display:'Noto Serif SC','Source Han Serif SC','Playfair Display',Georgia,serif;
+  --font-body:'Noto Sans SC','PingFang SC','Microsoft YaHei',-apple-system,sans-serif;
+  --font-hand:'Ma Shan Zheng','Zhi Mang Xing',cursive;
+  --font-mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:.4s;
+  --radius-lg:16px;
+  --shadow-sm:0 2px 8px rgba(74,63,47,.08); --shadow-md:0 4px 16px rgba(74,63,47,.12); --shadow-lg:0 8px 32px rgba(74,63,47,.16);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);color:var(--text-primary);background:var(--bg-primary);line-height:1.9;font-size:16.5px;
+  background-image:repeating-linear-gradient(0deg,rgba(74,63,47,.014) 0 1px,transparent 1px 30px),repeating-linear-gradient(90deg,rgba(74,63,47,.014) 0 1px,transparent 1px 30px)}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:900;letter-spacing:-.015em;color:var(--color-primary)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(251,249,243,.88);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--bg-tertiary);padding:0 24px}
+.nav-inner{max-width:1140px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:54px}
+.nav-logo{font-family:var(--font-display);font-weight:900;font-size:15px;color:var(--color-primary)}
+.nav-logo em{font-style:normal;color:var(--accent-warm)}
+.nav-links{display:flex;gap:11px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--text-muted);text-decoration:none;letter-spacing:.5px;position:relative;padding:3px 0}
+.nav-links a::after{content:'';position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--accent-warm);transform:scaleX(0);transform-origin:left;transition:transform var(--duration) var(--ease-out)}
+.nav-links a:hover{color:var(--color-primary)}.nav-links a:hover::after{transform:scaleX(1)}
+.hero{position:relative;min-height:94vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:110px 24px 70px;
+  background:linear-gradient(178deg,#f6f0e2 0%,#FBF9F3 42%,#f7f1e3 100%)}
+.hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 600px 300px at 12% 16%,rgba(196,120,74,.10),transparent 62%),
+             radial-gradient(ellipse 500px 300px at 88% 82%,rgba(61,90,90,.09),transparent 62%),
+             radial-gradient(ellipse 420px 240px at 78% 8%,rgba(201,168,108,.14),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:860px;text-align:center}
+.hero-badge{display:inline-flex;background:rgba(255,255,255,.72);backdrop-filter:blur(10px);border:1px solid rgba(74,63,47,.25);color:var(--color-primary);padding:7px 20px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:3px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
+.hero h1{font-size:clamp(2.3rem,6.6vw,4.2rem);line-height:1.16;margin:10px 0 12px}
+.hero h1 .mark{background:linear-gradient(135deg,var(--color-primary),#6b5842);color:#FBF9F3;padding:.05em .28em;border-radius:.16em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.hero-tagline{font-family:var(--font-display);font-size:clamp(1rem,2.4vw,1.26rem);color:var(--color-secondary);font-weight:800;margin-bottom:8px}
+.hero-desc{font-size:14.5px;color:var(--text-secondary);max-width:680px;margin:0 auto 24px}
+.hero-art{margin:6px auto 4px;max-width:820px;width:100%;border-radius:24px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid rgba(74,63,47,.14);background:#f7f2e6}
+.hero-art svg{display:block;width:100%;height:auto}
+.hero-caption{font-size:11.5px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:26px;border-radius:var(--radius-lg);overflow:hidden;border:2px solid var(--color-primary);position:relative}
+.hero-stats::before{content:'';position:absolute;inset:6px;border:1px solid rgba(196,120,74,.5);pointer-events:none;border-radius:10px}
+.hstat{background:linear-gradient(180deg,#fdfbf5,#f3ecdc);padding:15px 8px;border-left:1px solid var(--bg-tertiary)}
+.hstat:first-child{border-left:none}
+.hstat b{display:block;font-family:var(--font-display);font-size:1.5rem;color:var(--color-primary)}
+.hstat span{font-size:11px;color:var(--text-secondary)}
+.scroll-hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-size:10.5px;letter-spacing:3px;color:var(--text-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.7s infinite;font-size:14px}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+main{max-width:880px;margin:0 auto;padding:60px 24px 30px}
+section{margin-bottom:72px;position:relative}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--accent-warm);font-weight:800;margin-bottom:8px;font-family:var(--font-mono)}
+h2{font-size:clamp(1.5rem,3.6vw,2rem);margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--bg-tertiary);position:relative}
+h2::after{content:'';position:absolute;left:0;bottom:-2px;width:64px;height:2px;background:var(--accent-warm)}
+h3{font-size:1.14rem;margin:26px 0 10px;color:var(--color-tertiary)}
+p{margin-bottom:13px;color:var(--text-secondary)}
+p strong,li strong{color:var(--text-primary)}
+ul,ol{margin:0 0 13px 22px;color:var(--text-secondary)}
+li{margin-bottom:6px}
+figure{margin:24px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid var(--bg-tertiary);box-shadow:var(--shadow-md);background:#fff}
+figcaption{font-size:12.5px;color:var(--text-muted);margin-top:9px;line-height:1.75;text-align:left}
+figcaption b{color:var(--color-tertiary)}
+.svgbox{background:#fff;border:1px solid var(--bg-tertiary);border-radius:var(--radius-lg);padding:16px 10px;margin:24px 0;box-shadow:var(--shadow-sm)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#f3ead8,#eaddc0);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--accent-gold);box-shadow:var(--shadow-sm)}
+.insight-box .tag{background:var(--accent-gold);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.insight-box h4{margin:10px 0 6px;color:#5c4a28;font-size:1.03rem}
+.insight-box p{color:#6b5738;margin-bottom:5px}
+.critique-box{background:linear-gradient(135deg,#f9e8e0,#f3d8cb);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--accent-warm);box-shadow:var(--shadow-sm)}
+.critique-box .tag{background:var(--accent-warm);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.critique-box h4{margin:10px 0 6px;color:#7d4322;font-size:1rem}
+.critique-box p{color:#8f5638;margin-bottom:5px;font-size:14.5px}
+.research-question{background:#fff;border:1px solid rgba(61,90,90,.4);border-radius:var(--radius-lg);padding:20px 22px;margin:20px 0;box-shadow:var(--shadow-sm);transition:transform var(--duration) var(--ease-out),box-shadow var(--duration)}
+.research-question:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
+.research-question .tag{background:var(--color-secondary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:800}
+.research-question h4{margin:10px 0 6px;color:#2f4a4a}
+.research-question p{color:#44605c;margin-bottom:7px;font-size:14.5px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow-sm)}
+th{background:linear-gradient(135deg,var(--color-primary),#6b5842);color:#fbf9f3;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--bg-secondary);text-align:center;color:var(--text-secondary)}
+tr:last-child td{border-bottom:none}
+td.hl{background:#f3ead8;font-weight:700;color:var(--color-primary)}
+td.best{background:#e0ebe8;font-weight:800;color:#2f4a44}
+td.bad{background:#f6e3da;color:#7d4322}
+.mathcard{background:#fff;border:1px solid var(--bg-tertiary);border-left:4px solid var(--color-primary);border-radius:14px;padding:18px 22px;margin:20px 0;overflow-x:auto;box-shadow:var(--shadow-sm)}
+.mathcard h4{font-size:1rem;color:var(--color-primary);margin-bottom:7px}
+.mathcard .note{font-size:13.5px;color:var(--text-muted)}
+.mathcard .cf{font-size:13.5px;color:#7d4322;background:#f9ede4;border-radius:8px;padding:8px 12px;margin-top:10px}
+.code-head{display:flex;gap:10px;align-items:center;margin:24px 0 8px;flex-wrap:wrap}
+.code-head .cred{font-size:11px;font-weight:700;padding:3px 12px;border-radius:10px;color:#fff}
+.cred.run{background:var(--color-secondary)}.cred.ill{background:var(--accent-gold)}
+.code-note{background:#f3ead8;border:1px dashed var(--bg-tertiary);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--color-primary);margin-bottom:8px}
+pre.code-block{background:#2f2a22;color:#f0ebdd;border-radius:14px;padding:18px 20px;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);margin-bottom:8px}
+pre.code-block .kw{color:#e0c896;font-weight:700}
+pre.code-block .fn{color:#a8cfb8}
+pre.code-block .cm{color:#98907c;font-style:italic}
+pre.code-block .num{color:#e2a48c}
+.roadmap{counter-reset:step}
+.step{position:relative;padding:0 0 24px 46px;counter-increment:step}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--color-primary),var(--accent-warm));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step::after{content:'';position:absolute;left:15px;top:36px;bottom:0;width:2px;background:var(--bg-tertiary)}
+.step:last-child::after{display:none}
+.step h4{font-size:1rem;margin-bottom:5px}
+.step p{font-size:14.5px}
+footer{background:#2f2a22;color:#d8cfba;padding:50px 24px 58px;margin-top:30px}
+footer .inner{max-width:880px;margin:0 auto}
+footer h3{color:#fbf9f3;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.85}
+footer a{color:var(--accent-soft);text-decoration:none}
+footer .fin{margin-top:24px;font-size:12px;color:#98907c;border-top:1px solid #4a4436;padding-top:16px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">TTT-E2E <em>·</em> 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">重构</a><a href="#s2">玩具</a><a href="#s3">元学习</a><a href="#s4">工程化</a><a href="#s5">KVB 推导</a>
+    <a href="#s6">上下文 scaling</a><a href="#s7">算力 scaling</a><a href="#s8">专注当下</a><a href="#s9">NIAH</a><a href="#s10">效率</a>
+    <a href="#s11">批判</a><a href="#s12">理论</a><a href="#s13">科研问题</a><a href="#s14">路线图</a><a href="#s15">结语</a>
+  </div>
+</div></nav>
+
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">arXiv:2512.23675 · PREPRINT · DEC 2025 · ASTERA / NVIDIA / STANFORD / BERKELEY / UCSD</div>
+    <h1>TTT-E2E：<span class="mark">把长上下文</span><br>当作一道持续学习题</h1>
+    <p class="hero-tagline">测试时在上下文上做梯度下降 · 元学习外环 · 双向端到端</p>
+    <p class="hero-desc">几乎不改架构——用最普通的滑窗注意力，让模型在测试时对上下文做 next-token prediction，把读过的内容压进权重；训练时用元学习为"测试时的学习"准备初始化。3B 模型上，上下文 scaling 与全注意力同趋势，prefill 恒定延迟快 2.7 倍。</p>
+    <div class="hero-art">
+      <svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="暖金风：长卷轴经内环梯度压入权重晶层">
+        <defs>
+          <linearGradient id="hgd" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#C4784A" stop-opacity=".85"/><stop offset="1" stop-color="#3D5A5A" stop-opacity=".6"/>
+          </linearGradient>
+          <linearGradient id="hgs" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#C9A86C" stop-opacity=".55"/><stop offset="1" stop-color="#C9A86C" stop-opacity=".08"/>
+          </linearGradient>
+          <filter id="hgb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+        </defs>
+        <rect width="1200" height="520" fill="#f7f2e6"/>
+        <ellipse cx="300" cy="140" rx="280" ry="80" fill="#C9A86C" opacity=".12" filter="url(#hgb)"/>
+        <ellipse cx="900" cy="380" rx="320" ry="90" fill="#3D5A5A" opacity=".08" filter="url(#hgb)"/>
+        <g transform="translate(70,120) rotate(-3)">
+          <rect x="0" y="0" width="250" height="180" rx="10" fill="#fdfaf2" stroke="#C9A86C" stroke-width="3"/>
+          <rect x="0" y="0" width="250" height="34" rx="10" fill="#4A3F2F"/>
+          <g fill="#7A6B52" opacity=".55">
+            <rect x="20" y="52" width="200" height="6" rx="3"/><rect x="20" y="68" width="160" height="6" rx="3"/><rect x="20" y="84" width="190" height="6" rx="3"/>
+            <rect x="20" y="100" width="130" height="6" rx="3"/><rect x="20" y="116" width="180" height="6" rx="3"/><rect x="20" y="132" width="150" height="6" rx="3"/>
+            <rect x="20" y="148" width="195" height="6" rx="3"/>
+          </g>
+          <g transform="translate(196,10)"><circle r="9" fill="#C4784A"/><text y="4" text-anchor="middle" font-size="10" fill="#fff" font-weight="800">3B 模型</text></g>
+        </g>
+        <g fill="none" stroke="url(#hgd)" stroke-linecap="round">
+          <path d="M 340 220 C 440 150, 540 150, 640 210" stroke-width="7" opacity=".85"/>
+          <path d="M 340 260 C 440 200, 540 200, 640 250" stroke-width="4" opacity=".5"/>
+          <path d="M 340 300 C 440 250, 540 250, 640 290" stroke-width="2.5" opacity=".3"/>
+        </g>
+        <g stroke="#C4784A" stroke-width="2.5" fill="none" opacity=".9">
+          <path d="M 490 175 q 12 22 -4 44 q -14 20 2 42" stroke-dasharray="5 6"/>
+        </g>
+        <text x="522" y="130" font-size="13" font-weight="800" fill="#C4784A" font-family="'JetBrains Mono',monospace">inner loop</text>
+        <text x="522" y="150" font-size="11.5" fill="#9A8E80" font-family="'JetBrains Mono',monospace">∇ℓ on MLP ×T/b</text>
+        <g transform="translate(660,110)">
+          <rect x="-10" y="-10" width="230" height="300" rx="16" fill="#fdfaf2" stroke="#4A3F2F" stroke-width="3"/>
+          <g font-size="11.5" font-family="'JetBrains Mono',monospace">
+            <rect x="16" y="14" width="178" height="34" rx="7" fill="#e8dfd0"/><text x="105" y="36" text-anchor="middle" fill="#7A6B52">SWA (k=8K) 冻结</text>
+            <rect x="16" y="58" width="178" height="40" rx="7" fill="#3D5A5A"/><text x="105" y="76" text-anchor="middle" fill="#fff" font-weight="800">MLP ×L/4 更新中</text>
+            <text x="105" y="91" text-anchor="middle" fill="#cfe0dd">W₀ → W₁ → … → W_T/b</text>
+            <rect x="16" y="108" width="178" height="34" rx="7" fill="#e8dfd0"/><text x="105" y="130" text-anchor="middle" fill="#7A6B52">SWA 冻结</text>
+            <rect x="16" y="152" width="178" height="40" rx="7" fill="#3D5A5A"/><text x="105" y="170" text-anchor="middle" fill="#fff" font-weight="800">MLP ×L/4 更新中</text>
+            <text x="105" y="185" text-anchor="middle" fill="#cfe0dd">hidden state = 权重</text>
+            <rect x="16" y="202" width="178" height="34" rx="7" fill="#C9A86C" opacity=".5"/><text x="105" y="224" text-anchor="middle" fill="#4A3F2F" font-weight="800">静态 MLP（安全存储）</text>
+            <rect x="16" y="246" width="178" height="34" rx="7" fill="#4A3F2F"/><text x="105" y="268" text-anchor="middle" fill="#C9A86C" font-weight="800">outer loop 只在训练时</text>
+          </g>
+        </g>
+        <g transform="translate(960,120)" font-family="'Ma Shan Zheng',cursive" fill="#4A3F2F">
+          <text x="0" y="0" font-size="34" opacity=".9">读一遍</text>
+          <text x="0" y="46" font-size="34" opacity=".9">学一遍</text>
+          <text x="0" y="92" font-size="20" fill="#C4784A">答案在权重里</text>
+        </g>
+      </svg>
+      <p class="hero-caption">博客主视觉（手绘 SVG）：左侧长文档卷轴，中间测试时内环（对最后 1/4 块的 MLP 逐 mini-batch 做梯度步），右侧冻结的 SWA 层与"安全存储"静态 MLP——权重本身充当 RNN 的隐状态。</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><b>同趋势</b><span>上下文 scaling 对齐全注意力</span></div>
+      <div class="hstat"><b>2.7×</b><span>128K prefill 提速（H100）</span></div>
+      <div class="hstat"><b>0.06</b><span>NIAH@128K（FA 0.99）——诚实面</span></div>
+      <div class="hstat"><b>3.4×</b><span>8K 训练更慢——当前限制</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 重构</div>
+  <h2>把长上下文从架构问题改写成持续学习问题</h2>
+  <p>长上下文建模的主流叙事是<strong>架构设计</strong>：全注意力 $O(T^2)$ prefill 太贵，于是设计线性注意力、状态空间、滑窗混合。这篇论文的立场：这是<strong>持续学习（continual learning）</strong>问题——模型在测试时对给定的上下文继续做 next-token prediction，把上下文压缩进权重。架构退居其次：只要求一个标准 Transformer 加滑窗注意力（SWA）。</p>
+  <p>这个想法的朴素形态是动态评估（dynamic evaluation，Mikolov et al. 起源、Krause et al. 2018 扩展）：测试时在测试数据上继续训练。它缺一块——<strong>训练时的目标没有为"测试时会被更新"做准备</strong>。TTT-E2E 的补法是元学习：每个训练序列先被当作测试序列，在内环做 TTT，然后用 TTT <em>之后</em>的平均损失在外环（梯度的梯度）优化初始化 $W_0$。</p>
+  <p>"E2E"因此有两个含义，各自对应一位前人：</p>
+  <ul>
+    <li><strong>测试时 E2E</strong>：内环直接优化网络末端的 NTP 损失——区别于 TTT-KVB 一系（Titans、MesaNet、Nested Learning 的共同组件）的逐层重建损失；</li>
+    <li><strong>训练时 E2E</strong>：外环直接优化 TTT 之后的最终损失——区别于 dynamic evaluation 的"开箱即用"目标。</li>
+  </ul>
+  <figure>
+    <img src="figures/fig1_scaling.png" alt="论文 Figure 1：上下文长度 scaling（损失差与延迟）">
+    <figcaption><b>图 1（论文 Figure 1 精准裁剪）</b>：3B 模型、164B token。左——损失差 $\Delta$（各方法减全注意力）：SWA（绿）在 128K 处是最差线，TTT-E2E（蓝）把它变成最好线且优势随长度恒定；Mamba 2、Gated DeltaNet、TTT-KVB 随长度变差。右——prefill 延迟：TTT-E2E 与 SWA/RNN 同为常数，128K 时比全注意力快 2.7×（H100）。</figcaption>
+  </figure>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>一个公式级的对照：两条"压缩"路径的分野</h4>
+    <p>预训练本身也是压缩：$N$ token 的语料压进 $|\theta|$ 个参数。TTT 的主张是<strong>把同一机制延伸到测试时</strong>——上下文 $c$ 到来时，继续做 NTP，把 $c$ 压进增量权重。与既有路线的对照就此清晰：ICL 把 $c$ 放进 KV 缓存（无损、贵）；RNN 系把 $c$ 压进固定隐状态（便宜、有损、scaling 差）；DnD/D2L 把"适配算子"元学习成前向（快、受训练分布约束）；TTT-E2E 在测试时<strong>真做梯度下降</strong>——保留学习的适应性，用元学习买回稳定性。</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 方法阶梯 I</div>
+  <h2>玩具起点：删掉所有注意力的 Transformer</h2>
+  <p>论文的教学设计值得学：为了隔离 TTT 的效果，基线是<strong>删掉全部自注意力层、只剩 MLP</strong> 的 Transformer——它没有对前文的记忆，等价于 bigram（只看前一个 token 的统计模型）。</p>
+  <div class="mathcard"><h4>式 (1)-(2)：测试时的在线梯度下降</h4>
+  $$\ell_t(W) = \mathrm{CE}\big(f(x_{t-1};W),\ x_t\big),\qquad W_t = W_{t-1} - \eta\, \nabla \ell_t(W_{t-1})$$
+  <p class="note">$f$：无注意力基线；$W_0$：测试时初始权重。对每个 $t=1,\dots,T$ 依次更新，最后输出 $\hat p_{T+1} = f(x_T; W_T)$。CE=交叉熵；测试损失即 log 困惑度。</p></div>
+  <figure>
+    <img src="figures/fig2_toy.png" alt="论文 Figure 2：玩具例子与逐 token 损失">
+    <figcaption><b>图 2（论文 Figure 2 精准裁剪）</b>：左——计算图：无注意力基线只有上行箭头（bigram）；TTT 加入反向与水平箭头，$x_1$ 的信息经 $\ell_2$ 的梯度步存进被更新的 MLP（蓝）。右——逐 token 测试损失：TTT-naive（灰）仅略好于基线（绿），TTT-E2E b=1（蓝）几乎追平全注意力（橙）；b=16（紫，见 §4）更差。</figcaption>
+  </figure>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 方法阶梯 II</div>
+  <h2>元学习：让 $W_0$ 为"将被更新"做好准备</h2>
+  <div class="mathcard"><h4>式 (3) vs 式 (4)：E2E 与 naive 的分水岭</h4>
+  $$L(W_0;X) = \frac{1}{T}\sum_{t=1}^{T}\ell_t(W_{t-1}) \qquad\text{vs}\qquad L_{\text{naive}}(W_0;X) = \frac{1}{T}\sum_{t=1}^{T}\ell_t(W_0)$$
+  <p class="note">式 (3) 的训练损失 = 测试损失（E2E）；式 (4) 是"静态模型思维"的直译——假设 $W_0$ 不会被更新。最小化式 (4) 不保证低测试损失。<strong>TTT-naive 正是 dynamic evaluation 文献的主流做法</strong>；玩具实验里它只比 bigram 好一点。</p></div>
+  <p>对式 (3) 求梯度需要<strong>梯度的梯度</strong>（式 (2) 本身含梯度算子）；现代自动微分框架对此开销很小。元学习术语：对 $L$ 的梯度步叫<strong>外环</strong>，对 $\ell$ 的叫<strong>内环</strong>。与 MAML 的差异在问题设定：MAML 内环学整个数据集、外环需要数据集集合；这里把语言建模本身铸成"学习如何学习"——任何序列都同时是数据与任务。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>"匹配训练与测试行为"是本文一切设计的总纲</h4>
+    <p>回看四个失败者：TTT-naive 输在训练/测试行为错配（训练时假装 $W$ 不动）；TTT-KVB 输在测试时目标错配（逐层重建 ≠ 末端 NTP）；$b{=}16$ 输在 batch 内 bigram 化（更新粒度与记忆粒度错配）。TTT-E2E 的每个设计都是在消除一类错配。这个视角比"又一种长上下文架构"的读法准确得多——架构改动只是配角（§6 的 b=8K 消融将证明这一点）。</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · 方法阶梯 III</div>
+  <h2>工程化：mini-batch、滑窗与三个实现细节</h2>
+  <div class="mathcard"><h4>式 (5)-(6)：mini-batch 内环与外环</h4>
+  $$W_i = W_{i-1} - \eta\,\frac{1}{b}\sum_{t=(i-1)b+1}^{ib} \nabla \ell_t(W_{i-1}),\qquad L(W_0;X) = \frac{1}{T}\sum_{i=1}^{T/b}\sum_{t=(i-1)b+1}^{ib}\ell_t(W_{i-1})$$
+  <p class="note">$b{=}1$ 退化为式 (2)(3)。mini-batch 解决两个问题：内环多步不可并行（效率）、单 token 梯度易爆（稳定性）。</p>
+  <div class="cf">但 $b{=}16$ 让模型在每个 batch 内退回 bigram（图 2 紫线更差）：batch 内所有预测都用 $W_0$，丢掉了 batch 内此前所有 token 的上下文。<strong>解法：架构加滑窗注意力，且必须 $k \ge b$</strong>——让注意力先记住 batch 内的上下文，等 TTT 有机会更新权重。主配置：$k{=}8$K、$b{=}1$K、$T{=}128$K。</div></div>
+  <h3>三个实现细节（§6 有消融）</h3>
+  <ul>
+    <li><strong>只 TTT MLP 层</strong>：embedding/归一化/注意力在测试时冻结——更新它们会使外环不稳定；</li>
+    <li><strong>只 TTT 最后 1/4 的块</strong>：更新更多层 = 更大存储但更多反传算力（§6：1 或 3 层不 scale，6 或 12 层 scale，12≈6）；</li>
+    <li><strong>被更新的块内放两个 MLP</strong>：一个被 TTT 更新，一个是静态"安全存储"保留预训练知识；全网络 hidden 维度按比例缩减使总参数量与基线持平（公平比较）。</li>
+  </ul>
+  <figure>
+    <img src="figures/fig3_graphs.png" alt="论文 Figure 3：主方法与 TTT-KVB 的计算图">
+    <figcaption><b>图 3（论文 Figure 3 精准裁剪）</b>：左——主方法（滑窗层 + 双 MLP；图示用 $b{=}1$ 便于画图；最下方的下行箭头断开——梯度只传到最后 $L/4$ 块的 MLP，不再向下）。右——替代推导的起点：简化版 TTT-KVB（§5）。</figcaption>
+  </figure>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 另一条推导</div>
+  <h2>从 TTT-KVB 三步走到 TTT-E2E：一张对偶性地图</h2>
+  <p>§2-4 从"NTP 式 TTT"出发补训练时的 E2E；这一节反着走：从 TTT-KVB（训练时已 E2E）出发补测试时的 E2E。两条路在同一点汇合——对偶性是本文方法论上最漂亮的部分。</p>
+  <div class="mathcard"><h4>式 (7)-(9)：TTT-KVB 及其简化输出规则</h4>
+  $$\ell^{(l)}_t\big(W^{(l)}_{t-1}\big) = \big\|\, g\big(\theta^{(l)}_K x^{(l)}_t;\ W^{(l)}_{t-1}\big) - \theta^{(l)}_V x^{(l)}_t \big\|^2,\qquad z^{(l)}_t = g\big(\theta^{(l)}_Q x^{(l)}_t;\ W^{(l)}_t\big)$$
+  $$\text{简化：}\quad z^{(l)}_t = g\big(\theta^{(l)}_K x^{(l)}_t;\ W^{(l)}_{t-1}\big)$$
+  <p class="note">$g$：MLP，其权重 $W$ 即该层隐状态；$\theta_K,\theta_V,\theta_Q$：外环参数（类比 K/V/Q 投影）。KVB = "测试时学习从 key 预测 value"——把注意力显式存 (k,v) 对改为隐式学这个关联。<strong>家族谱系（论文脚注）</strong>：$g$ 线性 → DeltaNet；梯度对 $W_0$ 而非 $W_{t-1}$ → 线性注意力；非参数核估计 → 自注意力。MesaNet、Titans、Nested Learning 都是 KVB 变体。</p></div>
+  <div class="svgbox">
+  <svg viewBox="0 0 920 300" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="k5" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#4A3F2F"/></marker></defs>
+    <g font-size="12.5" text-anchor="middle">
+      <rect x="20" y="60" width="180" height="90" rx="12" fill="#f5f0e5" stroke="#7A6B52" stroke-width="2.5"/>
+      <text x="110" y="88" font-weight="800" fill="#4A3F2F">TTT-KVB（起点）</text>
+      <text x="110" y="108" fill="#5C544A" font-size="11.5">逐层重建损失 ℓ⁽ˡ⁾</text>
+      <text x="110" y="126" fill="#5C544A" font-size="11.5">θK/θV 外环参数 · 全层更新</text>
+      <text x="110" y="141" fill="#8A8E80" font-size="11">多头小 MLP + LoRA（状态远小于终版）</text>
+      <rect x="270" y="60" width="180" height="90" rx="12" fill="#fff" stroke="#C9A86C" stroke-width="2.5"/>
+      <text x="360" y="88" font-weight="800" fill="#7A6B52">步骤 1 · 简化输出</text>
+      <text x="360" y="108" fill="#5C544A" font-size="11.5">z = g(θK x; W_{t-1})</text>
+      <text x="360" y="126" fill="#5C544A" font-size="11.5">复用预测当输出，不再二次调用</text>
+      <text x="360" y="141" fill="#C4784A" font-size="11" font-weight="700">2.819（+0.001，不显著）</text>
+      <rect x="520" y="60" width="180" height="90" rx="12" fill="#fff" stroke="#C4784A" stroke-width="2.5"/>
+      <text x="610" y="88" font-weight="800" fill="#C4784A">步骤 2 · 关键步</text>
+      <text x="610" y="108" fill="#5C544A" font-size="11.5">重建损失 → NTP（末端）</text>
+      <text x="610" y="126" fill="#5C544A" font-size="11.5">θK/θV 随之消失</text>
+      <text x="610" y="141" fill="#C4784A" font-size="11" font-weight="700">2.806（−0.013，最大跳变）</text>
+      <rect x="730" y="60" width="170" height="90" rx="12" fill="#3D5A5A"/>
+      <text x="815" y="88" font-weight="900" fill="#fff">TTT-E2E（终）</text>
+      <text x="815" y="108" fill="#d8e4e0" font-size="11.5">只更 1/4 块 + 常规 MLP</text>
+      <text x="815" y="126" fill="#d8e4e0" font-size="11.5">状态 88M（5×）· 延迟减半</text>
+      <text x="815" y="141" fill="#C9A86C" font-size="11" font-weight="700">2.805（−0.001，不显著）</text>
+      <line x1="200" y1="105" x2="266" y2="105" stroke="#4A3F2F" stroke-width="3" marker-end="url(#k5)"/>
+      <line x1="450" y1="105" x2="516" y2="105" stroke="#4A3F2F" stroke-width="3" marker-end="url(#k5)"/>
+      <line x1="700" y1="105" x2="726" y2="105" stroke="#4A3F2F" stroke-width="3" marker-end="url(#k5)"/>
+      <text x="460" y="190" font-size="13" font-weight="800" fill="#2A2520">对偶性：主推导（NTP 出发 → 补训练时 E2E）与替代推导（KVB 出发 → 补测试时 E2E）在同一点汇合</text>
+      <text x="460" y="216" font-size="12" fill="#5C544A">最大的一步不是架构而是损失替换：把"压缩 K-V 关联"换成"做语言建模"——收益 −0.013，超过此前所有架构改进之和</text>
+      <text x="460" y="242" font-size="12" fill="#8a8e80">终步（−0.001）低于论文自设的 0.001 显著性阈值：终版的辩护是状态大小与延迟，不是损失（F4）</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S1（自绘）</b>：替代推导三步（Table 1，760M/DCLM/8K；SWA 基线 2.827）。</figcaption>
+  </div>
+  <p>终步的算账逻辑：多头上 LoRA（低秩增量适配）的小 MLP（合计 18M）看似省反传，但梯度要先穿过其上方的大 MLP 才能继续向下——上游梯度的准备成本是大头。<strong>少更新几个块、每块放大状态</strong>更划算：状态 5×（18M→88M）、prefill 延迟减半（0.017→0.0086 s/1k tok，H100）。8K 长度下状态大小的收益看不出来（Table 1 差异不显著）；<strong>§6</strong> 的层数消融在长度轴上补上了证据：状态小 → 上下文 scaling 差。</p>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 主结果 I</div>
+  <h2>上下文 scaling：优势恒定，且部分来自实验协议</h2>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxg1" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#9A8E80"/></pattern></defs>
+    <text x="30" y="26" font-size="13.5" font-weight="800" fill="#2A2520">b = 8K（= 不做 TTT）消融：架构改动本身几乎无效（760M，DCLM 8K；柱高 = 损失，相对 2.82 基线，越矮越好）</text>
+    <g font-size="12" text-anchor="middle">
+      <text x="150" y="58" font-weight="700" fill="#5C544A">全注意力</text>
+      <rect x="118" y="213" width="64" height="35" fill="url(#pxg1)"/><text x="150" y="205" font-weight="800" fill="#4A4A4A">2.827（最差）</text>
+      <text x="380" y="58" font-weight="700" fill="#4A3F2F">TTT-E2E 架构（无 TTT）</text>
+      <rect x="348" y="223" width="64" height="25" fill="#4A3F2F"/><text x="380" y="215" font-weight="800" fill="#4A3F2F">2.825（最好）</text>
+      <text x="620" y="58" font-weight="700" fill="#4A4A4A">TTT-KVB 架构（无 TTT）</text>
+      <rect x="588" y="218" width="64" height="30" fill="url(#pxg1)"/><text x="620" y="210" font-weight="800" fill="#4A4A4A">2.826</text>
+      <line x1="60" y1="248" x2="840" y2="248" stroke="#2A2520" stroke-width="2.5"/>
+      <text x="450" y="280" fill="#5C544A" font-size="12.5">三者差距 ≤0.002 —— TTT 才是活性成分，架构改动是配角。这直接支持第 1 章"持续学习问题而非架构问题"的立场。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S2（自绘 pixel-art）</b>：Figure 4 中段消融的可视化。</figcaption>
+  </div>
+  <figure>
+    <img src="figures/fig4_ablations.png" alt="论文 Figure 4：三个超参数消融">
+    <figcaption><b>图 4（论文 Figure 4 精准裁剪）</b>：左——窗口 $k$：三方法同样受益于更大的 $k$（关键观察：$k{=}8$K 时 SWA=全注意力，TTT-E2E 在其上仍改善 0.018——正交于滑窗/全注意力之差的独立收益）；中——$b$：越大越差（$b{=}8$K 等于不做 TTT）；右——更新层数：1 或 3 层不 scale，6 或 12 层 scale，12≈6 → 永远取最后 1/4。</figcaption>
+  </figure>
+  <div class="critique-box"><span class="tag">F2 · 取证</span>
+    <h4>"RNN 在 32K 之后退化"部分是微调批次方差的伪影</h4>
+    <p><strong>证据</strong>：附录 Figure 9 自己解释：SWA/Mamba 2/GDN/TTT-KVB 在 32K 后损失变差，是因为更长上下文下每个外环 batch 的序列数更少、微调梯度方差更高；而这些方法无法把更长上下文的收益兑现，方差之害压过收益。<strong>推理</strong>：Figure 1 的"RNN 不随上下文 scale"叙事里，混入了一个<strong>微调批次协议</strong>的效应——换一种批次协议（如按 token 而非按序列配平），退化的幅度可能不同（"伪影"一词偏重：论文的归因是方差×收益无法兑现的交互，非纯 artifact）。<strong>影响</strong>：TTT-E2E 的逃逸是真本事（它能兑现长上下文收益来抵消方差），但对照线上"退化"的幅度不应被读成方法的纯内在性质。<strong>补救</strong>：补一个 token-配平的微调协议对照。</p>
+  <figure>
+    <img src="figures/fig9_absloss.png" alt="论文附录 Figure 9：绝对损失曲线">
+    <figcaption><b>图 8（论文附录 Figure 9 精准裁剪）</b>：绝对损失。全注意力与 5:1 混合在所有长度持续改善；SWA/Mamba 2/GDN/TTT-KVB 在 32K 后变差（见 F2 的协议归因）。</figcaption>
+  </figure>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 主结果 II</div>
+  <h2>算力 scaling：小预算吃亏，760M/48B 之后与全注意力同趋势</h2>
+  <figure>
+    <img src="figures/fig5_compute.png" alt="论文 Figure 5：模型规模与训练 token 两个轴的 scaling">
+    <figcaption><b>图 5（论文 Figure 5 精准裁剪）</b>：左列——模型规模轴（125M→3B）；右列——token 轴（760M，16→80B）。上行在 DCLM（DataComp-LM，过滤版 Common Crawl）@8K 预训练后评测，下行在 Books（图书语料，长上下文微调与评测的标准选择）@32K 微调后评测。虚线为 regime 边界：模型 ~760M、token ~48B。</figcaption>
+  </figure>
+  <p>两个 regime 的分界：小预算区，TTT-E2E（及 GDN）对全注意力的优势随算力增加而收窄——论文引 Kaplan 系 scaling law 的已知结论"全注意力在小算力下欠佳"来解读：<strong>这不是 RNN 在大算力下变强，而是全注意力在小算力下偏弱</strong>。大预算区（>760M、>48B token），TTT-E2E 的蓝线走平——与全注意力同趋势，这正是对生产级训练的外推主张。GDN 呈同样趋势的两个解释：TTT-E2E 本身可视为混合 RNN（§5）；固定隐状态模型共享同一 scaling 行为。</p>
+  <div class="critique-box"><span class="tag">F3 · 取证</span>
+    <h4>scaling 趋势对 tokenizer 与数据年份敏感——且证据是轶事级的</h4>
+    <p><strong>证据</strong>：论文自述三点观察：换 Llama 3 tokenizer（2024）使 3B 优势 +0.01；SlimPajama（2023）下 token-scaling 出现上翘、换 DCLM/FinewebEdu（2024）后趋势与全注意力一致。<strong>推理</strong>："大预算区同趋势"这一核心主张对数据新鲜度/质量敏感，而支撑证据是轶闻（anecdotal），未做系统消融。<strong>影响</strong>：外推到生产级训练时，数据管线是隐藏变量。<strong>补救</strong>：跨数据集的正式 scaling 研究；论文的 self-generation 提议（其动机是 RNN 门控类比，本博客将其与数据质量敏感性勾连，见 Q4）可顺带检验。</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 主结果 III</div>
+  <h2>按 token 位置分解损失："专注当下"的直接证据</h2>
+  <figure>
+    <img src="figures/fig6_breakdown.png" alt="论文 Figure 6：按 token 指数分解的损失曲线">
+    <figcaption><b>图 6（论文 Figure 6 精准裁剪）</b>：32K（左）与 128K（右）上下文的逐 token 损失。TTT-E2E 是唯一在整个上下文范围始终低于全注意力的方法；聚合优势主要来自<strong>较早的 token</strong>；窗口末端差距收窄，但 128K 曲线是 32K 曲线的"拉伸版"而非交叉的延续。</figcaption>
+  </figure>
+  <p>两个同时成立的观察构成一个表面悖论：32K 处窗口末端差距很小——按趋势外推会猜 128K 处交叉；实际没有（128K 是"拉伸"而非"延续"）。机制解释是全文最漂亮的一段论证：</p>
+  <ul>
+    <li>在 $t &lt; 1$K（第一个内环 batch 之前），TTT-E2E 与全注意力的<strong>计算图完全相同</strong>，只差权重——但 TTT-E2E 的损失低得多；</li>
+    <li>解释：<strong>全注意力的权重必须为上下文内所有未来 token 做准备——"对所有可能的未来都好"限制了"对任何一个未来特别好"的能力</strong>；TTT 权重只需对当前 mini-batch 好，因为未来的 token 有未来的权重来伺候。这是 TTT 框架的纲领性直觉：<strong>focus on the present</strong>（§12 谱系中的最近邻 TTT、自监督 TTT 共享同一直觉）。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>把"专注当下"读成一种容量论</h4>
+    <p>静态模型容量 $\mathcal{C}$ 要覆盖整个未来分布；TTT 模型的静态容量只需覆盖当前 batch，另有 $T/b$ 次更新分摊未来——等效容量随上下文增长。这给 §9 的 NIAH 失败一个预言：检索类任务要求对"分布中某个低概率点"无损保持——恰好是压缩会牺牲的部分。<strong>同一条原理同时解释了 TTT-E2E 的赢面（语言建模）与输面（精确召回）</strong>，这是好理论的样子。</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 主结果 IV</div>
+  <h2>NIAH：诚实的惨败，以及它证明了什么</h2>
+  <p>3B@128K，RULER（长上下文评测套件）的三个 S-NIAH 任务（大海捞针：在长干扰文本中检索一句无关目标串——pass-key / 数字 / UUID 检索）：</p>
+  <table>
+    <tr><th rowspan="2">方法</th><th colspan="5">S-NIAH-1（pass-key）</th><th colspan="5">S-NIAH-2（数字）</th><th colspan="5">S-NIAH-3（UUID）</th></tr>
+    <tr><th>8K</th><th>16K</th><th>32K</th><th>64K</th><th>128K</th><th>8K</th><th>16K</th><th>32K</th><th>64K</th><th>128K</th><th>8K</th><th>16K</th><th>32K</th><th>64K</th><th>128K</th></tr>
+    <tr><td>全注意力</td><td class="best">1.00</td><td class="best">1.00</td><td class="best">1.00</td><td class="best">1.00</td><td class="best">0.99</td><td class="best">0.99</td><td class="best">1.00</td><td class="best">1.00</td><td class="best">1.00</td><td class="best">0.86</td><td>0.64</td><td>0.64</td><td class="best">0.67</td><td class="best">0.83</td><td class="best">0.64</td></tr>
+    <tr><td>SWA</td><td>1.00</td><td>0.50</td><td>0.26</td><td>0.13</td><td>0.07</td><td>1.00</td><td>0.43</td><td>0.28</td><td>0.16</td><td>0.05</td><td>0.57</td><td>0.41</td><td>0.24</td><td>0.09</td><td>0.05</td></tr>
+    <tr><td>Mamba 2</td><td>0.99</td><td>0.49</td><td>0.26</td><td>0.13</td><td>0.07</td><td>0.99</td><td>0.43</td><td>0.28</td><td>0.16</td><td>0.05</td><td>0.77</td><td>0.36</td><td>0.24</td><td>0.08</td><td>0.04</td></tr>
+    <tr><td>Gated DeltaNet</td><td>1.00</td><td>0.50</td><td>0.26</td><td>0.13</td><td>0.07</td><td>1.00</td><td>0.43</td><td>0.27</td><td>0.16</td><td>0.05</td><td>0.91</td><td>0.45</td><td>0.23</td><td>0.07</td><td>0.03</td></tr>
+    <tr><td>TTT-KVB</td><td>0.98</td><td>0.43</td><td>0.22</td><td>0.10</td><td>0.01</td><td>1.00</td><td>0.43</td><td>0.27</td><td>0.16</td><td>0.05</td><td>0.74</td><td>0.34</td><td>0.23</td><td>0.06</td><td>0.04</td></tr>
+    <tr><td class="hl">TTT-E2E</td><td>1.00</td><td>0.46</td><td>0.24</td><td>0.13</td><td>0.06</td><td>0.99</td><td>0.43</td><td>0.28</td><td>0.16</td><td>0.05</td><td>0.77</td><td>0.44</td><td>0.24</td><td>0.10</td><td>0.03</td></tr>
+  </table>
+  <p><strong>NIAH 惨败是压缩动机的直接代价：检索目标恰是"看似无关"的细节。</strong>TTT-E2E 与 Mamba 2/GDN 同档（0.03–0.07），测试时训练没带来召回魔法——它的内环做的也是 NTP 压缩。</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 290" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxtt1" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#9A8E80"/></pattern></defs>
+    <text x="30" y="26" font-size="13.5" font-weight="800" fill="#2A2520">S-NIAH-1 @128K：唯一接近满分的柱子属于全注意力（pixel-art，1 柱格 = 7px）</text>
+    <g font-size="12" text-anchor="middle">
+      <text x="110" y="58" font-weight="800" fill="#4A3F2F">全注意力</text>
+      <rect x="78" y="72" width="64" height="176" fill="#4A3F2F"/><text x="110" y="64" font-weight="800" fill="#4A3F2F">0.99</text>
+      <text x="270" y="58" font-weight="700" fill="#5C544A">TTT-E2E</text>
+      <rect x="238" y="238" width="64" height="10" fill="#3D5A5A"/><text x="270" y="230" font-weight="800" fill="#3D5A5A">0.06</text>
+      <text x="430" y="58" font-weight="700" fill="#5C544A">Mamba 2</text>
+      <rect x="398" y="238" width="64" height="10" fill="url(#pxtt1)"/><text x="430" y="230" font-weight="800" fill="#4A4A4A">0.07</text>
+      <text x="590" y="58" font-weight="700" fill="#5C544A">GDN</text>
+      <rect x="558" y="242" width="64" height="6" fill="url(#pxtt1)"/><text x="590" y="234" font-weight="800" fill="#4A4A4A">0.03</text>
+      <text x="750" y="58" font-weight="700" fill="#5C544A">TTT-KVB</text>
+      <rect x="718" y="244" width="64" height="4" fill="url(#pxtt1)"/><text x="750" y="236" font-weight="800" fill="#4A4A4A">0.01</text>
+      <line x1="50" y1="248" x2="840" y2="248" stroke="#2A2520" stroke-width="2.5"/>
+      <text x="450" y="278" fill="#5C544A" font-size="12.5">全部压缩方法挤在 0.01-0.07 的带内——"测试时训练"不改变内环做的是 NTP 压缩这一事实；无损召回是全注意力的固有领地。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S4（自绘 pixel-art）</b>：Table 2 的单行可视化（SWA 0.07 与 Mamba 2 同档，图中略）。</figcaption>
+  </div>
+  <div class="critique-box"><span class="tag">F1 · 取证</span>
+    <h4>摘要的"同趋势"主张需要加上召回任务的脚注</h4>
+    <p><strong>证据</strong>：摘要说 "scales with context length in the same way as Transformer with full attention"——指标是语言建模损失；Table 2 显示同款模型在检索任务上与全注意力的差距是 16.5×（0.06 vs 0.99）。<strong>推理</strong>："同趋势"对困惑度成立、对召回不成立——两条主张的适用域不同，摘要未区分。<strong>影响</strong>：只读摘要的读者会高估适用范围。<strong>补救</strong>：以 Figure 6（损失）+ Table 2（召回）成对引用。</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 效率</div>
+  <h2>效率全景：prefill 赢、decode 拆项、训练输</h2>
+  <figure>
+    <img src="figures/fig8_trainlat.png" alt="论文 Figure 8：训练延迟与 FLOPs">
+    <figcaption><b>图 7（论文 Figure 8 精准裁剪）</b>：训练延迟（H200，左）与每 token FLOPs（右）。FLOPs 恒定，但延迟随上下文增长——梯度检查点要按时间维做 $\log(T)$ 倍；128K 时训练比全注意力快 1.2×，8K 时慢 3.4×。</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Prefill</strong>（一次性读入上下文）：恒定延迟，128K 快 2.7×（H100）。用的是<strong>标准基础设施</strong>——隐状态就是普通 MLP 层，可用标准工具跨 GPU 分片，无需定制 kernel；对照：TTT-KVB 被迫用多头+LoRA 压状态，Mamba 2/GDN 要为显存 I/O 写定制 kernel。</li>
+    <li><strong>Decode</strong>（逐 token 生成）：解码 token 填满一个 $b{=}1$K batch 才做一次 TTT 步（此时延迟=一次 prefill），期间就是普通 SWA 解码——总延迟 = SWA 解码 + 周期性 TTT 步，两项都有数，论文不再单测。</li>
+    <li><strong>训练（限制项）</strong>：grad-of-grad 基建不成熟；8K 慢 3.4×，且延迟随 $\log(T)$ 增长（时间维梯度检查点）。两个方向：定制注意力 kernel（cuDNN FlashAttention 不支持二阶梯度）；<strong>从预训练 Transformer 初始化</strong>——RNN 文献的常规操作（distill→finetune），让 TTT-E2E 只占总训练算力的一小部分。</li>
+  </ul>
+  <div class="critique-box"><span class="tag">F5 · 取证</span>
+    <h4>"从预训练 Transformer 初始化"与 E2E 叙事之间的张力</h4>
+    <p><strong>证据</strong>：训练延迟一节建议用预训练 Transformer 初始化 TTT-E2E（引 RNN 蒸馏实践 [Kasai 2021, Bick 2024, Wang 2024]）。<strong>推理</strong>：若生产路径是"FA 预训练 → 蒸馏/初始化 → TTT 微调"，那么对外主张的主实验（从头 E2E 元训练）就不是生产配置；论文主实验的价值随之从"可部署配方"转为"原理验证 + scaling 证据"。<strong>影响</strong>：成本核算要按三段管线重算。<strong>补救</strong>：论文已把它列为 future work——跟踪其后续实验即可。</p>
+  </div>
+  <p>另两条实验边角：长解码用 Qwen3-8B-Base 当裁判（8K Books 预填 + 8K 解码），TTT-E2E 全程更低；prefill/decode 边界处损失跳升后回落（裁判对生成风格的适应）。评测用 base 模型 + repetition penalty 1.1——论文自认离真实长解码场景（SFT/RL 之后）有距离。</p>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="kicker">CHAPTER 11 · 批判</div>
+  <h2>批判评估：八条带证据的保留意见</h2>
+  <p style="font-size:13.5px;color:var(--text-muted)">索引：F1（摘要话域，见 §9）、F2（微调批次方差与"RNN 退化"叙事，见 §6）、F3（数据/tokenizer 敏感性的轶事级证据，见 §7）——证据与补救在各章原位，不重复。以下五条为本章展开。</p>
+  <div class="critique-box"><span class="tag">F4</span><h4>终版方法的关键表内优势不显著</h4><p><strong>证据</strong>：Table 1 最后一步 −0.001，低于论文自设的 0.001 显著性阈值。<strong>推理</strong>：TTT-E2E 对 all-layers-MH 的辩护实际是状态 5× 与延迟减半——即效率论证，不是质量论证；质量主张依赖 §6 的长度轴与 §7 的算力轴实验。<strong>影响</strong>：单看 Table 1 会以为四种 TTT 差不多——表内确实差不多。</p></div>
+  <div class="critique-box"><span class="tag">F6</span><h4>训练分布被裁剪成"只含 ≥8K token 的文档"</h4><p><strong>证据</strong>：DCLM 预训练语料丢弃所有 &lt;8K 文档，理由是避免文档边界处重置被更新的 MLP（工程原因：重置拖慢训练）。<strong>推理</strong>：预训练分布从此不含短文档混合序列——真实部署的上下文常是多文档拼接；TTT-E2E 在"短文档高频重置"负载下的行为未测。<strong>影响</strong>：应用场景的适用性存疑。<strong>补救</strong>：文档边界重置策略的消融。</p></div>
+  <div class="critique-box"><span class="tag">F7</span><h4>学习率只对全注意力基线做了网格搜索</h4><p><strong>证据</strong>：附录 B——为省算力只扫 FA 基线，4e-4 对所扫的 [760M,1B,3B]×[32K,128K] 全部最优；预训练配方继承 GPT-3 并按 Mamba 2 调整（5× LR）。<strong>推理</strong>：TTT 方法的最优外环 LR 可能不同；基线与方法共享超参未必对双方都公平。<strong>影响</strong>：对照组强度的上限。<strong>补救</strong>：对 TTT-E2E 单独扫 LR。公平性注记：论文给基线升级了 FA3 kernel 与 QK norm（GDN 8K 预训练 2.814→2.809、32K 微调 2.691→2.683）——对照是加强版，这部分加分。</p></div>
+  <div class="critique-box"><span class="tag">F8</span><h4>"双 MLP 安全存储"没有单独消融</h4><p><strong>证据</strong>：三细节（MLP-only、1/4 层、双 MLP）中仅 $k$/$b$/层数有消融（§3.2 的三个面板）；MLP-only 与双 MLP 均未单独消融，且双 MLP 与 1/4 层消融耦合（被更新块内必含静态 MLP）。<strong>推理</strong>：忘记预防（catastrophic forgetting 防御）这一设计动机未被隔离证明。<strong>影响</strong>：三细节中一个的因果链缺失。</p></div>
+</section>
+
+<!-- 12 -->
+<section id="s12">
+  <div class="kicker">CHAPTER 12 · 理论</div>
+  <h2>记忆层级与五容器谱系：这篇论文在设计空间中的坐标</h2>
+  <div class="mathcard"><h4>论文结论的记忆层级（逐字核对）</h4>
+  <p style="font-size:14px">TTT-E2E = SWA 基线 + 测试时更新的权重。<strong>测试时更新的权重 = 长期记忆；滑窗 = 短期记忆</strong>——两类记忆互补，更强的短期记忆会进一步改善组合（结论原文）。$k \ge b$ 的约束就是这个层级的接口条件：滑窗必须覆盖内环 batch，短期记忆才能在长期记忆跟上之前兜住局部上下文。</p></div>
+  <p>把上下文放进模型的五个容器（本仓库系列全景；DnD=Drag-and-Drop LLMs、D2L=Doc-to-LoRA、δ-mem=Efficient Online Memory，均已有配套解读；inplace-TTT=In-Place Test-Time Training，本仓库存原文）：</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 940 330" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <g font-size="12.5">
+      <text x="30" y="28" font-weight="800" fill="#2A2520">把上下文放进模型的五个容器（本仓库系列全景）</text>
+      <g text-anchor="middle">
+        <rect x="30" y="52" width="164" height="100" rx="12" fill="#f5f0e5" stroke="#7A6B52" stroke-width="2.5"/>
+        <text x="112" y="80" font-weight="900" fill="#4A3F2F">① 上下文 / KV</text><text x="112" y="100" fill="#5C544A" font-size="11.5">ICL · 无损 · O(T²)</text><text x="112" y="118" fill="#5C544A" font-size="11.5">NIAH 满分但贵</text><text x="112" y="136" fill="#9A8E80" font-size="11">易失、每次重付</text>
+        <rect x="214" y="52" width="164" height="100" rx="12" fill="#f5f0e5" stroke="#7A6B52" stroke-width="2.5"/>
+        <text x="296" y="80" font-weight="900" fill="#4A3F2F">② 静态参数</text><text x="296" y="100" fill="#5C544A" font-size="11.5">SFT / LoRA · 持久</text><text x="296" y="118" fill="#5C544A" font-size="11.5">每任务一次优化</text><text x="296" y="136" fill="#9A8E80" font-size="11">过拟合与遗忘风险</text>
+        <rect x="398" y="52" width="164" height="100" rx="12" fill="#e0ebe8" stroke="#3D5A5A" stroke-width="3"/>
+        <text x="480" y="80" font-weight="900" fill="#2f4a44">③ 生成参数</text><text x="480" y="100" fill="#44605c" font-size="11.5">DnD：任务→LoRA</text><text x="480" y="118" fill="#44605c" font-size="11.5">D2L：文档→LoRA</text><text x="480" y="136" fill="#9A8E80" font-size="11">一次前向、分布受限</text>
+        <rect x="582" y="52" width="164" height="100" rx="12" fill="#f5f0e5" stroke="#7A6B52" stroke-width="2.5"/>
+        <text x="664" y="80" font-weight="900" fill="#4A3F2F">④ 在线状态</text><text x="664" y="100" fill="#5C544A" font-size="11.5">δ-mem：8×8 联想记忆</text><text x="664" y="118" fill="#5C544A" font-size="11.5">delta-rule 持续更新</text><text x="664" y="136" fill="#9A8E80" font-size="11">常数成本、无梯度</text>
+        <rect x="766" y="52" width="150" height="100" rx="12" fill="#fdf6ec" stroke="#C4784A" stroke-width="3"/>
+        <text x="841" y="80" font-weight="900" fill="#8c4a24">⑤ 测试时梯度</text><text x="841" y="100" fill="#8f5638" font-size="11.5">TTT-E2E：整网即 RNN</text><text x="841" y="118" fill="#8f5638" font-size="11.5">inplace-TTT：层内变体</text><text x="841" y="136" fill="#9A8E80" font-size="11">适应性最强、训练贵</text>
+      </g>
+      <g font-size="12" fill="#5C544A">
+        <text x="30" y="196" font-weight="800" fill="#2A2520">横向对照（同为"测试时适配"的③④⑤）</text>
+        <text x="30" y="222">· 适应性：⑤（真梯度，适应性更强——但见 F3/F6 的敏感性与分布裁剪）&gt; ③（前向，限训练分布）&gt; ④（解析更新，限线性联想）</text>
+        <text x="30" y="248">· 成本：④（常数）&lt; ③（一次前向）≪ ⑤（逐 batch 反传 + 训练时二阶元学习）</text>
+        <text x="30" y="274">· 召回：① 无损；③④⑤ 都是有损压缩——NIAH 上三者同样落败（本篇 Table 2、D2L 的抽取型 gap、δ-mem 的恢复上限）</text>
+        <text x="30" y="300">· 合流点：D2L 的 Q4 提议"为 δ-mem 生成初始状态"；本篇 Q5 追问外环/内环参数比如何决定 scaling 边界——三个容器可能最终是同一个系统的三个接口。</text>
+      </g>
+    </g>
+  </svg>
+  <figcaption><b>图 S3（自绘）</b>：五容器设计空间。TTT-E2E 的独特位置：唯一保留测试时真梯度全量的方案，为此付出的代价是元训练的二阶复杂度与训练延迟。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>本文对领域的一个纠偏：长上下文 TTT ≠ 记忆，≠ 架构设计</h4>
+    <p>相关工作节的两个"副作用"指控值得单独记：因为 KVB 目标模仿自注意力存 (k,v)，很多人以为长上下文 TTT 是关于<strong>记忆</strong>；因为 TTT 层是注意力的 drop-in 替换，很多人以为它是<strong>架构设计</strong>。本文用 §5 的损失替换实验（−0.013，全表最大跳变）证明：去掉 KVB 记忆目标、保留 NTP，效果反而更好；用 b=8K 消融证明：架构改动本身近乎无效（2.825 vs 2.827）。<strong>它展示的是"持续学习问题表述"的力量</strong>——这与第 1 章的立场首尾呼应。</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section id="s13">
+  <div class="kicker">CHAPTER 13 · 开放问题</div>
+  <h2>自主科研问题：五个可动手的方向</h2>
+  <div class="research-question"><span class="tag">Q1 · 机制</span><h4>"专注当下"增益的容量论检验</h4>
+    <p>第 8 章的解释（静态容量只需覆盖当前 batch）给出可检验预言：early-token 增益应随<strong>被更新参数量</strong>（88M）与 <strong>$b$</strong> 单调变化——$b$ 越大、单次更新的"当前"越长，增益应后移且变浅。</p>
+    <p><strong>下手处</strong>：复用 Figure 6 的分解流程，扫 $b \in \{0.5K, 1K, 2K\}$ × 更新层比例 $\{1/8, 1/4, 1/2\}$，画"增益曲线峰值位置"随容量的移动。零新方法成本，纯算力实验。</p></div>
+  <div class="research-question"><span class="tag">Q2 · 失败定位</span><h4>needle 信息死在哪一层：压缩失败的空间定位</h4>
+    <p>NIAH@128K = 0.06，但 88M 参数的更新 MLP 难道装不下一句 magic number？对内化后的 MLP 做线性探针，定位 needle 是否被编码（第 6 层 vs 最后 1/4 块）、是被"压缩掉"还是"读不出"（对比 δ-mem 的 8×8 状态：64 个标量都能部分恢复 needle）。</p>
+    <p><strong>下手处</strong>：NIAH 训练后逐层探针 + 消融"TTT 目标里混入 1% 的 needle 复述任务"（给压缩一个召回目标），测损失-召回权衡曲线。</p></div>
+  <div class="research-question"><span class="tag">Q3 · 工程</span><h4>蒸馏初始化能否闭合"从头 E2E"的差距</h4>
+    <p>论文的加速方向（FA 预训练 → 初始化 TTT-E2E）未实验。定量问题：内环步数/学习率如何随初始化质量缩放？RNN 蒸馏文献（Kasai 2021、Bick 2024、Mamba-in-Llama 2024）的结论是蒸馏后 RNN 可恢复大部分质量——TTT-E2E 的隐状态是 MLP 权重（与教师同构），蒸馏应更直接。</p>
+    <p><strong>下手处</strong>：同一 FA 教师分别蒸馏到 TTT-E2E 与 GDN（Mamba-in-Llama 协议），比 Books@128K 损失与训练延迟——同时检验 F5 的叙事张力。</p></div>
+  <div class="research-question"><span class="tag">Q4 · 算法</span><h4>自生成 TTT：把 RNN 门控装进内环</h4>
+    <p>论文的方向性提议：TTT on self-generated tokens（对当前 batch 的过滤/复述，或对先前 batch 的回顾），类比 RNN 门控对虚假输入的屏蔽（LSTM/GRU 文献）。形式化：内环损失从 $\ell_t$ 换成 $\ell_t$ 与自生成重构损失的加权和，权重本身是外环参数。</p>
+    <p><strong>下手处</strong>：760M 玩具规模先行——自生成数据由当前模型 top-p 采样 + 困惑度过滤；对照门控消融（等价于学一个软掩码）。这可能同时改善 F3（数据质量敏感）。</p></div>
+  <div class="research-question"><span class="tag">Q5 · 理论</span><h4>scaling 边界的参数比定律</h4>
+    <p>TTT-E2E（整网 = 一个 RNN 层）与 GDN（每层一个 RNN）在 compute-scaling 上同趋势、边界都在 ~760M/~48B（Figure 5）。假说：边界由<strong>外环参数量 : 内环状态量</strong>之比决定——E2E 的状态是权重本身（88M），GDN 的状态是线性隐状态；两者在边界处的比值可能守恒。</p>
+    <p><strong>形式化</strong>：设 $\rho = |\theta_{\text{outer}}| / |W_{\text{state}}|$，假说边界 $C^*(\rho)$ 满足幂律；用 5 个模型规模 + 层数消融（1/8→1/2）拟合 $C^*$。注意：~760M/~48B 的边界是 TTT-E2E 的实测值，GDN 只是"同趋势"，$\rho$ 跨架构的定义尚需对齐——本问是纯思辨，价值在选型公式：若成立，它给出"多少算力值得上 TTT"的判据。</p></div>
+</section>
+
+<!-- 14 -->
+<section id="s14">
+  <div class="kicker">CHAPTER 14 · 路线图与代码</div>
+  <h2>小白 → 学者：十二天路线图</h2>
+  <div class="roadmap">
+    <div class="step"><h4>第 1-2 天：谱系打底</h4><p>dynamic evaluation（Krause 2018）→ TTT 三形态（最近邻/自监督/序列）→ fast weights（Hinton &amp; Plaut 1987；Schmidhuber 1992 FWP）→ Clark et al. 2022（方法上最近的前辈）。每篇一页笔记，重点记"内环目标"与"外环目标"。</p></div>
+    <div class="step"><h4>第 3-4 天：复现玩具实验</h4><p>附录 A 全公开：2 块、384 维、DCLM@128。亲手跑出 Figure 2 的四条线（FA/无注意力/naive/E2E），亲眼看到 naive 与 E2E 的分岔——这是全文最重要的一张直觉图。</p></div>
+    <div class="step"><h4>第 5-7 天：复现 Table 1 三步推导</h4><p>760M、DCLM、8K：KVB → 简化输出 → NTP 替换 → 终版。检验 −0.013 的关键跳变是否可复现（0.001 显著性阈值自设）。</p></div>
+    <div class="step"><h4>第 8-9 天：跑一个消融</h4><p>层数消融（1/3/6/12 层）对上下文 scaling 的影响——F8 的双 MLP 解耦消融可以顺手加上。</p></div>
+    <div class="step"><h4>第 10-12 天：Q1 或 Q3 出数据</h4><p>Q1（容量论检验）纯算力；Q3（蒸馏初始化）借用 Mamba-in-Llama 协议。写 proposal：形式化、最小实验、预期曲线。</p></div>
+  </div>
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>A. 内环：mini-batch TTT 更新（式 5，经维度自检）</h4></div>
+  <div class="code-note">自检：只更新最后 L/4 块的 MLP（requires_grad 门控）；其余参数冻结；每 batch 一次梯度步。变量先定义后使用。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch
+
+<span class="kw">def</span> <span class="fn">ttt_inner_loop</span>(model, ctx_ids, b=<span class="num">1024</span>, eta=<span class="num">1e-3</span>):
+    <span class="cm"># ctx_ids: [T+1]；只对最后 L/4 块的 MLP 开梯度</span>
+    updated = [p <span class="kw">for</span> n, p <span class="kw">in</span> model.named_parameters() <span class="kw">if</span> mlp_tail(n)]
+    <span class="kw">for</span> p <span class="kw">in</span> model.parameters(): p.requires_grad_(<span class="kw">False</span>)
+    <span class="kw">for</span> p <span class="kw">in</span> updated:        p.requires_grad_(<span class="kw">True</span>)
+    W = model.state_dict()                       <span class="cm"># W_0：测试时初始权重</span>
+    T = ctx_ids.shape[<span class="num">0</span>] - <span class="num">1</span>
+    <span class="kw">for</span> i <span class="kw">in</span> range(<span class="num">1</span>, T // b + <span class="num">1</span>):               <span class="cm"># 式(5)：T/b 个 batch</span>
+        seg = ctx_ids[(i<span class="num">-1</span>)*b : i*b + <span class="num">1</span>]        <span class="cm"># 含边界 token</span>
+        loss = ntp_loss(model, seg)              <span class="cm"># ℓ_t 之和（CE）</span>
+        g = torch.autograd.grad(loss / b, updated)
+        <span class="kw">with</span> torch.no_grad():
+            <span class="kw">for</span> p, gp <span class="kw">in</span> zip(updated, g): p -= eta * gp   <span class="cm"># W_i = W_{i-1} - η∇</span>
+    <span class="kw">return</span> model                                  <span class="cm"># 内化后的 θ_c</span></code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>B. 外环：元学习 E2E 目标（式 6，grad-of-grad）</h4></div>
+  <div class="code-note">基于式 (6) 构建：外环损失 = TTT 之后各 token 损失之和（对应内环更新前的 ℓ_t(W_{i-1})）。JAX 用 value_and_grad 嵌套、PyTorch 用 create_graph=True；二阶自动微分开销小（论文引证）。</div>
+<pre class="code-block"><code><span class="kw">def</span> <span class="fn">outer_loss</span>(model0, seq, b=<span class="num">1024</span>):
+    model = clone(model0)                            <span class="cm"># W_0</span>
+    total = <span class="num">0.0</span>
+    T = len(seq) - <span class="num">1</span>
+    <span class="kw">for</span> i <span class="kw">in</span> range(<span class="num">1</span>, T // b + <span class="num">1</span>):                   <span class="cm"># 式(6)：内环过程中累加</span>
+        seg = seq[(i<span class="num">-1</span>)*b : i*b + <span class="num">1</span>]
+        total = total + ntp_loss(model, seg)         <span class="cm"># ℓ_t(W_{i-1})：更新前权重下的损失</span>
+        grad_step(model, seg)                        <span class="cm"># 内环：W_i = W_{i-1} - η∇</span>
+    <span class="kw">return</span> total / T                                 <span class="cm"># L(W_0; X)——外环对此求导（create_graph=True）</span>
+<span class="cm"># 关键：外环梯度的被求导对象是"TTT 之后"的损失（E2E），</span>
+<span class="cm">#   而 TTT-naive 的目标是 Σ ℓ_t(W_0)——训练时假装权重不动（式 4）。</span></code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>C. TTT-KVB 层（式 7-8：g 线性时退化为 DeltaNet）</h4></div>
+  <div class="code-note">结构说明：g 必须是显式接收快权重 W 的函数（线性 g 时式 (7) 的梯度步有闭式解，等价 DeltaNet 的 delta-rule 更新——论文脚注；g 非线性即 TTT-MLP 层）。与 δ-mem 篇的 gated delta rule 对照：KVB 是其"无门控"前辈。未经数值验证，标注示意性。</div>
+<pre class="code-block"><code><span class="kw">class</span> <span class="fn">KVBLayer</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d, eta=<span class="num">1e-2</span>):
+        super().__init__()
+        self.W0  = nn.Parameter(torch.eye(d) * <span class="num">0.1</span>)  <span class="cm"># 隐状态 = g 的权重 W [d,d]</span>
+        self.thK = nn.Linear(d, d, bias=<span class="kw">False</span>)   <span class="cm"># θK / θV / θQ：外环参数</span>
+        self.thV = nn.Linear(d, d, bias=<span class="kw">False</span>)
+        self.thQ = nn.Linear(d, d, bias=<span class="kw">False</span>)
+        self.eta = eta
+    <span class="kw">def</span> <span class="fn">_g</span>(self, x, W):                               <span class="cm"># g 显式接收快权重 W</span>
+        <span class="kw">return</span> W @ self.thK(x)                        <span class="cm"># 线性 g → DeltaNet（论文脚注①）</span>
+    <span class="kw">def</span> <span class="fn">step</span>(self, W, xt):                            <span class="cm"># 式(7)：一层 TTT 的内环</span>
+        pred = self._g(xt, W)                         <span class="cm"># g(θK x; W_{t-1})</span>
+        target = self.thV(xt)
+        loss = ((pred - target) ** <span class="num">2</span>).sum()          <span class="cm"># KVB 重建损失（逐层！）</span>
+        <span class="kw">return</span> W - self.eta * torch.autograd.grad(loss, W, create_graph=<span class="kw">True</span>)[<span class="num">0</span>]
+    <span class="kw">def</span> <span class="fn">forward</span>(self, X):                             <span class="cm"># X: [T, d]</span>
+        W = self.W0
+        outs = []
+        <span class="kw">for</span> xt <span class="kw">in</span> X:
+            W = self.step(W, xt)
+            outs.append(self._g(xt, W))               <span class="cm"># 式(8)：更新后输出（可简化为式9）</span>
+        <span class="kw">return</span> torch.stack(outs)</code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>D. 两阶段训练日程（附录 B）</h4></div>
+  <div class="code-note">自检：预训练 8K（DCLM，仅 ≥8K 文档）→ 按目标长度微调（Books，5% token、双倍 batch）；RoPE θ 按 log-linear 插值（1M/16K、2M/32K、5M/64K、10M/128K）。</div>
+<pre class="code-block"><code><span class="kw">for</span> stage, (data, ctx, theta) <span class="kw">in</span> enumerate([(dclm_ge8k, <span class="num">8</span>K, <span class="num">500</span>K), (books, target_ctx, rope_theta(target_ctx))]):
+    train(model, data, ctx=ctx, rope_theta=theta,
+          tokens=<span class="num">1.0</span> <span class="kw">if</span> stage==<span class="num">0</span> <span class="kw">else</span> <span class="num">0.05</span>,       <span class="cm"># 微调=预训练的 5%</span>
+          batch=<span class="num">1.0</span> <span class="kw">if</span> stage==<span class="num">0</span> <span class="kw">else</span> <span class="num">2.0</span>,        <span class="cm"># 微调双倍 batch</span>
+          inner=<span class="num">1</span>, outer=<span class="num">1</span>)                        <span class="cm"># 内环 b=1K，外环 grad-of-grad</span></code></pre>
+</section>
+
+<!-- 15 -->
+<section id="s15">
+  <div class="kicker">CHAPTER 15 · 结语</div>
+  <h2>结语</h2>
+  <p><strong>TTT-E2E = SWA 基线 + 测试时真梯度（内环）+ 二阶元学习（外环）。</strong>赢：损失 scaling 对齐全注意力、128K prefill 快 2.7×、纯标准基建；输：NIAH 0.06、训练 @8K 慢 3.4×、对数据/tokenizer 敏感。跟踪 Q1（容量论检验）、Q3（蒸馏初始化）、Q5（参数比定律）。</p>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献（关键条目取自论文 §4 及其参考文献；DeltaNet/GDN/Titans/RULER 已在前几篇核实）</h3>
+  <ol>
+    <li>Tandon, Dalal, Li, Koceja, Rød et al. <em>End-to-End Test-Time Training for Long Context</em>. <a href="https://arxiv.org/abs/2512.23675">arXiv:2512.23675</a>, 2025. 代码：github.com/test-time-training/e2e</li>
+    <li>Sun et al. <em>Learning to (Learn at Test Time)</em>. <a href="https://arxiv.org/abs/2310.13807">arXiv:2310.13807</a>, 2023；<em>RNNs with Expressive Hidden States</em>. <a href="https://arxiv.org/abs/2407.04620">arXiv:2407.04620</a>, 2024</li>
+    <li>Zhang et al. <em>Test-Time Training Done Right</em> (TTT-KVB). <a href="https://arxiv.org/abs/2505.23884">arXiv:2505.23884</a>, 2025；von Oswald et al. <em>MesaNet</em>. <a href="https://arxiv.org/abs/2506.05233">arXiv:2506.05233</a>, 2025</li>
+    <li>Behrouz et al. <em>Titans</em>. <a href="https://arxiv.org/abs/2501.00663">arXiv:2501.00663</a>；<em>Nested Learning</em>. NeurIPS 2025；Yang, Kautz, Hatamizadeh. <em>Gated DeltaNet</em>. ICLR 2025（已核实）</li>
+    <li>Clark et al. <em>Meta-Learning Fast Weight Language Models</em>. <a href="https://arxiv.org/abs/2212.02475">arXiv:2212.02475</a>, 2022；Irie et al. <em>Going Beyond Linear Transformers with Recurrent FWPs</em>. NeurIPS 2021；Schmidhuber. <em>Learning to Control Fast-Weight Memories</em>. Neural Computation 1992</li>
+    <li>Krause et al. <em>Dynamic Evaluation of Neural Sequence Models</em>. ICML 2018；Hardt &amp; Sun. <em>Test-Time Training on Nearest Neighbors</em>. <a href="https://arxiv.org/abs/2305.18466">arXiv:2305.18466</a>, 2023；Akyürek et al. <em>TTT for Abstract Reasoning</em>. 2024</li>
+    <li>Finn et al. <em>MAML</em>. ICML 2017；Hoffmann et al. <em>Chinchilla</em>. 2022；Li et al. <em>DCLM</em>. NeurIPS 2024；Hsieh et al. <em>RULER</em>. COLM 2024</li>
+    <li>Dao &amp; Gu. <em>Mamba 2</em>. 2024；Beltagy et al. <em>Longformer</em>. 2020；Gemma Team. <em>Gemma 2</em>. 2024</li>
+    <li>工作区联动：Feng et al. <em>In-Place Test-Time Training</em>（inplace ttt.pdf）；本系列 δ-mem / DnD / Doc-to-LoRA / RPG 解读博客</li>
+  </ol>
+  <div class="fin">TTT-E2E 深度解读 · Venus 希腊暖金配方 · 图表：论文原图精准裁剪 8 张（PyMuPDF + 验证闭环）+ 自绘内联 SVG · 公式 Eq(1)-(9) 全部提取自 PDF 核对 · 8 条取证均标注证据与出处 · 2026-09-28</div>
+</div></footer>
+</body>
+</html>

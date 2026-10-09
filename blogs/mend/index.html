@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEND 深度解读 | Fast Model Editing at Scale：把微调梯度改造成精准手术刀</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  /* === Venus · 配方 D 樱吹雪 === */
+  --bg-primary:#FFFBF8; --bg-secondary:#FFF5F0; --bg-tertiary:#F0E0D8;
+  --text-primary:#3A2828; --text-secondary:#6A5050; --text-muted:#A08888;
+  --color-primary:#8B4570; --color-secondary:#5A7B6B; --color-tertiary:#6B5B8B;
+  --accent-warm:#E86B8A; --accent-gold:#D4A87A; --accent-soft:#FFB7C5;
+  --font-display:'Noto Serif SC','Source Han Serif SC','Playfair Display',Georgia,serif;
+  --font-body:'Noto Sans SC','PingFang SC','Microsoft YaHei',-apple-system,sans-serif;
+  --font-hand:'Ma Shan Zheng','Zhi Mang Xing',cursive;
+  --font-mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:.4s;
+  --radius-lg:16px;
+  --shadow-sm:0 2px 8px rgba(139,69,112,.08); --shadow-md:0 4px 16px rgba(139,69,112,.12); --shadow-lg:0 8px 32px rgba(139,69,112,.16);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);color:var(--text-primary);background:var(--bg-primary);line-height:1.9;font-size:16.5px;
+  background-image:repeating-linear-gradient(0deg,rgba(139,69,112,.013) 0 1px,transparent 1px 30px),repeating-linear-gradient(90deg,rgba(139,69,112,.013) 0 1px,transparent 1px 30px)}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:900;letter-spacing:-.015em;color:var(--color-primary)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(255,251,248,.88);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--bg-tertiary);padding:0 24px}
+.nav-inner{max-width:1140px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:54px}
+.nav-logo{font-family:var(--font-display);font-weight:900;font-size:15px;color:var(--color-primary)}
+.nav-logo em{font-style:normal;color:var(--accent-warm)}
+.nav-links{display:flex;gap:11px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--text-muted);text-decoration:none;letter-spacing:.5px;position:relative;padding:3px 0}
+.nav-links a::after{content:'';position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--accent-warm);transform:scaleX(0);transform-origin:left;transition:transform var(--duration) var(--ease-out)}
+.nav-links a:hover{color:var(--color-primary)}.nav-links a:hover::after{transform:scaleX(1)}
+.hero{position:relative;min-height:94vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:110px 24px 70px;
+  background:linear-gradient(178deg,#fff2f5 0%,#FFFBF8 42%,#fff4f0 100%)}
+.hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 600px 300px at 12% 16%,rgba(232,107,138,.10),transparent 62%),
+             radial-gradient(ellipse 500px 300px at 88% 82%,rgba(107,91,139,.09),transparent 62%),
+             radial-gradient(ellipse 420px 240px at 78% 8%,rgba(212,168,122,.12),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:860px;text-align:center}
+.hero-badge{display:inline-flex;background:rgba(255,255,255,.74);backdrop-filter:blur(10px);border:1px solid rgba(139,69,112,.25);color:var(--color-primary);padding:7px 20px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:3px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
+.hero h1{font-size:clamp(2.3rem,6.6vw,4.2rem);line-height:1.16;margin:10px 0 12px}
+.hero h1 .mark{background:linear-gradient(135deg,var(--color-primary),#a85f8c);color:#FFFBF8;padding:.05em .28em;border-radius:.16em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.hero-tagline{font-family:var(--font-display);font-size:clamp(1rem,2.4vw,1.26rem);color:var(--color-secondary);font-weight:800;margin-bottom:8px}
+.hero-desc{font-size:14.5px;color:var(--text-secondary);max-width:680px;margin:0 auto 24px}
+.hero-art{margin:6px auto 4px;max-width:820px;width:100%;border-radius:24px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid rgba(139,69,112,.14);background:#fff8f4}
+.hero-art svg{display:block;width:100%;height:auto}
+.hero-caption{font-size:11.5px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:26px;border-radius:var(--radius-lg);overflow:hidden;border:2px solid var(--color-primary);position:relative}
+.hero-stats::before{content:'';position:absolute;inset:6px;border:1px solid rgba(232,107,138,.45);pointer-events:none;border-radius:10px}
+.hstat{background:linear-gradient(180deg,#fffbf7,#fdf0ea);padding:15px 8px;border-left:1px solid var(--bg-tertiary)}
+.hstat:first-child{border-left:none}
+.hstat b{display:block;font-family:var(--font-display);font-size:1.5rem;color:var(--color-primary)}
+.hstat span{font-size:11px;color:var(--text-secondary)}
+.scroll-hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-size:10.5px;letter-spacing:3px;color:var(--text-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.7s infinite;font-size:14px}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+main{max-width:880px;margin:0 auto;padding:60px 24px 30px}
+section{margin-bottom:72px;position:relative}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--accent-warm);font-weight:800;margin-bottom:8px;font-family:var(--font-mono)}
+h2{font-size:clamp(1.5rem,3.6vw,2rem);margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--bg-tertiary);position:relative}
+h2::after{content:'';position:absolute;left:0;bottom:-2px;width:64px;height:2px;background:var(--accent-warm)}
+h3{font-size:1.14rem;margin:26px 0 10px;color:var(--color-tertiary)}
+p{margin-bottom:13px;color:var(--text-secondary)}
+p strong,li strong{color:var(--text-primary)}
+ul,ol{margin:0 0 13px 22px;color:var(--text-secondary)}
+li{margin-bottom:6px}
+figure{margin:24px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid var(--bg-tertiary);box-shadow:var(--shadow-md);background:#fff}
+figcaption{font-size:12.5px;color:var(--text-muted);margin-top:9px;line-height:1.75;text-align:left}
+figcaption b{color:var(--color-tertiary)}
+.svgbox{background:#fff;border:1px solid var(--bg-tertiary);border-radius:var(--radius-lg);padding:16px 10px;margin:24px 0;box-shadow:var(--shadow-sm)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#ffeef2,#ffd9e2);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--accent-warm);box-shadow:var(--shadow-sm)}
+.insight-box .tag{background:var(--accent-warm);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.insight-box h4{margin:10px 0 6px;color:#7d2c50;font-size:1.03rem}
+.insight-box p{color:#8f4364;margin-bottom:5px}
+.critique-box{background:linear-gradient(135deg,#efe9f6,#e2d9f0);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--color-tertiary);box-shadow:var(--shadow-sm)}
+.critique-box .tag{background:var(--color-tertiary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.critique-box h4{margin:10px 0 6px;color:#4a3d70;font-size:1rem}
+.critique-box p{color:#5a4d80;margin-bottom:5px;font-size:14.5px}
+.research-question{background:#fff;border:1px solid rgba(90,123,107,.4);border-radius:var(--radius-lg);padding:20px 22px;margin:20px 0;box-shadow:var(--shadow-sm);transition:transform var(--duration) var(--ease-out),box-shadow var(--duration)}
+.research-question:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
+.research-question .tag{background:var(--color-secondary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:800}
+.research-question h4{margin:10px 0 6px;color:#3d584c}
+.research-question p{color:#4d6a5c;margin-bottom:7px;font-size:14.5px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow-sm)}
+th{background:linear-gradient(135deg,var(--color-primary),#a85f8c);color:#fffbf8;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--bg-secondary);text-align:center;color:var(--text-secondary)}
+tr:last-child td{border-bottom:none}
+td.hl{background:#fdeef3;font-weight:700;color:var(--color-primary)}
+td.best{background:#e2efe8;font-weight:800;color:#2f4a44}
+td.bad{background:#f6e0e6;color:#7d2c50}
+.mathcard{background:#fff;border:1px solid var(--bg-tertiary);border-left:4px solid var(--color-primary);border-radius:14px;padding:18px 22px;margin:20px 0;overflow-x:auto;box-shadow:var(--shadow-sm)}
+.mathcard h4{font-size:1rem;color:var(--color-primary);margin-bottom:7px}
+.mathcard .note{font-size:13.5px;color:var(--text-muted)}
+.mathcard .cf{font-size:13.5px;color:#7d2c50;background:#fdeef3;border-radius:8px;padding:8px 12px;margin-top:10px}
+.code-head{display:flex;gap:10px;align-items:center;margin:24px 0 8px;flex-wrap:wrap}
+.code-head .cred{font-size:11px;font-weight:700;padding:3px 12px;border-radius:10px;color:#fff}
+.cred.run{background:var(--color-secondary)}.cred.ill{background:var(--accent-gold)}
+.code-note{background:#fdeef3;border:1px dashed var(--bg-tertiary);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--color-primary);margin-bottom:8px}
+pre.code-block{background:#3a2a34;color:#f2e8ec;border-radius:14px;padding:18px 20px;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);margin-bottom:8px}
+pre.code-block .kw{color:#f0b8cc;font-weight:700}
+pre.code-block .fn{color:#c9e0b8}
+pre.code-block .cm{color:#a08898;font-style:italic}
+pre.code-block .num{color:#f2c89a}
+.roadmap{counter-reset:step}
+.step{position:relative;padding:0 0 24px 46px;counter-increment:step}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--color-primary),var(--accent-warm));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step::after{content:'';position:absolute;left:15px;top:36px;bottom:0;width:2px;background:var(--bg-tertiary)}
+.step:last-child::after{display:none}
+.step h4{font-size:1rem;margin-bottom:5px}
+.step p{font-size:14.5px}
+footer{background:#3a2a34;color:#e0ccd4;padding:50px 24px 58px;margin-top:30px}
+footer .inner{max-width:880px;margin:0 auto}
+footer h3{color:#fffbf8;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.85}
+footer a{color:var(--accent-soft);text-decoration:none}
+footer .fin{margin-top:24px;font-size:12px;color:#a08898;border-top:1px solid #54404c;padding-top:16px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">MEND <em>·</em> 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">定义</a><a href="#s2">三条旧路</a><a href="#s3">rank-1</a><a href="#s4">架构</a><a href="#s5">训练</a>
+    <a href="#s6">大模型</a><a href="#s7">批量</a><a href="#s8">消融</a><a href="#s9">批判</a><a href="#s10">谱系</a>
+    <a href="#s11">科研问题</a><a href="#s12">路线图</a><a href="#s13">结语</a>
+  </div>
+</div></nav>
+
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">ICLR 2022 · arXiv:2110.11309 · STANFORD</div>
+    <h1>MEND：<span class="mark">把微调梯度</span><br>改造成精准手术刀</h1>
+    <p class="hero-tagline">模型编辑的梯度分解 · 一条样本修正一个错误 · 唯一编辑 10B+ 模型的 2022 年方案</p>
+    <p class="hero-desc">给它一对样本（问句，新答案"Boris Johnson"），MEND 把微调梯度改造成只修正这个错误、不伤及无辜、还能泛化到同义改写的参数更新。全部秘密藏在一条代数事实里：MLP 的梯度是 rank-1 的。</p>
+    <div class="hero-art">
+      <svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="樱吹雪风：梯度手术刀修正神经网络">
+        <defs>
+          <linearGradient id="sg1" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#E86B8A" stop-opacity=".8"/><stop offset="1" stop-color="#8B4570" stop-opacity=".55"/>
+          </linearGradient>
+          <filter id="sgb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+        </defs>
+        <rect width="1200" height="520" fill="#fff6f2"/>
+        <ellipse cx="260" cy="130" rx="270" ry="80" fill="#FFB7C5" opacity=".2" filter="url(#sgb)"/>
+        <ellipse cx="920" cy="390" rx="300" ry="90" fill="#8B4570" opacity=".08" filter="url(#sgb)"/>
+        <g fill="#E86B8A" opacity=".5">
+          <circle cx="180" cy="70" r="4"/><circle cx="330" cy="45" r="3"/><circle cx="520" cy="80" r="3.5"/>
+          <circle cx="700" cy="50" r="3"/><circle cx="1040" cy="70" r="4"/><circle cx="1130" cy="130" r="3"/>
+          <path d="M 180 70 q 6 -8 12 0 q -6 8 -12 0" fill="#FFB7C5"/><path d="M 700 50 q 6 -8 12 0 q -6 8 -12 0" fill="#FFB7C5"/>
+        </g>
+        <g transform="translate(70,150)">
+          <rect x="0" y="0" width="240" height="240" rx="16" fill="#fdf2f5" stroke="#8B4570" stroke-width="3"/>
+          <text x="120" y="32" text-anchor="middle" font-weight="800" fill="#8B4570" font-size="14">预训练模型 p_θ</text>
+          <g stroke="#c9a5b8" stroke-width="2">
+            <line x1="55" y1="90" x2="120" y2="130"/><line x1="55" y1="130" x2="120" y2="90"/><line x1="55" y1="130" x2="120" y2="170"/><line x1="55" y1="170" x2="120" y2="130"/>
+            <line x1="120" y1="90" x2="185" y2="130"/><line x1="120" y1="130" x2="185" y2="90"/><line x1="120" y1="130" x2="185" y2="170"/><line x1="120" y1="170" x2="185" y2="130"/>
+            <line x1="55" y1="90" x2="120" y2="170"/><line x1="55" y1="170" x2="120" y2="90"/>
+          </g>
+          <g fill="#c4b0bd"><circle cx="55" cy="90" r="10"/><circle cx="55" cy="130" r="10"/><circle cx="55" cy="170" r="10"/><circle cx="120" cy="90" r="10"/><circle cx="120" cy="130" r="10"/><circle cx="120" cy="170" r="10"/><circle cx="185" cy="90" r="10"/><circle cx="185" cy="130" r="10"/><circle cx="185" cy="170" r="10"/></g>
+          <g stroke="#E86B8A" stroke-width="3"><line x1="55" y1="90" x2="120" y2="130"/><line x1="120" y1="170" x2="185" y2="130"/></g>
+          <text x="120" y="222" text-anchor="middle" fill="#A08888" font-size="12">"UK 首相？" → Theresa May ✗</text>
+        </g>
+        <path d="M 320 270 C 400 240, 440 240, 490 255" fill="none" stroke="url(#sg1)" stroke-width="5" stroke-linecap="round"/>
+        <g transform="translate(500,140)">
+          <rect x="0" y="0" width="150" height="240" rx="14" fill="#fff" stroke="#E86B8A" stroke-width="2.5"/>
+          <text x="75" y="34" text-anchor="middle" font-weight="900" fill="#C4784A" font-size="13" font-family="'JetBrains Mono',monospace">∇W₁</text>
+          <text x="75" y="76" text-anchor="middle" font-weight="900" fill="#8B4570" font-size="13" font-family="'JetBrains Mono',monospace">∇W₂</text>
+          <text x="75" y="118" text-anchor="middle" font-weight="900" fill="#6B5B8B" font-size="13" font-family="'JetBrains Mono',monospace">∇Wₖ</text>
+          <text x="75" y="160" text-anchor="middle" fill="#A08888" font-size="11.5">原始微调梯度</text>
+          <text x="75" y="182" text-anchor="middle" fill="#A08888" font-size="11.5">rank-1 / 样本</text>
+          <text x="75" y="212" text-anchor="middle" fill="#C44D3F" font-weight="800" font-size="12">d×d 不可直接映射</text>
+        </g>
+        <path d="M 650 260 C 690 260, 700 260, 728 260" fill="none" stroke="#8B4570" stroke-width="4.5" marker-end="url(#sga)"/>
+        <defs><marker id="sga" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="#8B4570"/></marker></defs>
+        <g transform="translate(738,140)">
+          <rect x="0" y="0" width="180" height="240" rx="14" fill="#8B4570"/>
+          <text x="90" y="38" text-anchor="middle" font-weight="900" fill="#fff" font-size="16">MEND</text>
+          <text x="90" y="58" text-anchor="middle" fill="#ffd9e2" font-size="11">g₁, g₂, …, gₖ</text>
+          <g fill="none" stroke="#FFB7C5" stroke-width="2.5">
+            <circle cx="90" cy="100" r="22"/><circle cx="90" cy="160" r="22"/><circle cx="90" cy="220" r="22"/>
+          </g>
+          <text x="90" y="105" text-anchor="middle" fill="#fff" font-size="12" font-weight="800">g₁</text>
+          <text x="90" y="165" text-anchor="middle" fill="#fff" font-size="12" font-weight="800">g₂</text>
+          <text x="90" y="225" text-anchor="middle" fill="#fff" font-size="12" font-weight="800">gₖ</text>
+          <text x="90" y="252" text-anchor="middle" fill="#ffd9e2" font-size="10.5" font-family="'JetBrains Mono',monospace">输入 u,δ → 输出 ũ,δ̃</text>
+        </g>
+        <path d="M 918 260 C 950 260, 960 260, 985 260" fill="none" stroke="#8B4570" stroke-width="4.5" marker-end="url(#sga)"/>
+        <g transform="translate(995,150)">
+          <rect x="0" y="0" width="150" height="220" rx="14" fill="#fff" stroke="#5A7B6B" stroke-width="3"/>
+          <text x="75" y="34" text-anchor="middle" font-weight="800" fill="#3d584c" font-size="13">编辑后模型</text>
+          <g stroke="#5A7B6B" stroke-width="2">
+            <line x1="35" y1="80" x2="75" y2="115"/><line x1="75" y1="115" x2="115" y2="80"/><line x1="35" y1="115" x2="75" y2="155"/><line x1="75" y1="155" x2="115" y2="115"/>
+          </g>
+          <g fill="#7da893"><circle cx="35" cy="80" r="9"/><circle cx="35" cy="115" r="9"/><circle cx="35" cy="150" r="9"/><circle cx="75" cy="115" r="9"/><circle cx="115" cy="80" r="9"/><circle cx="115" cy="115" r="9"/><circle cx="115" cy="150" r="9"/></g>
+          <g stroke="#E86B8A" stroke-width="3.5"><line x1="35" y1="115" x2="75" y2="115"/></g>
+          <text x="75" y="196" text-anchor="middle" fill="#3d584c" font-size="12">"UK 首相？" → Boris ✓</text>
+          <text x="75" y="214" text-anchor="middle" fill="#A08888" font-size="11">"Messi 效力球队？" → 不变 ✓</text>
+        </g>
+        <g transform="translate(60,470)" font-family="'Ma Shan Zheng',cursive" fill="#8B4570">
+          <text x="0" y="0" font-size="30" opacity=".9">一条样本，一次前向，一处修正</text>
+        </g>
+      </svg>
+      <p class="hero-caption">博客主视觉（手绘 SVG）：左侧模型答错，中间是逐层的原始微调梯度 ∇W（rank-1），经 MEND 编辑网络 g 变换为 ∇̃W 注入右侧模型——答案修正、无关输入不动。</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><b>0.89</b><span>编辑成功率 @T5-XXL 11B</span></div>
+      <div class="hstat"><b>唯一</b><span>成功编辑 10B+ 的方案（2022）</span></div>
+      <div class="hstat"><b>O(d)</b><span>编辑器参数（梯度分解）</span></div>
+      <div class="hstat"><b>96%</b><span>一次同时应用 25 条编辑</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 定义</div>
+  <h2>模型编辑的四条判据与两个指标</h2>
+  <p>大模型会错，错了的还会过时（2019 年训练的模型答"英国首相"给 Theresa May）。全量重训不现实，于是需要<strong>模型编辑</strong>：给定一对样本 $(x_e, y_e)$（"英国首相是谁？"/"Boris Johnson"），改动参数使模型答对 $x_e$、答对它的同义改写、且<strong>不影响无关输入</strong>。论文把合格编辑拆成四条判据，并给出可测指标：</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <g font-size="13" text-anchor="middle">
+      <rect x="30" y="30" width="200" height="90" rx="12" fill="#fff" stroke="#8B4570" stroke-width="2.5"/>
+      <text x="130" y="60" font-weight="900" fill="#8B4570">可靠 Reliable</text>
+      <text x="130" y="84" fill="#6A5050" font-size="11.5">编辑后模型对 x_e 答 y_e</text>
+      <text x="130" y="103" fill="#A08888" font-size="11">例：UK 首相 → Boris Johnson</text>
+      <rect x="250" y="30" width="200" height="90" rx="12" fill="#fff" stroke="#5A7B6B" stroke-width="2.5"/>
+      <text x="350" y="60" font-weight="900" fill="#3d584c">局部 Local</text>
+      <text x="350" y="84" fill="#6A5050" font-size="11.5">无关输入 x_loc 的输出分布不变</text>
+      <text x="350" y="103" fill="#A08888" font-size="11">例：Messi 效力球队 → 不动</text>
+      <rect x="470" y="30" width="200" height="90" rx="12" fill="#fff" stroke="#6B5B8B" stroke-width="2.5"/>
+      <text x="570" y="60" font-weight="900" fill="#6B5B8B">泛化 General</text>
+      <text x="570" y="84" fill="#6A5050" font-size="11.5">等价邻域 N(x_e,y_e) 内答对</text>
+      <text x="570" y="103" fill="#A08888" font-size="11">例：UK PM? → Boris Johnson</text>
+      <rect x="690" y="30" width="200" height="90" rx="12" fill="#fff" stroke="#C4784A" stroke-width="2.5"/>
+      <text x="790" y="60" font-weight="900" fill="#C4784A">高效 Efficient</text>
+      <text x="790" y="84" fill="#6A5050" font-size="11.5">编辑器训练 + 单次编辑的</text>
+      <text x="790" y="103" fill="#A08888" font-size="11">时间与显存开销小</text>
+    </g>
+    <g font-size="12.5" fill="#5C544A">
+      <text x="30" y="165" font-weight="800" fill="#2A2520">两个指标：</text>
+      <text x="30" y="192">· <tspan font-weight="700" fill="#8B4570">ES（编辑成功率，式 1）</tspan> = 在 x_e 与等价邻域均匀采样上的平均答对率——同时概括可靠与泛化；</text>
+      <text x="30" y="219">· <tspan font-weight="700" fill="#8B4570">DD（drawdown，抽取式为精度降幅 / 生成式为困惑度增幅）</tspan> = 编辑后模型在其余数据上的性能退化——量化局部性。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S1（自绘）</b>：四判据与两指标。整篇论文的所有方法对比都落在这两个数轴上——ES 越高越好，DD 越低越好。</figcaption>
+  </div>
+  <div class="mathcard"><h4>式 (1)：编辑成功率 ES（逐字核对）</h4>
+  $$\mathrm{ES} = \mathbb{E}_{x'_e,y'_e \sim \mathcal{N}(x_e,y_e)\,\cup\,\{(x_e,y_e)\}}\ \mathbb{1}\big\{\arg\max_y\ p_{\theta_e}(y|x'_e) = y'_e\big\}$$
+  <p class="note">$\mathcal{N}(x_e,y_e)$：等价邻域——编辑后模型应当泛化到的样本集（如 "Who is the UK PM?"）。局部性用编辑前后模型在 $x_{loc}$ 上的 KL 散度度量。</p></div>
+  <p><strong>命名澄清（重要）</strong>：文件名"Fast Model Editing at Scale"常被与 MEMIT（Mass-Editing Memory in a Transformer, Meng et al. 2023）混淆——这是两篇不同的论文、两条不同的技术路线。本文是 <strong>MEND</strong>（Model Editor Networks with Gradient Decomposition, Mitchell et al., ICLR 2022）：<strong>学习一个编辑器网络</strong>来变换微调梯度；MEMIT 属于后来的 locate-then-edit 闭式解路线（不训练编辑器，直接解出权重更新），谱系对照见第 10 章。</p>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 旧路</div>
+  <h2>三条旧路的失败模式</h2>
+  <p>2022 年之前的编辑方案分三类，各自死法不同：</p>
+  <ul>
+    <li><strong>微调（FT）</strong>：单样本微调过拟合——局部性与泛化双输。加 KL 约束（FT+KL，"oracle"基线：测试时可访问训练集来算 KL）能救局部性（GPT-Neo 的困惑度退化 0.195→0.026），但编辑成功率反降（0.55→0.40）——约束压住了泛化所需的参数移动。</li>
+    <li><strong>ENN（Editable Neural Networks, ICLR 2020）</strong>：MAML 式双层优化，把"可编辑性"烧进模型参数本身（<strong>内在可编辑</strong>）。致命伤是显存：训练时要保留原模型副本约束局部性、要为全模型算激活与梯度——Figure 3 实测 T5-2.8B 上 ENN 需要 ~77GB（MEND/KE 仅 ~15GB），11B 直接不可跑。</li>
+    <li><strong>KE（KnowledgeEditor, EMNLP 2021）</strong>：RNN 超网络吃编辑样本、输出梯度上的 rank-1 掩码与偏移（$\theta' = \theta - \alpha(m \odot \nabla W) + b$）——<strong>外在可编辑</strong>、显存友好，但在大模型上整体失效（编辑成功率 0.00-0.04）。</li>
+  </ul>
+  <figure>
+    <img src="figures/fig3_vram.png" alt="论文 Figure 3：三种编辑器的训练显存对比" style="max-width:480px">
+    <figcaption><b>图 1（论文 Figure 3 精准裁剪）</b>：T5 系训练显存。ENN 随规模爆炸（2.8B 时约 77GB，图内读数），MEND 与 KE 单卡可训（11B 用 bfloat16×2 估算）。</figcaption>
+  </figure>
+  <figure>
+    <img src="figures/fig4_vram_gpt.png" alt="论文 Figure 4：GPT 系模型的训练显存对比" style="max-width:760px">
+    <figcaption><b>图 2（论文 Figure 4 精准裁剪）</b>：GPT 系（float32）同样的显存分化——ENN 的增长远快于 MEND/KE。</figcaption>
+  </figure>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>内在可编辑 vs 外在可编辑：一个谱系的原点</h4>
+    <p>ENN 把编辑能力编码进模型参数（intrinsic），MEND/KE 用独立于模型的参数提供编辑能力（extrinsic）。这个区分决定了三件事：<strong>①能否保证编辑前后模型一致</strong>（ENN 不能——它改了基座，必须留原模型副本做约束；MEND 冻结基座）；<strong>②训练成本</strong>（ENN 要算全模型梯度；MEND 只算被编辑层的）；<strong>③能否复用</strong>（外在编辑器理论上可服务多个基座，内在的必须每个模型重训）。后来的编辑文献基本全走了外在路线。</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 核心洞察</div>
+  <h2>梯度是 rank-1 的：把 O(d²) 映射压成 O(d)→O(d)</h2>
+  <p>直接参数化"梯度→参数更新"的映射不可行：单个 $d\times d$ 权重矩阵的梯度有 $d^2$ 个分量（$d\approx 10^4$ 时即 $10^8$），即使 $g$ 取秩-$r$ 线形也要 $r(d^2+2d)$ 参数。MEND 的全部杠杆是一条线性代数事实：</p>
+  <div class="mathcard"><h4>引理（附录 D 证明链）：单样本 MLP 梯度是 rank-1 外积</h4>
+  $$\frac{\partial L}{\partial W^{ij}_\ell} = \delta^{i}_{\ell+1}\, u^j_\ell \quad\Longleftrightarrow\quad \nabla_{W_\ell} L = \delta^{\ell+1}\, u_\ell^\top$$
+  <p class="note">$u_\ell$：第 $\ell$ 层的输入（激活）；$\delta^{\ell+1}$：损失对第 $\ell+1$ 层预激活的梯度（标准反传的副产品）。证明一步：$\partial z^k_{\ell+1}/\partial W^{ij}_\ell = 0\ (k \neq i)$，链式法则只剩一项。<strong>batch/序列元素各自独立变换后求和</strong>——这就是全部技巧的入口。</p></div>
+  <div class="svgbox">
+  <svg viewBox="0 0 920 300" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="r3" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#8B4570"/></marker></defs>
+    <g font-size="12.5">
+      <text x="30" y="30" font-weight="800" fill="#2A2520">参数量账本（d ≈ 10⁴）</text>
+      <g text-anchor="middle">
+        <rect x="30" y="50" width="250" height="100" rx="12" fill="#fdeef3" stroke="#E86B8A" stroke-width="2.5"/>
+        <text x="155" y="80" font-weight="900" fill="#8c2c50">朴素映射 g: d²→d²</text>
+        <text x="155" y="104" fill="#6A5050" font-size="12">参数 O(d⁴)（MLP 版）</text>
+        <text x="155" y="126" fill="#A08888" font-size="11.5">10⁴ 维 → 10⁸ 输入输出：不可行</text>
+        <rect x="330" y="50" width="250" height="100" rx="12" fill="#fff" stroke="#C4784A" stroke-width="2.5"/>
+        <text x="455" y="76" font-weight="900" fill="#9a5a28">输出 rank-1 的线性 g</text>
+        <text x="455" y="98" fill="#6A5050" font-size="12">d²·2d = 2d³ ≈ 2×10¹² 参数</text>
+        <text x="455" y="118" fill="#6A5050" font-size="12">低秩化后仍需 r(d²+2d)</text>
+        <text x="455" y="136" fill="#A08888" font-size="11.5">r=1 已 ~10⁸：仍不可行</text>
+        <rect x="630" y="50" width="250" height="100" rx="12" fill="#e2efe8" stroke="#5A7B6B" stroke-width="3"/>
+        <text x="755" y="80" font-weight="900" fill="#2f4a44">MEND：先分解梯度</text>
+        <text x="755" y="104" fill="#6A5050" font-size="12">g: (u, δ) ↦ (ũ, δ̃)，参数 O(d)</text>
+        <text x="755" y="126" fill="#A08888" font-size="11.5">2d 维进、2d 维出：10⁴ 量级 ✓</text>
+      </g>
+      <line x1="280" y1="100" x2="326" y2="100" stroke="#8B4570" stroke-width="3" marker-end="url(#r3)"/>
+      <line x1="580" y1="100" x2="626" y2="100" stroke="#8B4570" stroke-width="3" marker-end="url(#r3)"/>
+      <text x="450" y="185" font-weight="800" fill="#2A2520" font-size="13">关键：不做"矩阵→矩阵"的映射，而是切进梯度的秩-1（rank-1：整块矩阵 = 一个列向量与一个行向量的外积）因子里做"向量→向量"的映射</text>
+      <text x="450" y="212" fill="#6A5050" font-size="12.5">∇W = δ uᵀ 的两个因子各有 d 维——编辑器在因子空间工作，输出两个"伪因子"（pseudoactivation ũ 与 pseudodelta δ̃），</text>
+      <text x="450" y="236" fill="#6A5050" font-size="12.5">重构编辑量 ∇̃W = Σᵢ δ̃ᵢ ũᵢᵀ（式 2）。对 batch/序列逐元素变换再求和——单次编辑的实际秩 ≈ 序列长度量级（10-100）。</text>
+      <text x="450" y="266" fill="#8c2c50" font-size="12" font-weight="700">这个"秩即容量"的观察，与 Doc-to-LoRA（Doc-to-LoRA 解读篇）的 rank-r·K 拼接是同一原理的两次出现（第 11 章 Q1）。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S2（自绘）</b>：参数量账本。梯度分解把不可行的映射压进可行域——这是论文标题里 "at Scale" 的全部代价支付方式。</figcaption>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · 架构</div>
+  <h2>MEND 架构：恒等初始化的残差梯度变换器</h2>
+  <figure>
+    <img src="figures/fig2_arch.png" alt="论文 Figure 2：MEND 架构">
+    <figcaption><b>图 2（论文 Figure 2 精准裁剪）</b>：两个级联块，均初始化为恒等函数。左——输入 {δ^{ℓ+1}, u_ℓ}（rank-1 梯度的两个因子）；右——输出新的 rank-1 更新 ∇̃W_ℓ，加到 W_ℓ 上完成编辑。</figcaption>
+  </figure>
+  <div class="mathcard"><h4>式 (3a,b)：编辑器的前向（逐字核对）</h4>
+  $$h_\ell = z_\ell + \sigma\big(s^1_\ell \odot (U_1 V_1 z_\ell + b) + o^1_\ell\big),\qquad g(z_\ell) = h_\ell + \sigma\big(s^2_\ell \odot U_2 V_2 h_\ell + o^2_\ell\big)$$
+  <p class="note">$z_\ell = \mathrm{concat}(u_\ell, \delta^{\ell+1})$；$\sigma$ = ReLU（保证 $\sigma(0)=0$，恒等初始化的前提）；$U_jV_j$ 是低秩分解——MEND 自身参数保持 $O(d)$；$s^j_\ell, o^j_\ell$ 是逐层的 FiLM 式缩放与偏移（FiLM：用外部参数对特征做逐维调制，给共享的编辑器一点逐层特化）。最终编辑：$\tilde W = W_\ell - \alpha_\ell \tilde\nabla W_\ell$，$\alpha_\ell$ 为可学习的逐层标量步长。</p></div>
+  <p>三个容易被当成"工程细节"、实则是命门的设计（§8 消融将证明）：</p>
+  <ul>
+    <li><strong>恒等初始化</strong>：$U_1, U_2$ 置零、$V_1, V_2$ Xavier——初始时 $g$ = 恒等函数，编辑从"原始微调梯度"这个已知的合理起点出发，而不是从随机变换出发；</li>
+    <li><strong>输入归一化</strong>：$u_\ell$ 与 $\delta^{\ell+1}$ 的量纲相差几个数量级（病态条件），逐维归一化到零均值单位方差（统计在编辑训练集上算）——消融显示去掉它编辑成功率从 0.86 崩到 0.02；</li>
+    <li><strong>按形状共享参数</strong>：每种权矩阵形状共享一套编辑器（MLP 两层 → 只需 2 套），FiLM 提供 per-layer 特化——省参数的代价极小（Table 6）。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>"恒等初始化 + 残差"是一切学习型变换器的通用安全带</h4>
+    <p>把 $g$ 初始化为恒等，等价于声明：<strong>未经训练的编辑器必须退化为普通微调</strong>——最坏情况就是已知的合理行为。这与 ResNet 的恒等残差、LoRA 的 B=0 初始化、D2L 的两阶段训练是同一个设计哲学：<em>新能力从旧能力的恒等扰动中生长</em>。消融给出的数字（去掉恒等初始化：Wikitext ES 0.86→0.27、训练慢 ~10×）量化了这条安全带的价值。</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 训练</div>
+  <h2>训练：两个损失、零高阶梯度</h2>
+  <div class="mathcard"><h4>式 (4a,b) + 总损失（逐字核对）</h4>
+  $$L_e = -\log p_{\theta_{\tilde W}}(y'_e \mid x'_e),\qquad L_{loc} = \mathrm{KL}\big(p_{\theta_W}(\cdot|x_{loc})\ \|\ p_{\theta_{\tilde W}}(\cdot|x_{loc})\big)$$
+  $$L_{\mathrm{MEND}} = c_e L_e(\theta_{\tilde W}) + L_{loc}(\theta_W, \theta_{\tilde W}),\qquad c_e = 0.1$$
+  <p class="note">$L_e$ 在<strong>等价邻域样本</strong> $(x'_e,y'_e)$ 上算（不是编辑样本本身）——直接优化泛化；$L_{loc}$ 在独立采样的无关输入上算编辑前后分布的 KL。Adam 优化编辑器参数 $\phi$。<strong>没有高阶梯度</strong>：预编辑参数 $\theta$ 不被优化，$\tilde W$ 对 $\phi$ 的梯度是一阶的。</p></div>
+  <p>编辑的应用过程（Alg 2）同样是一阶的：一次前向缓存各层输入 $u_\ell$ → 一次反传得到 $\delta^{\ell+1}$ → 编辑器变换出 $(\tilde u, \tilde\delta)$ → 逐层外积得 $\tilde\nabla W$。编辑只作用于<strong>最后 2 个 encoder+decoder 块的 MLP</strong>（T5/BART，8 个矩阵）或<strong>最后 3 块的 MLP</strong>（GPT/BERT，6 个矩阵）——附录 E 消融显示编辑注意力层一致更差（GPT-J 上 ES 0.54 vs 0.88），与 Geva et al. 2021 的"FFN 是键值记忆"结论互证。</p>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 主结果 I</div>
+  <h2>大模型：唯一能编辑 10B+ 的方案</h2>
+  <table>
+    <tr><th rowspan="2">编辑器</th><th colspan="2">GPT-Neo (2.7B) Wikitext</th><th colspan="2">GPT-J (6B) Wikitext</th><th colspan="2">T5-XL (2.8B) zsRE</th><th colspan="2">T5-XXL (11B) zsRE</th></tr>
+    <tr><th>ES ↑</th><th>ppl.DD ↓</th><th>ES ↑</th><th>ppl.DD ↓</th><th>ES ↑</th><th>acc.DD ↓</th><th>ES ↑</th><th>acc.DD ↓</th></tr>
+    <tr><td>FT</td><td>0.55</td><td class="bad">0.195</td><td>0.80</td><td>0.125</td><td>0.58</td><td class="best">&lt;0.001</td><td>0.87</td><td class="best">&lt;0.001</td></tr>
+    <tr><td>FT+KL</td><td>0.40</td><td>0.026</td><td>0.36</td><td>0.109</td><td>0.55</td><td class="best">&lt;0.001</td><td>0.85</td><td class="best">&lt;0.001</td></tr>
+    <tr><td>KE</td><td class="bad">0.00</td><td>0.137</td><td class="bad">0.01</td><td>0.068</td><td class="bad">0.03</td><td>&lt;0.001</td><td class="bad">0.04</td><td>&lt;0.001</td></tr>
+    <tr><td class="hl">MEND</td><td class="best">0.81</td><td>0.057</td><td class="best">0.88</td><td class="best">0.031</td><td class="best">0.88</td><td>0.001</td><td class="best">0.89</td><td>&lt;0.001</td></tr>
+  </table>
+  <p>三个读数：<strong>① KE 在大模型上整体崩溃</strong>（0.00-0.04）——论文的假说是 rank-1 掩码的信息容量不足以承载 10-token 的编辑标签（F3：未做隔离实验）；<strong>② FT+KL 的局部性-成功率跷跷板</strong>：KL 约束救 DD 但压 ES；<strong>③ MEND 的 4 个 ES 列全部最优</strong>（DD 列中 T5 两列由 FT 持有），且超参跨所有模型与数据集完全一致。一个必须标注的脚注（F1）：T5 系的 DD 低得反常，论文自己解释——这些 T5 可能未在 NQ 上完全收敛，编辑实际充当了"任务规格说明"，<strong>11B 头条的局部性度量因此偏松</strong>。</p>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 主结果 II</div>
+  <h2>小模型与批量编辑：真实负载下的分野</h2>
+  <p>小模型上（BERT-base/BART-base/distilGPT-2）ENN 与 MEND 打平（ENN 在 Wikitext 上 0.93 > 0.86 反超）——<strong>算力不是约束时，内在可编辑的额外收益才显现</strong>。分野出现在三个真实负载上：</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 310" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxm1" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#A08888"/></pattern></defs>
+    <text x="30" y="26" font-size="13.5" font-weight="800" fill="#2A2520">批量编辑（BART-base，zsRE）：同时应用 k 条编辑的编辑成功率（1 柱格 = 7px）</text>
+    <g font-size="12" text-anchor="middle">
+      <g font-weight="700" fill="#5C544A"><text x="110" y="56">k=1</text><text x="290" y="56">k=5</text><text x="470" y="56">k=25</text><text x="650" y="56">k=75</text><text x="820" y="56">k=125</text></g>
+      <g>
+        <rect x="84" y="78" width="52" height="212" fill="url(#pxm1)"/><text x="110" y="70" font-weight="800" fill="#4A4A4A">ENN 0.99</text>
+        <rect x="144" y="80" width="52" height="210" fill="#8B4570"/><text x="170" y="72" font-weight="900" fill="#8B4570">0.98</text>
+        <rect x="264" y="94" width="52" height="196" fill="url(#pxm1)"/><text x="290" y="86" font-weight="800" fill="#4A4A4A">0.94</text>
+        <rect x="324" y="92" width="52" height="198" fill="#8B4570"/><text x="350" y="84" font-weight="900" fill="#8B4570">0.97</text>
+        <rect x="444" y="180" width="52" height="110" fill="url(#pxm1)"/><text x="470" y="172" font-weight="800" fill="#4A4A4A">0.35</text>
+        <rect x="504" y="98" width="52" height="192" fill="#8B4570"/><text x="530" y="90" font-weight="900" fill="#8B4570">0.89</text>
+        <rect x="624" y="216" width="52" height="74" fill="url(#pxm1)"/><text x="650" y="208" font-weight="800" fill="#4A4A4A">0.16</text>
+        <rect x="684" y="122" width="52" height="168" fill="#8B4570"/><text x="710" y="114" font-weight="900" fill="#8B4570">0.78</text>
+        <rect x="784" y="236" width="52" height="54" fill="url(#pxm1)"/><text x="810" y="228" font-weight="800" fill="#4A4A4A">0.11</text>
+        <rect x="838" y="132" width="40" height="158" fill="#8B4570"/><text x="858" y="124" font-weight="900" fill="#8B4570">0.67</text>
+      </g>
+      <line x1="60" y1="290" x2="884" y2="290" stroke="#2A2520" stroke-width="2.5"/>
+      <g fill="#4A4A4A" font-size="11.5"><rect x="300" y="300" width="14" height="14" fill="url(#pxm1)"/><text x="322" y="311">ENN（灰）</text><rect x="420" y="300" width="14" height="14" fill="#8B4570"/><text x="442" y="311">MEND（紫）</text></g>
+      <text x="450" y="292" fill="#8c2c50" font-size="0"> </text>
+    </g>
+  </svg>
+  <figcaption><b>图 S3（自绘 pixel-art）</b>：Table 5 可视化。ENN 的成功率在 k&gt;5 后崩塌（125 条时 0.11），MEND 靠"逐条 rank-1 编辑求和"维持 0.67——多条编辑互不重排，只做加法。代价：MEND 的 DD 从 0.002 爬到 0.012（6×，F5）。</figcaption>
+  </div>
+  <p>第二条分野是<strong>部署约束</strong>：ENN 改了基座，编辑前后模型不一致，必须保留原模型副本；MEND 基座冻结，编辑即插即用。第三条是<strong>缓存式编辑</strong>（附录 G 的朴素基线：缓存编辑样本的末层隐状态、按相似度阈值直接输出编辑标签）——在 zsRE/FEVER 上很强（&gt;0.99/0.96），在 Wikitext 上彻底失效（ES 0.001），且阈值敏感（DD 在 0.037-2.770 间震荡）：长上下文、含干扰信息的编辑没法用"隐状态相近"来判定。</p>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 消融</div>
+  <h2>消融：谁是命门，谁能通往 100B</h2>
+  <table>
+    <tr><th>MEND 变体（distilGPT-2 Wikitext / BART zsRE）</th><th>编辑器参数</th><th>ES ↑</th><th>ppl.DD ↓</th><th>ES ↑</th><th>acc.DD ↓</th></tr>
+    <tr><td>No sharing（不共享参数）</td><td>O((m+n)²N)</td><td>0.86</td><td>0.195</td><td>&gt;0.99</td><td>0.001</td></tr>
+    <tr><td class="bad">No norm（去输入归一化）</td><td>O((m+n)²)</td><td class="bad">0.02</td><td>0.370</td><td>0.97</td><td>&lt;0.001</td></tr>
+    <tr><td class="bad">No ID init（去恒等初始化）</td><td>O((m+n)²)</td><td class="bad">0.27</td><td>0.898</td><td>0.94</td><td>&lt;0.001</td></tr>
+    <tr><td>Only u（只输出伪激活）</td><td>O(m²)</td><td>0.63</td><td>0.559</td><td>0.98</td><td>0.002</td></tr>
+    <tr><td>Only δ（只输出伪增量）</td><td>O(n²)</td><td>0.80</td><td>0.445</td><td>0.99</td><td>0.001</td></tr>
+    <tr><td class="hl">Only smaller（只输出较小者）</td><td>O(min(m,n)²)</td><td>0.80</td><td>0.593</td><td>0.98</td><td>0.002</td></tr>
+    <tr><td class="hl">MEND 完整版</td><td>O((m+n)²)</td><td class="best">0.86</td><td>0.225</td><td class="best">&gt;0.99</td><td class="best">0.001</td></tr>
+  </table>
+  <p>三个读数：<strong>①归一化与恒等初始化是命门</strong>——去掉任何一个，Wikitext 上编辑崩溃（0.02 / 0.27），训练慢 ~10×；这两个"实现细节"才是方法的活性成分。<strong>②参数共享几乎免费</strong>（0.86 持平）。<strong>③only-smaller 变体最有前景</strong>：只输出 $u$ 与 $\delta$ 中维度较小的那个（$O(\min(m,n)^2)$ 参数），性能仍具竞争力——当模型大到 $m+n \to 10^5$ 而 $\min(m,n) \approx 10^4$ 时，这个变体的参数量仍可控，论文据此断言 MEND 有通往 100B+ 的路。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>消融表的信息结构：两个"稳定器"与一个"缩放许可"</h4>
+    <p>No norm（0.02）与 No ID init（0.27）的崩溃模式不同：前者是<strong>优化失败</strong>（病态输入使训练慢 10×、学不出有用变换），后者是<strong>先验丢失</strong>（编辑器从随机变换起步，训练目标里没有"梯度本是好起点"的先验）。而 only-smaller 的存活回答的是另一个问题——容量下限：编辑一个错误所需的信息量，可能远小于 $m+n$ 的全宽。<strong>三条结论合起来是一条缩放路线图：先固定稳定器，再砍宽度。</strong>（注："优化失败 vs 先验丢失"的二分是我们的解读——论文只报告两者都掉点且训练慢 ~10×。）</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 批判</div>
+  <h2>批判评估：八条带证据的保留意见</h2>
+  <div class="critique-box"><span class="tag">F1</span><h4>T5 头条结果的局部性度量偏软</h4><p><strong>证据</strong>：Table 3 脚注——"T5 的低 drawdown 可能因为模型未在 NQ 上完全收敛，编辑实际充当任务规格说明"。<strong>影响</strong>：11B 的 0.89/&lt;0.001 是最抢眼的数字，但其 DD 被基座欠拟合稀释；与 GPT 系（真生成任务）的 0.057/0.031 不可直接类比。</p></div>
+  <div class="critique-box"><span class="tag">F2</span><h4>"Scales to 10B" 是环境相对的 claim</h4><p><strong>证据</strong>：Table 1 该列定义为"我们的实现能在我们的单卡环境跑"（A40/RTX Titan，bfloat16×2 估算 11B 显存）。<strong>影响</strong>：不是架构上限的证明，是工程配置的陈述；换环境结论要重算。</p></div>
+  <div class="critique-box"><span class="tag">F3</span><h4>KE 失败的归因是无实验的假说</h4><p><strong>证据</strong>：论文明确写 "We hypothesize"——rank-1 掩码 + 不条件于梯度 = KE 在 Wikitext（10-token 标签、高信息量）失败的原因，但未做"给 KE 同样分解输入"的隔离实验。<strong>影响</strong>：KE 的失败可能部分来自实现/超参而非原理。</p></div>
+  <div class="critique-box"><span class="tag">F4</span><h4>泛化口径跨数据集不一致</h4><p><strong>证据</strong>：zsRE/FEVER 用回译生成等价邻域，Wikitext 用前缀截断启发式（去掉最多一半前缀）。<strong>影响</strong>：三列 ES 的"泛化"强度不同——截断邻域与回译邻域的硬度论文未比较、不可直接互比；跨表比较 ES 时必须意识到口径差异。</p></div>
+  <div class="critique-box"><span class="tag">F5</span><h4>批量编辑的局部性也在恶化</h4><p><strong>证据</strong>：Table 5——MEND 的 DD 从 k=1 的 0.002 涨到 k=125 的 0.012（6×）。<strong>推理</strong>：逐条 rank-1 编辑求和的秩随 k 线性涨，超出的容量以扰动无关输出的形式支付。<strong>影响</strong>：批量编辑不是免费的，k 的上限由 locality 预算决定。</p></div>
+  <div class="critique-box"><span class="tag">F6</span><h4>locality 的 KL 是近似值</h4><p><strong>证据</strong>：seq2seq 的 KL 只在标签 token 上算、生成式按前缀逐 token 算；脚注 6 自认"不如用模型自身采样的蒙特卡洛估计有原则"。<strong>影响</strong>：L_loc 约束的是分布的一小片，过泛化失败（Table 10：编辑 Astra→Opel 后，F-150/Golf 也答 Opel）由此漏网。</p></div>
+  <div class="critique-box"><span class="tag">F7</span><h4>命门被归档为"实现细节"</h4><p><strong>证据</strong>：正文 §3.2 将两者一笔带过（"Appendix A describes MEND's identity initialization and input normalization"）；消融（Table 6）显示它们是 ES 0.86→0.02/0.27 的决定性组件——尽管附录 A 给了专节，主文的定位仍是细节。<strong>影响</strong>：复现者若按"细节"跳过，方法直接失效。</p></div>
+  <div class="critique-box"><span class="tag">F8</span><h4>ENN 对照的复现有偏差</h4><p><strong>证据</strong>：附录 C——ENN 复现用单步内环（原论文多步）、简化了编辑损失、允许内环学习率被外环学习。<strong>影响</strong>：ENN 的数字是"加强超参后的单步变体"而非原方法——加强变体下的结果整体可信，这也使 Table 5 中批量场景的崩溃更刺眼。</p></div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 谱系</div>
+  <h2>编辑方法谱系：MEND 的坐标与两条后续路线</h2>
+  <div class="svgbox">
+  <svg viewBox="0 0 940 330" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="m10" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#8B4570"/></marker></defs>
+    <text x="30" y="28" font-size="13.5" font-weight="800" fill="#2A2520">模型编辑谱系（2020-2025）：按两个维度排列——是否学习编辑器 × 是否条件于梯度</text>
+    <g font-size="12" text-anchor="middle">
+      <rect x="30" y="50" width="200" height="86" rx="12" fill="#fff" stroke="#7A6B52" stroke-width="2.5"/>
+      <text x="130" y="76" font-weight="800" fill="#4A3F2F">FT / FT+KL</text>
+      <text x="130" y="98" fill="#6A5050" font-size="11.5">不学习编辑器 · 梯度直用</text>
+      <text x="130" y="116" fill="#A08888" font-size="11">过拟合；FT+KL 需训练集</text>
+      <rect x="260" y="50" width="200" height="86" rx="12" fill="#fff" stroke="#6B5B8B" stroke-width="2.5"/>
+      <text x="360" y="76" font-weight="800" fill="#6B5B8B">ENN（内在）</text>
+      <text x="360" y="98" fill="#6A5050" font-size="11.5">MAML 双层 · 改基座 · 高阶梯度</text>
+      <text x="360" y="116" fill="#A08888" font-size="11">显存爆炸 · 单模型专用</text>
+      <rect x="490" y="50" width="200" height="86" rx="12" fill="#fff" stroke="#E86B8A" stroke-width="2.5"/>
+      <text x="590" y="76" font-weight="800" fill="#8c2c50">KE（外在）</text>
+      <text x="590" y="98" fill="#6A5050" font-size="11.5">RNN 吃样本 → rank-1 掩码</text>
+      <text x="590" y="116" fill="#A08888" font-size="11">大模型失效（0.00-0.04）</text>
+      <rect x="720" y="50" width="190" height="86" rx="12" fill="#8B4570"/>
+      <text x="815" y="76" font-weight="900" fill="#fff">MEND（外在）</text>
+      <text x="815" y="98" fill="#ffd9e2" font-size="11.5">吃梯度因子 → 变换更新</text>
+      <text x="815" y="116" fill="#ffd9e2" font-size="11">唯一编辑 10B+（2022）</text>
+      <line x1="230" y1="93" x2="256" y2="93" stroke="#8B4570" stroke-width="3" marker-end="url(#m10)"/>
+      <line x1="460" y1="93" x2="486" y2="93" stroke="#8B4570" stroke-width="3" marker-end="url(#m10)"/>
+      <line x1="690" y1="93" x2="716" y2="93" stroke="#8B4570" stroke-width="3" marker-end="url(#m10)"/>
+    </g>
+    <g font-size="12.5">
+      <text x="30" y="180" font-weight="800" fill="#2A2520">后续两条路线（MEND 之后）</text>
+      <g text-anchor="middle">
+        <rect x="30" y="196" width="420" height="100" rx="12" fill="#fff" stroke="#C4784A" stroke-width="2.5"/>
+        <text x="240" y="224" font-weight="900" fill="#9a5a28">locate-then-edit（不学习编辑器）</text>
+        <text x="240" y="248" fill="#6A5050" font-size="12">ROME（因果追踪定位单层）→ MEMIT（批量闭式解）→ AlphaEdit（.null 空间约束，ICLR 2025）</text>
+        <text x="240" y="272" fill="#A08888" font-size="11.5">直接解权重更新；每编辑一次优化；不条件于梯度</text>
+        <rect x="480" y="196" width="430" height="100" rx="12" fill="#fff" stroke="#3D5A5A" stroke-width="2.5"/>
+        <text x="695" y="224" font-weight="900" fill="#2f4a44">本仓库系列的"生成式适配" cousins</text>
+        <text x="695" y="248" fill="#6A5050" font-size="12">DnD（任务→LoRA）· D2L（文档→LoRA）· T2L（描述→LoRA）</text>
+        <text x="695" y="272" fill="#A08888" font-size="11.5">同为"学习一个编辑算子"，但条件是任务/文档而非纠错梯度</text>
+      </g>
+      <text x="30" y="322" fill="#8c2c50" font-weight="700" font-size="12.5">MEND 的"秩即容量"原理（S2）在 D2L 的 rank-r·K 拼接中重现——两个领域独立发现了同一条容量定律。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S4（自绘）</b>：编辑谱系。MEND 站在"学习编辑器 + 条件于梯度"的格子；ROME/MEMIT 线放弃学习编辑器、改用因果追踪定位 + 闭式解；生成式适配线（本仓库系列）换条件、保留"学习算子"的思想。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>把 MEND 读进本仓库的五容器谱系：它是容器②的"测试时修订机制"</h4>
+    <p>本系列的五容器（ICL / 静态参数 / 生成参数 / 在线状态 / 测试时梯度）描述"知识放进哪"。模型编辑回答的是另一个正交问题：<strong>放错了怎么改</strong>。MEND 是容器②（静态参数）的修订机制——而且因为编辑器是外挂的，它可以同时服务容器③的产物（给 DnD/D2L 生成的 LoRA 打补丁，而非重生成）。MEND 是容器②的修订机制；因编辑器外挂，也可给容器③生成的 LoRA 打补丁（Q5）。</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="kicker">CHAPTER 11 · 开放问题</div>
+  <h2>自主科研问题：五个可动手的方向</h2>
+  <div class="research-question"><span class="tag">Q1 · 理论</span><h4>编辑秩预算 vs 编辑信息含量</h4>
+    <p>KE（rank-1，固定）在 10-token 标签的 Wikitext 上崩溃，MEND（秩 ≈ 序列长度，10-100）存活——"编辑所需秩 ∝ 编辑的信息含量"是可形式化的容量定律。定义编辑的信息含量为标签的描述长度（token 数 × 平均 surprisal），预测：给定秩预算 $R$，ES 随信息含量单调衰减，阈值可测。</p>
+    <p><strong>下手处</strong>：MEND 与 KE 在同一标签集上扫标签长度（1/5/10/50 token），画 ES-信息含量曲线；对照 D2L 的 rank-r·K 外推。零训练成本（用已训 checkpoint）。</p></div>
+  <div class="research-question"><span class="tag">Q2 · 评测</span><h4>等价邻域的硬度决定泛化的真假</h4>
+    <p>论文 Limitations 自认：回译邻域测不出"由编辑内容蕴含的其他问题"（编辑 Boris Johnson 后，模型该答对"Is Boris Johnson a private citizen?"），且 overgeneralization（Astra→Opel 殃及 F-150/Golf）的失败模式由过弱的 locality 负样本漏网。</p>
+    <p><strong>下手处</strong>：用 LLM 生成三层邻域（同义改写 / 蕴含推断 / 近义干扰），测 ES 与 overgeneralization 率随邻域硬度的变化；硬度本身可用困惑度增量量化——把"邻域构造"从数据工程升级为可调变量。</p></div>
+  <div class="research-question"><span class="tag">Q3 · 谱系</span><h4>MEND 式编辑器 vs locate-then-edit：统一基准上的正面对决</h4>
+    <p>MEND（学习编辑器、条件于梯度、O(d) 参数、即时编辑）与 ROME/MEMIT/AlphaEdit（因果追踪定位、闭式解、每编辑一次优化）已有对比（MEMIT 评测表含 MEND 基线），但协议与超参有争议；真正缺失的是控制"可学习编辑数据"这一 MEND 独有前提的统一对比。</p>
+    <p><strong>下手处</strong>：统一到 MEMIT 的评测协议（CounterFact/zsRE + 一致性/泛化/选择性指标），控制"可学习编辑数据"这一 MEND 独有的前提，报告两者的 Pareto 前沿——混合方案（MEND 变换的梯度 + ROME 式目标层选择，见 Q5）留作上界探针。</p></div>
+  <div class="research-question"><span class="tag">Q4 · 工程</span><h4>长程编辑序列的干扰动力学</h4>
+    <p>批量 DD 从 k=1 的 0.002 涨到 125 的 0.012。假说：求和的 rank-1 更新在权重空间发生叠加干涉（ echoing Hopfield 容量分析）。测：连续 10⁴ 条顺序编辑下 ES/DD 的衰减曲线；对照"按层分桶存储编辑、按查询路由应用"（caching 与 MEND 的杂交）。</p>
+    <p><strong>下手处</strong>：编辑序列按主题分桶 vs 随机序列的 DD 对比——若分桶显著缓解，则编辑干扰是"内容冲突"而非"参数容量"问题，修复方案完全不同。</p></div>
+  <div class="research-question"><span class="tag">Q5 · 综合</span><h4>MEND 变换的梯度作为 TTT-E2E 的内环更新规则</h4>
+    <p>TTT-E2E 的内环用朴素 SGD 更新 MLP（易梯度爆炸，靠 mini-batch 稳定）；MEND 恰好是一个"把朴素梯度变成更好更新"的学习算子，且梯度分解对任何 MLP 梯度适用。把 MEND 的 $g$ 插进 TTT-E2E 的内环（学一次，测试时每个 batch 用 $g(\nabla)$ 更新）。<strong>关键假设</strong>：$g$ 针对固定 $\theta$ 与固定归一化统计训练，而 TTT 内环中基座持续漂移——"学一次、反复用"隐含编辑器可迁移假设。这是 Schmidhuber"学习更新规则"谱系与 FWP 的直接交汇。</p>
+    <p><strong>下手处</strong>：760M 玩具规模（TTT-E2E 附录 A 的配置）：对照朴素 SGD 内环 vs MEND 变换内环，测 Figure 6 式的逐 token 损失曲线是否整体下移；副产品：内环稳定性问题可能被 $g$ 的恒等初始化+归一化天然缓解。</p></div>
+</section>
+
+<!-- 12 -->
+<section id="s12">
+  <div class="kicker">CHAPTER 12 · 路线图与代码</div>
+  <h2>小白 → 学者：十天路线图</h2>
+  <div class="roadmap">
+    <div class="step"><h4>第 1-2 天：编辑问题坐标系</h4><p>读 ENN（ICLR 2020）与 KE（EMNLP 2021）——搞清 intrinsic/extrinsic 之分与四判据；亲手用 KE 官方代码跑一次 zsRE 编辑。</p></div>
+    <div class="step"><h4>第 3-4 天： rank-1 引理与 MEND 全推</h4><p>复推附录 D 证明（∂L/∂W_ij = δ_i u_j）；对照式 (2)(3) 手写 MEND 编辑器的前向（下面的代码 A/B 可直接验证）。</p></div>
+    <div class="step"><h4>第 5-6 天：复现主结果</h4><p>官方 repo（sites.google.com/view/mend-editing）在 distilGPT-2 + Wikitext 上复现 Table 4 的 0.86/0.225；重点检查归一化与恒等初始化（F7：命门）。</p></div>
+    <div class="step"><h4>第 7-8 天：做一次消融或一个探针</h4><p>重跑 Table 6 的 No-norm 行确认 0.02；或做 Q1 的 ES-信息含量曲线（用现成 checkpoint）。</p></div>
+    <div class="step"><h4>第 9-10 天：对接后续文献</h4><p>读 ROME/MEMIT/AlphaEdit，把三篇的评测协议列成对照表（Q3 的底稿）；写一页 proposal：你的编辑器改进在哪个判据上、付出什么代价。</p></div>
+  </div>
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>A. rank-1 梯度引理验证（附录 D，经数值自检）</h4></div>
+  <div class="code-note">自检：单样本、batch=1 时 ∇W 与外积 δuᵀ 逐元素相等（浮点误差 &lt;1e-6）；batch&gt;1 时需逐元素分解后求和。变量先定义后使用。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch
+
+W = torch.randn(<span class="num">64</span>, <span class="num">32</span>, requires_grad=<span class="kw">True</span>)
+u = torch.randn(<span class="num">32</span>)                                <span class="cm"># 第 ℓ 层输入 u_ℓ [d_in]</span>
+loss = (W @ u).pow(<span class="num">2</span>).sum()                        <span class="cm"># 任意以 W@u 为输入的标量损失</span>
+grad = torch.autograd.grad(loss, W)[<span class="num">0</span>]            <span class="cm"># ∇_W L [64, 32]</span>
+
+z = W @ u                                          <span class="cm"># 预激活 z_{ℓ+1} [64]</span>
+delta = torch.autograd.grad(z.pow(<span class="num">2</span>).sum(), z)[<span class="num">0</span>]  <span class="cm"># δ_{ℓ+1} = ∂L/∂z [64]</span>
+assert torch.allclose(grad, torch.outer(delta, u), atol=<span class="num">1e-6</span>)  <span class="cm"># 引理成立 ✓</span></code></pre>
+
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>B. MEND 编辑器块（式 3a,b：恒等初始化 + 低秩 + FiLM，经维度自检）</h4></div>
+  <div class="code-note">恒等性成立需 U=0 且 b、o 同置零（论文 Fixup 式初始化，ReLU 保证 σ(0)=0）——初始时 g(z) ≡ z，编辑从原始微调梯度出发。低秩因子 U[r,d]V[r,d] 使参数量为 O(d)；FiLM 的 s/o 为逐维向量（式 3）。归一化在训练统计上做（此处省略）。结构未跑数值验证，标注示意性。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn, torch.nn.functional <span class="kw">as</span> F
+
+<span class="kw">class</span> <span class="fn">MENDBlock</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d, rank=<span class="num">16</span>):
+        super().__init__()
+        self.U = nn.Parameter(torch.zeros(rank, d))   <span class="cm"># 恒等初始化：U 置零</span>
+        self.V = nn.Parameter(torch.empty(rank, d)); nn.init.xavier_uniform_(self.V)
+        self.b = nn.Parameter(torch.zeros(d))          <span class="cm"># b、o 同置零 → 初始残差恒为零</span>
+        self.s = nn.Parameter(torch.ones(d))           <span class="cm"># FiLM：逐维缩放（式 3 的 s^j_ℓ）</span>
+        self.o = nn.Parameter(torch.zeros(d))          <span class="cm"># FiLM：逐维偏移（o^j_ℓ）</span>
+    <span class="kw">def</span> <span class="fn">forward</span>(self, z):                             <span class="cm"># z: [B, d] = concat(u, δ) 归一化后</span>
+        <span class="kw">return</span> z + F.relu(self.s * (self.U.T @ (self.V @ z.T)).T + self.b + self.o)  <span class="cm"># 式(3a)</span>
+
+<span class="kw">class</span> <span class="fn">MENDEditor</span>(nn.Module):                          <span class="cm"># 两个级联块（式 3a,b）</span>
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d, rank=<span class="num">16</span>):
+        super().__init__(); self.blk1 = MENDBlock(d, rank); self.blk2 = MENDBlock(d, rank)
+    <span class="kw">def</span> <span class="fn">forward</span>(self, z):
+        <span class="kw">return</span> self.blk2(self.blk1(z))                <span class="cm"># 复合而非再相加：U=0,b=o=0 时 g(z)=z ✓</span></code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>C. EDIT 过程（Alg 2：缓存激活 → 变换 → 外积应用）</h4></div>
+  <div class="code-note">自检：与 Alg 2 逐行对应——前向缓存 u_ℓ 与层输出 z_{ℓ+1}=W_ℓu_ℓ；δ^{ℓ+1} 取"对层输出的梯度"（Alg 2 第 5 行 Grad wrt output，≠ 对输入 u 的梯度）；g 变换 → W̃ = W − α·δ̃ũᵀ。省略了 batch/序列的逐元素循环（实际实现逐 token 变换再求和）。</div>
+<pre class="code-block"><code><span class="kw">def</span> <span class="fn">edit</span>(model, editor, x_e, y_e):
+    logits, cache = model.forward_with_cache(x_e)     <span class="cm"># 前向：缓存各层 u_ℓ 与输出 z_{ℓ+1}=W_ℓu_ℓ</span>
+    loss = nll(logits, y_e)
+    deltas = torch.autograd.grad(loss, cache.outputs, retain_graph=<span class="kw">True</span>)  <span class="cm"># δ^{ℓ+1}=∂L/∂z（对输出！）</span>
+    edited = {}
+    <span class="kw">for</span> ℓ, (u_l, d_l) <span class="kw">in</span> enumerate(zip(cache.inputs, deltas)):
+        z = torch.cat([norm(u_l), norm(d_l)])         <span class="cm"># 式(3) 的 z_ℓ</span>
+        out = editor[shape_id(ℓ)](z)                  <span class="cm"># 共享编辑器（按形状）</span>
+        u_t, d_t = out.chunk(<span class="num">2</span>)                       <span class="cm"># 拆回 ũ_ℓ 与 δ̃^{ℓ+1}</span>
+        edited[ℓ] = model.W[ℓ] - model.alpha[ℓ] * torch.outer(d_t, u_t)  <span class="cm"># 式(2) + α_ℓ</span>
+    <span class="kw">return</span> edited                                     <span class="cm"># 应用：W̃ = W − α·∇̃W</span></code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>D. 训练循环（Alg 1：L_e 在邻域上 + L_loc）</h4></div>
+  <div class="code-note">自检：L_e 的监督信号是等价邻域 (x'_e, y'_e)——不是编辑样本本身；c_e=0.1；L_loc 的 KL 在标签 token 上近似（C.2）；无高阶梯度（θ 不被优化）。</div>
+<pre class="code-block"><code><span class="kw">for</span> step <span class="kw">in</span> range(<span class="num">500_000</span>):
+    x_e, y_e, x_loc, x_e2, y_e2 = sample(edit_train)   <span class="cm"># Alg 1 第 3 行</span>
+    edited = edit(model, editor, x_e, y_e)             <span class="cm"># Alg 2：得到 θ_{W̃}</span>
+    L_e   = -log_p(edited, x_e2, y_e2)                 <span class="cm"># 式(4a)：在邻域上算</span>
+    L_loc = kl_div(base_model(x_loc), edited(x_loc))   <span class="cm"># 式(4b)：编辑前后 KL（近似）</span>
+    (0.1 * L_e + L_loc).backward()                     <span class="cm"># L_MEND，梯度只进 φ</span>
+    opt.step()                                         <span class="cm"># Adam（仅编辑器参数）</span></code></pre>
+</section>
+
+<!-- 13 -->
+<section id="s13">
+  <div class="kicker">CHAPTER 13 · 结语</div>
+  <h2>结语</h2>
+  <p>一句话：<strong>MEND 证明了"模型编辑"可以被摊销——用 10⁵ 级（约 6.8 万对）的编辑数据集训练一个小编辑器，之后每次修正只需一对样本、一次前向</strong>；它的全部可扩展性来自一条代数事实（MLP 梯度 rank-1）和一条设计原则（恒等初始化让编辑器从"已知合理的微调"起步）。</p>
+  <p>谱系位置见第 10 章；未解难题 = 等价邻域太弱（F4/Q2）、批量局部性恶化（F5/Q4）、双刃剑伦理（伦理声明原话：编辑算法同样能编辑进后门）。</p>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献（关键条目经论文正文/参考文献核对）</h3>
+  <ol>
+    <li>Mitchell, Lin, Bosselut, Finn, Manning. <em>Fast Model Editing at Scale</em> (MEND). ICLR 2022. <a href="https://arxiv.org/abs/2110.11309">arXiv:2110.11309</a>. 项目：sites.google.com/view/mend-editing</li>
+    <li>Sinitsin et al. <em>Editable Neural Networks</em> (ENN). ICLR 2020；De Cao, Aziz, Titov. <em>Editing Factual Knowledge in Language Models</em> (KE). EMNLP 2021. <a href="https://arxiv.org/abs/2104.08164">arXiv:2104.08164</a></li>
+    <li>后续路线：Meng et al. <em>ROME: Locating and Editing Factual Associations in GPT</em>. NeurIPS 2022；<em>MEMIT: Mass-Editing Memory in a Transformer</em>. ICLR 2023；Fang et al. <em>AlphaEdit: Null-Space Constrained Model Editing</em>. ICLR 2025</li>
+    <li>相关支撑：Hu et al. <em>LoRA</em>. 2021；Perez et al. <em>FiLM</em>. AAAI 2018；Geva et al. <em>Transformer FFNs are Key-Value Memories</em>. EMNLP 2021；Zhang et al. <em>Fixup</em>. ICLR 2019；Glorot &amp; Bengio. 2010</li>
+    <li>数据与基座：Levy et al. <em>zsRE</em>. CoNLL 2017；Thorne et al. <em>FEVER</em>. NAACL 2018；Kwiatkowski et al. <em>Natural Questions</em>. TACL 2019；Roberts et al. <em>T5 + NQ</em>. 2020；GPT-Neo/GPT-J/Wolf et al. HF Transformers</li>
+    <li>谱系对照（本系列）：δ-mem / DnD / Doc-to-LoRA / TTT-E2E 解读博客；Feng et al. <em>In-Place Test-Time Training</em>（在库）</li>
+  </ol>
+  <div class="fin">MEND 深度解读 · Venus 樱吹雪配方 · 图表：论文原图精准裁剪 4 张（PyMuPDF + image-bbox 定位 + 验证闭环）+ 自绘内联 SVG 5 幅 · 公式 Eq(1)-(9) 与 Alg 1/2 全部提取自 PDF 核对 · 8 条取证均标注证据与出处 · 2026-09-28</div>
+</div></footer>
+</body>
+</html>

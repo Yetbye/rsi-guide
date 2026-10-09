@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DnD 深度解读 | 拖拽即用：把 LoRA 微调折叠成一次前向传播</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  /* === Venus · 配方 A 浮世绘蓝调 === */
+  --bg-primary:#FAF9F6; --bg-secondary:#F5F5F0; --bg-tertiary:#E8E8E4;
+  --text-primary:#2C3E50; --text-secondary:#5D6D7E; --text-muted:#95A5A6;
+  --color-primary:#1B4B6F; --color-secondary:#5A8F7B; --color-tertiary:#2E4057;
+  --accent-warm:#E85D4E; --accent-gold:#C9A86C; --accent-soft:#FFB7C5;
+  --am-100:#e3ecf3; --am-200:#c9d9e6;
+  /* Base 常量 */
+  --font-display:'Noto Serif SC','Source Han Serif SC','Playfair Display',Georgia,serif;
+  --font-body:'Noto Sans SC','PingFang SC','Microsoft YaHei',-apple-system,sans-serif;
+  --font-hand:'Ma Shan Zheng','Zhi Mang Xing',cursive;
+  --font-mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:.4s;
+  --radius-md:8px; --radius-lg:16px;
+  --shadow-sm:0 2px 8px rgba(44,62,80,.08); --shadow-md:0 4px 16px rgba(44,62,80,.12); --shadow-lg:0 8px 32px rgba(44,62,80,.16);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);color:var(--text-primary);background:var(--bg-primary);line-height:1.92;font-size:16.5px;
+  background-image:repeating-linear-gradient(0deg,rgba(44,62,80,0.016) 0 1px,transparent 1px 28px),repeating-linear-gradient(90deg,rgba(44,62,80,0.016) 0 1px,transparent 1px 28px)}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:900;letter-spacing:-.015em;color:var(--color-tertiary)}
+a{transition:color var(--duration) var(--ease-out)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(250,249,246,.86);backdrop-filter:blur(14px) saturate(1.5);border-bottom:1px solid var(--bg-tertiary);padding:0 24px}
+.nav-inner{max-width:1160px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:54px}
+.nav-logo{font-family:var(--font-display);font-weight:900;font-size:15px;color:var(--color-primary)}
+.nav-logo em{font-style:normal;color:var(--accent-warm)}
+.nav-links{display:flex;gap:12px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--text-muted);text-decoration:none;letter-spacing:.5px;position:relative;padding:3px 0}
+.nav-links a::after{content:'';position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--accent-warm);transform:scaleX(0);transform-origin:left;transition:transform var(--duration) var(--ease-out)}
+.nav-links a:hover{color:var(--color-primary)}.nav-links a:hover::after{transform:scaleX(1)}
+/* Hero 模板 A × Venus */
+.hero{position:relative;min-height:96vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:110px 24px 70px;
+  background:linear-gradient(178deg,#eef3f7 0%,#f7f4ee 34%,#FAF9F6 62%,#fdf6ec 100%)}
+.hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 560px 340px at 12% 18%,rgba(27,75,111,.12),transparent 62%),
+             radial-gradient(ellipse 520px 320px at 88% 82%,rgba(232,93,78,.10),transparent 62%),
+             radial-gradient(ellipse 420px 260px at 78% 12%,rgba(201,168,108,.14),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:860px;text-align:center}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.66);backdrop-filter:blur(10px);border:1px solid rgba(27,75,111,.25);color:var(--color-primary);padding:7px 20px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:3px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
+.hero h1{font-size:clamp(2.4rem,7vw,4.4rem);line-height:1.14;margin:10px 0 12px;color:var(--color-tertiary)}
+.hero h1 .mark{background:linear-gradient(135deg,var(--color-primary),#2f6d9e);color:#fff;padding:.05em .28em;border-radius:.18em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.hero-tagline{font-family:var(--font-display);font-size:clamp(1rem,2.4vw,1.28rem);color:var(--color-primary);font-weight:800;margin-bottom:8px}
+.hero-desc{font-size:14.5px;color:var(--text-secondary);max-width:660px;margin:0 auto 24px}
+.hero-art{margin:6px auto 4px;max-width:820px;width:100%;border-radius:24px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid rgba(27,75,111,.14);background:#0d1f30}
+.hero-art svg{display:block;width:100%;height:auto}
+.hero-caption{font-size:11.5px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:26px;border-radius:var(--radius-lg);overflow:hidden;border:2px solid var(--color-primary);position:relative}
+.hero-stats::before{content:'';position:absolute;inset:6px;border:1px solid rgba(232,93,78,.5);pointer-events:none;border-radius:10px}
+.hstat{background:linear-gradient(180deg,#fbfaf7,#f3f1ea);padding:16px 8px;border-left:1px solid var(--bg-tertiary)}
+.hstat:first-child{border-left:none}
+.hstat b{display:block;font-family:var(--font-display);font-size:1.55rem;color:var(--color-primary)}
+.hstat span{font-size:11px;color:var(--text-secondary)}
+.scroll-hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-size:10.5px;letter-spacing:3px;color:var(--text-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.7s infinite;font-size:14px}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+/* 正文 */
+main{max-width:880px;margin:0 auto;padding:64px 24px 30px}
+section{margin-bottom:78px;position:relative}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--accent-warm);font-weight:800;margin-bottom:8px;font-family:var(--font-mono)}
+h2{font-size:clamp(1.5rem,3.6vw,2.05rem);margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid var(--am-100);position:relative}
+h2::after{content:'';position:absolute;left:0;bottom:-2px;width:64px;height:2px;background:var(--accent-warm)}
+h3{font-size:1.16rem;margin:30px 0 12px;color:var(--color-primary)}
+p{margin-bottom:14px;color:var(--text-secondary)}
+p strong,li strong{color:var(--text-primary)}
+ul,ol{margin:0 0 14px 22px;color:var(--text-secondary)}
+li{margin-bottom:7px}
+.hand{font-family:var(--font-hand);color:var(--accent-warm);font-size:1.15em}
+figure{margin:26px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid var(--bg-tertiary);box-shadow:var(--shadow-md);background:#fff;transition:transform .5s var(--ease-out)}
+figure img:hover{transform:scale(1.02)}
+figcaption{font-size:12.5px;color:var(--text-muted);margin-top:10px;line-height:1.75;text-align:left}
+figcaption b{color:var(--color-primary)}
+.svgbox{background:#fff;border:1px solid var(--bg-tertiary);border-radius:var(--radius-lg);padding:18px 12px;margin:26px 0;box-shadow:var(--shadow-sm)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#e7f2ec,#d3e7dd);border-radius:var(--radius-lg);padding:22px 24px;margin:24px 0;border-left:4px solid var(--color-secondary);box-shadow:var(--shadow-sm)}
+.insight-box .tag{background:var(--color-secondary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.insight-box h4{margin:12px 0 8px;color:#1e4a38;font-size:1.04rem}
+.insight-box p{color:#2e5947;margin-bottom:6px}
+.critique-box{background:linear-gradient(135deg,#fdeae7,#fbdcd7);border-radius:var(--radius-lg);padding:22px 24px;margin:24px 0;border-left:4px solid var(--accent-warm);box-shadow:var(--shadow-sm)}
+.critique-box .tag{background:var(--accent-warm);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.critique-box h4{margin:12px 0 8px;color:#8c2f24;font-size:1.02rem}
+.critique-box p{color:#96453a;margin-bottom:6px;font-size:15px}
+.research-question{background:#fff;border:1px solid rgba(201,168,108,.45);border-radius:var(--radius-lg);padding:22px 24px;margin:22px 0;box-shadow:var(--shadow-sm);transition:transform var(--duration) var(--ease-out),box-shadow var(--duration) var(--ease-out)}
+.research-question:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
+.research-question .tag{background:var(--accent-gold);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:800}
+.research-question h4{margin:12px 0 8px;color:#7a5c28}
+.research-question p{color:#6e5a33;margin-bottom:8px;font-size:15px}
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:22px 0}
+.ccard{background:#fff;border-radius:14px;padding:18px;border-top:4px solid var(--color-primary);box-shadow:var(--shadow-sm);transition:transform var(--duration) var(--ease-out),box-shadow var(--duration) var(--ease-out),border-color var(--duration)}
+.ccard:hover{transform:translateY(-8px);box-shadow:var(--shadow-md);border-color:var(--color-primary)}
+.ccard.g{border-top-color:var(--color-secondary)}.ccard.o{border-top-color:var(--accent-gold)}.ccard.c{border-top-color:var(--accent-warm)}
+.ccard h4{font-size:1rem;margin-bottom:8px}
+.ccard p{font-size:13.5px;margin-bottom:6px}
+table{width:100%;border-collapse:collapse;margin:20px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow-sm)}
+th{background:linear-gradient(135deg,var(--color-primary),#2f6d9e);color:#fff;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--bg-secondary);text-align:center;color:var(--text-secondary)}
+tr:last-child td{border-bottom:none}
+td.hl{background:#eef3f7;font-weight:700;color:var(--color-primary)}
+td.best{background:#e2efe8;font-weight:800;color:#1e4a38}
+td.bad{background:#fbe9e6;color:#8c2f24}
+.mathcard{background:#fff;border:1px solid var(--am-100);border-left:4px solid var(--color-primary);border-radius:14px;padding:20px 24px;margin:22px 0;overflow-x:auto;box-shadow:var(--shadow-sm)}
+.mathcard h4{font-size:1rem;color:var(--color-primary);margin-bottom:8px}
+.mathcard .note{font-size:13.5px;color:var(--text-muted)}
+.mathcard .cf{font-size:13.5px;color:#8c2f24;background:#fdf3f1;border-radius:8px;padding:8px 12px;margin-top:10px}
+.code-head{display:flex;gap:10px;align-items:center;margin:26px 0 8px;flex-wrap:wrap}
+.code-head .cred{font-size:11px;font-weight:700;padding:3px 12px;border-radius:10px;color:#fff}
+.cred.run{background:var(--color-secondary)}.cred.ill{background:var(--accent-gold)}
+.code-note{background:#eef3f7;border:1px dashed var(--am-200);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--color-primary);margin-bottom:8px}
+pre.code-block{background:#1b2a38;color:#e8eef4;border-radius:14px;padding:18px 20px;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);margin-bottom:8px}
+pre.code-block .kw{color:#9ec8e8;font-weight:700}
+pre.code-block .fn{color:#f0cf8e}
+pre.code-block .cm{color:#7d93a6;font-style:italic}
+pre.code-block .st{color:#a8d5b9}
+pre.code-block .num{color:#f2a9a0}
+.roadmap{counter-reset:step}
+.step{position:relative;padding:0 0 26px 46px;counter-increment:step}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--color-primary),var(--accent-gold));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step::after{content:'';position:absolute;left:15px;top:36px;bottom:0;width:2px;background:var(--am-100)}
+.step:last-child::after{display:none}
+.step h4{font-size:1.02rem;margin-bottom:6px}
+.step p{font-size:14.5px}
+.divider-wave{display:block;margin:6px auto 0;opacity:.35;pointer-events:none}
+footer{background:var(--color-tertiary);color:#cfd8de;padding:52px 24px 60px;margin-top:30px}
+footer .inner{max-width:880px;margin:0 auto}
+footer h3{color:#fff;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.85}
+footer a{color:var(--accent-gold);text-decoration:none}
+footer .fin{margin-top:26px;font-size:12px;color:#8fa0ad;border-top:1px solid #3d4f60;padding-top:18px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">DnD <em>·</em> 深度解读</div>
+  <div class="nav-links">
+    <a href="#s1">成本账</a><a href="#s2">核心洞察</a><a href="#s3">谱系</a><a href="#s4">全景</a><a href="#s5">条件设计</a>
+    <a href="#s6">生成器</a><a href="#s7">配方</a><a href="#s8">实验I</a><a href="#s9">实验II</a><a href="#s10">配对</a>
+    <a href="#s11">效率</a><a href="#s12">vs RPG</a><a href="#s13">批判</a><a href="#s14">理论</a><a href="#s15">科研问题</a><a href="#s16">路线图</a><a href="#s17">代码</a><a href="#s18">结语</a>
+  </div>
+</div></nav>
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">arXiv:2506.16406 · PREPRINT · JUN 2025</div>
+    <h1>拖拽即用：<span class="mark">把 LoRA 微调</span><br>折叠成一次前向传播</h1>
+    <p class="hero-tagline">DnD · Prompt-to-Weights 超生成器 · 零梯度任务适配</p>
+    <p class="hero-desc">别人微调模型要 4 张 A100 跑半天，DnD 抓一把无标注 prompt，0.11 秒生成整套 LoRA 权重——而且在没见过的常识任务上，平均比训练它的那些 LoRA 高 21 分（单项最高 +47.4）。这篇博客把这个"数据→权重"的黑匣子完全拆开。</p>
+    <div class="hero-art">
+      <svg viewBox="0 0 1200 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="拖拽 prompt 卡片落入权重晶格的夜景插画">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#0d2033"/><stop offset=".45" stop-color="#173b57"/>
+            <stop offset=".78" stop-color="#5f83a0"/><stop offset="1" stop-color="#f4ead8"/>
+          </linearGradient>
+          <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#f6d998" stop-opacity="0"/><stop offset=".5" stop-color="#f6d998"/><stop offset="1" stop-color="#fff3d6"/>
+          </linearGradient>
+          <linearGradient id="latt" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#8fc3e8" stop-opacity=".9"/><stop offset="1" stop-color="#c9a86c" stop-opacity=".75"/>
+          </linearGradient>
+          <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10"/></filter>
+        </defs>
+        <rect width="1200" height="560" fill="url(#sky)"/>
+        <g fill="#fdf6e3">
+          <circle cx="80" cy="60" r="1.6" opacity=".9"/><circle cx="180" cy="110" r="1.1" opacity=".6"/><circle cx="260" cy="40" r="1.4" opacity=".8"/>
+          <circle cx="420" cy="80" r="1" opacity=".5"/><circle cx="520" cy="36" r="1.5" opacity=".8"/><circle cx="640" cy="66" r="1.1" opacity=".6"/>
+          <circle cx="760" cy="30" r="1.3" opacity=".7"/><circle cx="880" cy="90" r="1.4" opacity=".8"/><circle cx="1010" cy="50" r="1.1" opacity=".6"/>
+          <circle cx="1110" cy="120" r="1.5" opacity=".8"/><circle cx="340" cy="140" r="1" opacity=".5"/><circle cx="960" cy="140" r="1" opacity=".5"/>
+        </g>
+        <ellipse cx="330" cy="150" rx="230" ry="70" fill="#8fb6d8" opacity=".1" filter="url(#soft)"/>
+        <ellipse cx="820" cy="120" rx="260" ry="60" fill="#c9a86c" opacity=".08" filter="url(#soft)"/>
+        <g opacity=".92">
+          <g transform="translate(60,96) rotate(-8)"><rect width="86" height="26" rx="5" fill="#f4ead8" opacity=".95"/><rect x="8" y="7" width="52" height="3" rx="1.5" fill="#1b4b6f" opacity=".45"/><rect x="8" y="14" width="66" height="3" rx="1.5" fill="#1b4b6f" opacity=".3"/></g>
+          <g transform="translate(150,150) rotate(-5)"><rect width="78" height="24" rx="5" fill="#e9dcc3" opacity=".9"/><rect x="8" y="6" width="46" height="3" rx="1.5" fill="#1b4b6f" opacity=".4"/><rect x="8" y="13" width="58" height="3" rx="1.5" fill="#1b4b6f" opacity=".28"/></g>
+          <g transform="translate(80,206) rotate(-10)"><rect width="90" height="25" rx="5" fill="#f4ead8" opacity=".85"/><rect x="8" y="7" width="50" height="3" rx="1.5" fill="#1b4b6f" opacity=".35"/><rect x="8" y="14" width="62" height="3" rx="1.5" fill="#1b4b6f" opacity=".25"/></g>
+          <g transform="translate(196,242) rotate(-4)"><rect width="72" height="22" rx="5" fill="#e9dcc3" opacity=".8"/><rect x="7" y="6" width="44" height="3" rx="1.5" fill="#1b4b6f" opacity=".35"/></g>
+          <g transform="translate(118,288) rotate(-7)"><rect width="84" height="24" rx="5" fill="#f4ead8" opacity=".75"/><rect x="8" y="6" width="48" height="3" rx="1.5" fill="#1b4b6f" opacity=".3"/><rect x="8" y="13" width="56" height="3" rx="1.5" fill="#1b4b6f" opacity=".22"/></g>
+          <g transform="translate(230,322) rotate(-3)"><rect width="66" height="21" rx="5" fill="#e9dcc3" opacity=".7"/></g>
+          <g transform="translate(150,368) rotate(-6)"><rect width="78" height="22" rx="5" fill="#f4ead8" opacity=".6"/></g>
+          <g transform="translate(246,404) rotate(-2)"><rect width="60" height="19" rx="5" fill="#e9dcc3" opacity=".5"/></g>
+        </g>
+        <path d="M 150 108 C 330 60, 560 120, 700 216 C 780 268, 812 300, 838 336" fill="none" stroke="url(#arc)" stroke-width="5" stroke-linecap="round" filter="url(#glow)" opacity=".95"/>
+        <path d="M 838 336 l -3 -26 l 22 14 z" fill="#fff3d6" filter="url(#glow)"/>
+        <g transform="translate(266,150) rotate(-6)">
+          <rect width="96" height="30" rx="6" fill="#fff8ec" stroke="#f0cf8e" stroke-width="1.5" filter="url(#glow)"/>
+          <rect x="9" y="8" width="56" height="3.4" rx="1.7" fill="#1b4b6f" opacity=".55"/><rect x="9" y="16" width="70" height="3.4" rx="1.7" fill="#1b4b6f" opacity=".38"/>
+        </g>
+        <g transform="translate(880,300)">
+          <rect x="-96" y="-96" width="192" height="192" rx="14" fill="#0e2a42" opacity=".55" stroke="#8fc3e8" stroke-width="2"/>
+          <g fill="url(#latt)" stroke="#0d2033" stroke-width="1">
+            <rect x="-90" y="-90" width="34" height="34" rx="3" opacity=".85"/><rect x="-52" y="-90" width="34" height="34" rx="3" opacity=".55"/><rect x="-14" y="-90" width="34" height="34" rx="3" opacity=".95"/><rect x="24" y="-90" width="34" height="34" rx="3" opacity=".6"/><rect x="62" y="-90" width="34" height="34" rx="3" opacity=".4"/>
+            <rect x="-90" y="-52" width="34" height="34" rx="3" opacity=".5"/><rect x="-52" y="-52" width="34" height="34" rx="3" opacity=".9"/><rect x="-14" y="-52" width="34" height="34" rx="3" opacity=".45"/><rect x="24" y="-52" width="34" height="34" rx="3" opacity=".8"/><rect x="62" y="-52" width="34" height="34" rx="3" opacity=".35"/>
+            <rect x="-90" y="-14" width="34" height="34" rx="3" opacity=".9"/><rect x="-52" y="-14" width="34" height="34" rx="3" opacity=".4"/><rect x="-14" y="-14" width="34" height="34" rx="3" opacity=".75"/><rect x="24" y="-14" width="34" height="34" rx="3" opacity=".95"/><rect x="62" y="-14" width="34" height="34" rx="3" opacity=".5"/>
+            <rect x="-90" y="24" width="34" height="34" rx="3" opacity=".45"/><rect x="-52" y="24" width="34" height="34" rx="3" opacity=".7"/><rect x="-14" y="24" width="34" height="34" rx="3" opacity=".55"/><rect x="24" y="24" width="34" height="34" rx="3" opacity=".85"/><rect x="62" y="24" width="34" height="34" rx="3" opacity=".65"/>
+            <rect x="-90" y="62" width="34" height="34" rx="3" opacity=".6"/><rect x="-52" y="62" width="34" height="34" rx="3" opacity=".35"/><rect x="-14" y="62" width="34" height="34" rx="3" opacity=".8"/><rect x="24" y="62" width="34" height="34" rx="3" opacity=".5"/><rect x="62" y="62" width="34" height="34" rx="3" opacity=".9"/>
+          </g>
+        </g>
+        <g fill="#f6d998" opacity=".9">
+          <circle cx="856" cy="330" r="2.6" filter="url(#glow)"/><circle cx="830" cy="356" r="1.8"/><circle cx="876" cy="310" r="1.6"/>
+          <circle cx="812" cy="300" r="1.4"/><circle cx="900" cy="352" r="1.5"/><circle cx="842" cy="290" r="1.2"/>
+        </g>
+        <g fill="#0e2438" opacity=".9">
+          <rect x="40" y="452" width="120" height="108"/><rect x="180" y="482" width="80" height="78"/><rect x="280" y="462" width="100" height="98"/>
+          <rect x="560" y="486" width="72" height="74"/><rect x="1064" y="452" width="110" height="108"/>
+        </g>
+        <g fill="#123049" opacity=".95">
+          <rect x="400" y="470" width="130" height="90"/><rect x="545" y="500" width="90" height="60"/><rect x="650" y="474" width="120" height="86"/>
+          <rect x="786" y="496" width="90" height="64"/><rect x="890" y="466" width="150" height="94"/>
+        </g>
+        <g stroke="#f0cf8e" stroke-width="1.4" opacity=".7" fill="none">
+          <path d="M 430 500 v -20 l 12 -12 12 12 v 20"/><path d="M 692 498 v -18 l 10 -10 10 10 v 18"/><path d="M 934 496 v -22 l 13 -13 13 13 v 22"/>
+        </g>
+        <rect x="0" y="544" width="1200" height="16" fill="#f4ead8" opacity=".25"/>
+      </svg>
+      <p class="hero-caption">博客主视觉（手绘 SVG）：左上的一叠无标注 prompt 卡片沿金色轨迹被"拖"入右侧的权重晶格——每个被点亮的格子，就是一段即将被写入 LoRA 的参数。<span class="hand">拖进来，就是你的模型。</span></p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><b>0.11 s</b><span>生成 0.5B 模型整套 LoRA</span></div>
+      <div class="hstat"><b>12,000×</b><span>对比全量微调的开销压缩</span></div>
+      <div class="hstat"><b>+21.0</b><span>常识推理平均增益（vs 训练 LoRA）</span></div>
+      <div class="hstat"><b>0.5B→7B</b><span>跨骨干规模迁移</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>↓</span>SCROLL TO READ</div>
+</div>
+
+<main>
+
+<!-- ================= 1 ================= -->
+<section id="s1">
+  <div class="kicker">CHAPTER 01 · 成本账</div>
+  <h2>4 张 A100 半天 vs 0.11 秒</h2>
+  <p>先把账算清楚，再看方法。LLM 定制化的现实是：预训练给了模型广度，部署却要求深度——内部数据、领域黑话、专属语气。PEFT（尤其是 LoRA）把"训练多少参数"的问题解决了，但没解决"训练多少次"的问题：<strong>每来一个新数据集，就要重新跑一遍优化</strong>。论文开篇给了个具体的数字：给最小的 Qwen2.5-0.5B 做 LoRA，仍然要占用 4 张 A100 半天。当你要服务一百个客户、一千个内部任务时，优化本身就成了系统瓶颈。</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxg2" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#94a3b8"/></pattern>
+    <pattern id="pxb2" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#1B4B6F"/></pattern>
+    <pattern id="pxo2" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#E85D4E"/></pattern></defs>
+    <text x="30" y="30" font-size="14" font-weight="800" fill="#2E4057">适配一个新任务的开销（对数刻度示意，pixel 柱）</text>
+    <g font-size="12" text-anchor="middle">
+      <text x="140" y="62" font-weight="700" fill="#5D6D7E">全量微调 7B</text>
+      <rect x="112" y="82" width="56" height="170" fill="url(#pxo2)"/><text x="140" y="74" fill="#8c2f24" font-weight="800">GPU·天</text>
+      <text x="340" y="62" font-weight="700" fill="#5D6D7E">LoRA 0.5B</text>
+      <rect x="312" y="140" width="56" height="112" fill="url(#pxg2)"/><text x="340" y="132" fill="#475569" font-weight="800">≈4×A100×半天</text>
+      <text x="540" y="62" font-weight="700" fill="#5D6D7E">Few-shot / ICL 256 shots</text>
+      <rect x="512" y="196" width="56" height="56" fill="url(#pxg2)"/><text x="540" y="188" fill="#475569" font-weight="800">204 s / 6056 s</text>
+      <text x="760" y="62" font-weight="700" fill="#1B4B6F">DnD 生成</text>
+      <rect x="732" y="246" width="56" height="6" fill="url(#pxb2)"/><text x="760" y="238" fill="#1B4B6F" font-weight="900">0.11 s</text>
+      <line x1="60" y1="252" x2="850" y2="252" stroke="#2C3E50" stroke-width="2.5"/>
+      <text x="30" y="284" font-size="11.5" fill="#95A5A6" text-anchor="start">柱高仅示意量级（1 柱格 = 7px 像素块）；数字来自论文正文、Figure 4b/4c 与 Table 13。</text>
+    </g>
+  </svg>
+  <figcaption style="text-align:left;font-size:12.5px;color:#95A5A6;margin-top:6px"><b style="color:#1B4B6F">图 S1（自绘 pixel-art）</b>：四个量级的开销对比。DnD 的柱子几乎不可见——这就是"折叠掉梯度下降"的全部意义。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>被折叠的不是"训练"，而是"每次"</h4>
+    <p>DnD 并没有消灭训练——它把训练<strong>前置且摊销</strong>了：预先在多个数据集上训出一批 LoRA 检查点（这一步照旧昂贵），再训练一个"条件→权重"生成器（一次性成本）。之后每个新任务只付一次前向传播的钱。这是典型的 <strong>amortized inference（摊销推断）</strong>结构，与摊销变分推断、diffusion 的蒸馏采样同属一个家族。理解了这一点，你就能预判它的适用边界：<strong>任务分布越接近训练时的检查点分布，摊销越划算；越偏离，风险越大</strong>——第 10 章 Table 4c 的"训练集 ≤2 个就失效（2-5 组 −1.4；3 个即转正 +0.8）"正是这个逻辑的经验体现。</p>
+  </div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="s2">
+  <div class="kicker">CHAPTER 02 · 核心洞察</div>
+  <h2>LoRA 是训练数据的函数：把"数据→梯度→权重"折叠成"数据→权重"</h2>
+  <div class="mathcard"><h4>式 (1)：LoRA 的目标（论文 §2.1）</h4>$$\min_{A,B}\ \mathcal{L}\big(W_0 + BA,\ D\big)$$<p class="note">$W_0$：冻结基座权重；$B\in\mathbb{R}^{d\times r},A\in\mathbb{R}^{r\times k}$，$r\ll\min(d,k)$；$D$：微调数据集。全文唯一的"重"公式，之后的公式都只是数据管线。</p></div>
+  <p>这个式子人人都见过，但 DnD 的作者在里面读出了不同的东西：<strong>把 $\mathcal{L}$ 视为黑盒、把 $D$ 视为自变量、把解 $(A^*,B^*)$ 视为因变量</strong>。梯度下降只是求解这个函数的"求解器"——而求解器是可以被替换、甚至被学习的。若记 $\Delta W = BA$，那么 $\Delta W$ 与 $D$ 之间存在一个（多值的、依赖于优化轨迹的）映射关系。DnD 的全部野心，就是用一个小网络直接参数化这个映射：<span style="color:var(--color-primary);font-weight:700">$D$ 的样本（prompts）$\longrightarrow \Delta W$</span>。</p>
+  <div class="mathcard"><h4>概念转换：三种"驱动力量"</h4>
+  <p style="margin-bottom:6px">同一目标的三种实现路径，对应三代方法：</p>
+  <ul style="font-size:14px">
+    <li><strong>PEFT</strong>：数据 $D$ 是原料，<strong>梯度</strong>是动力 → 每任务一次优化；</li>
+    <li><strong>条件参数生成</strong>：条件 $c$ 是原料，<strong>生成器</strong>是动力 → 一次前向；</li>
+    <li><strong>DnD</strong>：无标注 prompts 是原料，<strong>在 prompt-检查点对上回归出来的生成器</strong>是动力 → 一次前向，且条件语义零成本获得（不用标注、不用标签）。</li>
+  </ul>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>反事实分析：如果没有 LoRA 的低秩结构，这条路走得通吗？</h4>
+    <p>想一下为什么 DnD 生成的是 LoRA 而不是全部权重。7B 模型约 70 亿参数（fp16 约 14GB），直接生成意味着生成器的输出空间是 $10^{10}$ 量级——RPG 那套 recurrent diffusion 生成 2 亿参数要数分钟，7B 全量在算力上就不现实。LoRA 把目标空间压到 $\sum_{\ell} r_\ell(d_\ell+k_\ell)$ 量级（rank 8 时通常只有基础模型的 0.1%~1%），且 $\Delta W$ 分布在以 0 为中心的低维流形上——<strong>方差小、结构强、天然适合回归</strong>。反过来说，这也意味着 DnD 的上限被 LoRA 表达力封顶：第 13 章会讨论 rank 固定带来的天花板（科研问题 Q3）。</p>
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="s3">
+  <div class="kicker">CHAPTER 03 · 谱系</div>
+  <h2>参数生成五年史：从"生成权重"到"按需生成权重"</h2>
+  <div class="svgbox">
+  <svg viewBox="0 0 960 360" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="t3" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#1B4B6F"/></marker></defs>
+    <line x1="40" y1="60" x2="930" y2="60" stroke="#1B4B6F" stroke-width="3.5" marker-end="url(#t3)"/>
+    <g font-size="12" text-anchor="middle">
+      <g><circle cx="90" cy="60" r="7" fill="#5A8F7B"/><text x="90" y="36" font-weight="800" fill="#2E4057">HyperNetwork</text><text x="90" y="50" fill="#5D6D7E">2016 · 为他人生成权重</text><text x="90" y="88" fill="#95A5A6">小网络生成小网络</text></g>
+      <g><circle cx="240" cy="60" r="7" fill="#5A8F7B"/><text x="240" y="36" font-weight="800" fill="#2E4057">HyperRep.</text><text x="240" y="50" fill="#5D6D7E">2022 · 权重空间分布</text><text x="240" y="88" fill="#95A5A6">把权重当数据学分布</text></g>
+      <g><circle cx="390" cy="60" r="7" fill="#E85D4E"/><text x="390" y="36" font-weight="800" fill="#2E4057">p-diff</text><text x="390" y="50" fill="#5D6D7E">2024 · 检查点扩散</text><text x="390" y="88" fill="#95A5A6">AE+LDM 生成高性能参数</text></g>
+      <g><circle cx="540" cy="60" r="7" fill="#E85D4E"/><text x="540" y="36" font-weight="800" fill="#2E4057">CondP-Diff / Tina / ORAL</text><text x="540" y="50" fill="#5D6D7E">2024-25 · 条件化扩散</text><text x="540" y="88" fill="#95A5A6">文本/任务条件注入扩散</text></g>
+      <g><circle cx="700" cy="60" r="7" fill="#E85D4E"/><text x="700" y="36" font-weight="800" fill="#2E4057">RPG</text><text x="700" y="50" fill="#5D6D7E">2025 · 递归扩散 2 亿参数</text><text x="700" y="88" fill="#95A5A6">Mamba+原型条件，分钟级</text></g>
+      <g><circle cx="860" cy="60" r="9" fill="#C9A86C"/><text x="860" y="36" font-weight="900" fill="#2E4057">DnD / T2L</text><text x="860" y="50" fill="#5D6D7E">2025 · prompt→LoRA</text><text x="860" y="88" fill="#95A5A6">LLM 规模 · 秒级 · 零梯度</text></g>
+    </g>
+    <text x="40" y="140" font-size="14" font-weight="800" fill="#1B4B6F">两条技术轴在 DnD 处交叉</text>
+    <g font-size="12.5">
+      <rect x="40" y="160" width="420" height="64" rx="12" fill="#eef3f7" stroke="#1B4B6F" stroke-width="2"/>
+      <text x="250" y="186" text-anchor="middle" font-weight="800" fill="#1B4B6F">轴 1：生成架构 —— 扩散 → 单步回归</text>
+      <text x="250" y="208" text-anchor="middle" fill="#5D6D7E">p-diff/RPG 要迭代去噪几十步；DnD 用级联卷积一次映射，效率优先</text>
+      <rect x="500" y="160" width="420" height="64" rx="12" fill="#fdf3f1" stroke="#E85D4E" stroke-width="2"/>
+      <text x="710" y="186" text-anchor="middle" font-weight="800" fill="#8c2f24">轴 2：条件形式 —— 二元嵌入 → 原始 prompts</text>
+      <text x="710" y="208" text-anchor="middle" fill="#5D6D7E">RPG 的条件是任务 ID/原型向量；DnD 直接吃自然语言 prompt 批次</text>
+      <rect x="270" y="252" width="420" height="72" rx="14" fill="#1B4B6F"/>
+      <text x="480" y="282" text-anchor="middle" font-size="15" font-weight="900" fill="#fff">DnD ＝ 无条件扩散的效率 × 自然语言条件的表达力</text>
+      <text x="480" y="306" text-anchor="middle" font-size="12" fill="#cfd8de">再加一个关键魔法：把"无标注 prompts"当作数据集指纹（§2.3）</text>
+      <line x1="250" y1="224" x2="360" y2="256" stroke="#1B4B6F" stroke-width="2.5" marker-end="url(#t3)"/>
+      <line x1="710" y1="224" x2="600" y2="256" stroke="#E85D4E" stroke-width="2.5" marker-end="url(#t3)"/>
+    </g>
+  </svg>
+  <figcaption><b>图 S2（自绘）</b>：DnD 在参数生成谱系中的位置。工作区联动：本仓库此前解读过它的直接前身 <b>RPG</b>（递归扩散参数生成），旁边还有同期的 <b>Text-to-LoRA</b>（Sakana AI，超网络按任务描述单步生成 LoRA）——三篇对照阅读，正好覆盖"扩散 vs 回归"与"粗条件 vs 细条件"两个设计轴。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>为什么 DnD 放弃了扩散？—— 一道效率账</h4>
+    <p>p-diff/RPG 生成参数要跑完整反向扩散链（几十步网络前向）；DnD 是<strong>确定性单步回归</strong>。代价是放弃分布建模：扩散能采样"参数的分布"，回归只能输出"条件对应的点估计"。论文赌的是：<strong>对下游适配而言，你要的不是"任何好权重"，而是"匹配当前任务的那一个好权重"</strong>——点估计够了，分布是奢侈品。这个赌注与 LLM 推理的时代精神一致（蒸馏、投机解码都在砍采样步数）。但它也埋下隐患：单步回归对多模态的"条件→权重"关系（同一数据集可能对应多个好解）只能学出均值，可能落在流形外——这是 Q3（外推边界）的理论根源。</p>
+  </div>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="s4">
+  <div class="kicker">CHAPTER 04 · 全景</div>
+  <h2>DnD 全景：三阶段流水线</h2>
+  <figure>
+    <img src="figures/fig2_pipeline.png" alt="论文 Figure 2：DnD 三阶段流水线">
+    <figcaption><b>图 1（论文 Figure 2 精准裁剪）</b>：① 准备训练数据——在 ShareGPT/Alpaca/Rossetta 等数据集上微调基座，得到检查点库；② 训练 DnD——随机把 prompt 批与检查点配对，文本编码器出条件，参数生成器出权重，MSE 监督；③ 使用——对新数据集（in-domain 的 GlaiveAs 或跨域的 Science）直接"拖"出适配好的模型。</figcaption>
+  </figure>
+  <div class="svgbox">
+  <svg viewBox="0 0 920 400" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="p4" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="#1B4B6F"/></marker></defs>
+    <g font-size="13">
+      <rect x="30" y="40" width="250" height="120" rx="14" fill="#eef3f7" stroke="#1B4B6F" stroke-width="2"/>
+      <text x="155" y="70" text-anchor="middle" font-weight="900" fill="#1B4B6F">阶段 1 · 检查点收集</text>
+      <text x="155" y="94" text-anchor="middle" fill="#5D6D7E" font-size="12">各数据集预训练 + 迭代微调</text>
+      <text x="155" y="114" text-anchor="middle" fill="#5D6D7E" font-size="12">每步存快照（Table 9）</text>
+      <text x="155" y="138" text-anchor="middle" fill="#8c2f24" font-size="12" font-weight="700">监督信号 = 温和微调快照</text>
+      <rect x="335" y="40" width="250" height="120" rx="14" fill="#fdf3f1" stroke="#E85D4E" stroke-width="2"/>
+      <text x="460" y="70" text-anchor="middle" font-weight="900" fill="#8c2f24">阶段 2 · 随机配对</text>
+      <text x="460" y="94" text-anchor="middle" fill="#5D6D7E" font-size="12">prompt 批 {pᵢ} ↮ 检查点 {mⱼ}</text>
+      <text x="460" y="114" text-anchor="middle" fill="#5D6D7E" font-size="12">每迭代随机抽一对（式 2）</text>
+      <text x="460" y="138" text-anchor="middle" fill="#8c2f24" font-size="12" font-weight="700">多样性 = 泛化生命线（§10）</text>
+      <rect x="640" y="40" width="250" height="120" rx="14" fill="#f4efe3" stroke="#C9A86C" stroke-width="2"/>
+      <text x="765" y="70" text-anchor="middle" font-weight="900" fill="#7a5c28">阶段 3 · 生成器训练</text>
+      <text x="765" y="94" text-anchor="middle" fill="#5D6D7E" font-size="12">Sentence-BERT 编码 prompt 批</text>
+      <text x="765" y="114" text-anchor="middle" fill="#5D6D7E" font-size="12">超卷积解码器回归 tokenized 权重</text>
+      <text x="765" y="138" text-anchor="middle" fill="#8c2f24" font-size="12" font-weight="700">MSE · 5000 步 · AdamW 3e-5</text>
+      <line x1="280" y1="100" x2="330" y2="100" stroke="#1B4B6F" stroke-width="3.5" marker-end="url(#p4)"/>
+      <line x1="585" y1="100" x2="635" y2="100" stroke="#1B4B6F" stroke-width="3.5" marker-end="url(#p4)"/>
+      <rect x="120" y="220" width="680" height="120" rx="16" fill="#1B4B6F"/>
+      <text x="460" y="252" text-anchor="middle" font-weight="900" fill="#fff" font-size="15">推理：新数据集 → 抽一批无标注 prompts → 编码 → 一次前向 → 整套 LoRA → 挂载即用</text>
+      <text x="460" y="282" text-anchor="middle" fill="#cfd8de" font-size="12.5">in-domain：常识→常识 · cross-domain：常识→科学（+8.7 分） · 0.11s（0.5B）/ 0.73s（7B）</text>
+      <text x="460" y="318" text-anchor="middle" fill="#f0cf8e" font-size="12" font-family="'JetBrains Mono',monospace">no labels · no answers · no gradient descent · single forward</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S3（自绘）</b>：DnD 三阶段。注意红色标注的三处"隐藏要点"，分别在 §7、§10、§7 展开。批长 N 按任务不同（§3.1 与 Table 7 各执一词，见 C6）。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>三阶段为何这样切？——把"贵"与"活"分装进两个阶段</h4>
+    <p>阶段 1（收集检查点）是<strong>唯一昂贵的部分</strong>，但它对每个（数据集, 基座）组合只需做一次，且产物是通用商品——任何人分享的 LoRA 检查点（HuggingFace 上的几万个 adapter）理论上都能直接充当作训料，不必自己训。阶段 2+3（配对与训练生成器）是<strong>便宜但需要"活水"的部分</strong>：随机配对的多样性决定泛化（§10）。这个切分意味着 DnD 的商业模式天生是"公共检查点库 + 私有生成器"——阶段 1 的成本可以被整个社区摊薄，这也是结语"利用互联网现成检查点"愿景的伏笔。反过来看，阶段 1 的<strong>质量不可控</strong>（别人分享的 LoRA 训练配方各异、有些已过拟合）会是实践中的第一坑。</p>
+  </div>
+  <h3>组件分解：输入/输出/取舍</h3>
+  <table>
+    <tr><th>组件</th><th>输入 → 输出</th><th>设计选择</th><th>替代方案</th><th>取舍</th></tr>
+    <tr><td>检查点库</td><td>数据集 × 两阶段微调 → 快照集</td><td>温和快照（50-200 步）</td><td>只存最终收敛 LoRA</td><td>快照更"多样"但更弱；§14 假说 H1 的根源</td></tr>
+    <tr><td>条件抽取器</td><td>prompt 批 → 嵌入 [B,N,L,C]</td><td>Sentence-BERT（冻结）</td><td>GloVe/T5/LLM（Table 4b）</td><td>轻量编码器可大 batch；decoder-only 反而失败</td></tr>
+    <tr><td>配对策略</td><td>两个池 → (prompt批, 检查点)</td><td>每迭代独立随机（128←x）</td><td>同一批 prompt 配所有检查点</td><td>随机性提供"数据集指纹"对比信号；Fig 4a</td></tr>
+    <tr><td>生成器</td><td>嵌入 → tokenized LoRA</td><td>级联超卷积块（式 5）</td><td>扩散去噪器 / Transformer</td><td>单步高效、局部归纳偏置适配权重的平移结构</td></tr>
+    <tr><td>监督</td><td>生成 vs 快照</td><td>逐元素 MSE</td><td>任务损失（在数据上评测）</td><td>MSE 便宜稳定；但与"任务表现"间接相关——§14 追问</td></tr>
+    <tr><td>挂载</td><td>生成的 A,B → W0+BA</td><td>直接替换原 LoRA</td><td>—</td><td>与推理框架完全兼容，零额外部署成本</td></tr>
+  </table>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="s5">
+  <div class="kicker">CHAPTER 05 · 条件设计</div>
+  <h2>条件设计：无标注 prompts 为什么是最优条件</h2>
+  <p>DnD 最大的胆量在于<strong>条件里没有任何标签、没有任何答案</strong>——只有一把从数据集随手抽的 prompt。这凭什么够用？论文援引数据集偏差研究（Liu &amp; He 2025；Zeng et al. 2024）：不同数据集的样本带有强烈的"指纹"特征（措辞风格、题目格式、主题分布）。prompts 就是数据集的指纹卡片，生成器靠指纹定位"该拖往权重空间的哪个区域"。</p>
+  <div class="mathcard"><h4>式 (2)-(3)：配对与编码</h4>$$[p_1,\cdots,p_I]\ \xrightarrow{\text{randomly pick}}\ \{p_i, m_j\}\ \xleftarrow{\text{randomly pick}}\ [m_1,\cdots,m_J],\qquad c_i = \mathrm{Encoder}(p_i,\ \theta)$$<p class="note">关键细节：<strong>配对是跨数据集随机完成的</strong>——某个检查点 $m_j$ 这一步配上自己数据集的 prompt，下一步可能配上别人的。随机性迫使生成器只能依赖"指纹→权重"的统计关联，而不是记住固定组合。</p></div>
+  <div class="mathcard"><h4>推导：为什么"随机配对"等价于最大化条件-权重互信息</h4>
+  <p style="font-size:14px">把训练目标写成对配对分布 $\pi(c, m)$ 的期望：$\min_\phi\ \mathbb{E}_{(c,m)\sim\pi}\ \|G_\phi(c) - m\|^2$。MSE 最优解是条件均值 $G^*(c) = \mathbb{E}[m \mid c]$。要让 $G^*$ 真正依赖 $c$，需要 $\pi$ 中 <em>给定 c 后 m 的分布足够"尖锐"且随 c 变化</em>——即互信息 $I(c; m)$ 大。</p>
+  <p style="font-size:14px;margin-bottom:4px">两种配对策略的互信息对比一目了然：</p>
+  <ul style="font-size:14px">
+    <li>Strategy 1（固定批）：$m \perp c \mid \text{batch}$——同批 prompt 配一切检查点，$I(c;m)\approx 0$，最优解退化为全局均值 $\mathbb{E}[m]$（一个"万能但平庸"的权重）；</li>
+    <li>Strategy 2（每迭代重抽）：跨数据集的随机配对保留了 $c$ 对 $m$ 的预测力，同时残差项 $\mathbb{E}[m|c]-m$ 的方差提供正则（§14）。</li>
+  </ul>
+  <p class="note">这就是"多样性定理"的信息论形式：<strong>泛化不是学出来的，是配对分布里保留的</strong>。Strategy 1 在 x=512 时也能爬到 46 分（两种策略的完整对比见 §10），因为条件池够大后 batch 内部恰好出现了多样性——与该解释自洽。</p>
+  </div>
+  <h3>消融一：条件里加答案反而崩盘</h3>
+  <table>
+    <tr><th>条件类型（ARC-c 测试）</th><th>准确率</th><th>相对训练 LoRA 39.5</th></tr>
+    <tr><td class="best">仅 prompts</td><td class="best">51.6</td><td class="best">+12.1</td></tr>
+    <tr><td>prompts + answers</td><td class="bad">27.0</td><td class="bad">−12.5</td></tr>
+    <tr><td>混合（prompt:answer = 4:1）</td><td>49.7</td><td>+10.2</td></tr>
+  </table>
+  <p>为什么加信息反而变差？论文的归因：常识推理数据集的答案缺乏多样性（无非 A/B/C/D），把答案拼进条件<strong>稀释了数据集指纹</strong>，让不同数据集的条件嵌入变得难以区分。附录 B.3 补了对照：数学任务上答案长且多样，answer 条件能到 64.0（prompt 66.3 仍更好）。合并两组实验读出的普适结论：<strong>条件的价值 ∝ 条件的"数据集可区分性"，而不是"信息量"</strong>。</p>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxq" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#94a3b8"/></pattern></defs>
+    <text x="30" y="28" font-size="13.5" font-weight="800" fill="#2E4057">条件抽取器消融（ARC-c，pixel 柱，7px 格）</text>
+    <g font-size="12" text-anchor="middle">
+      <text x="120" y="60" font-weight="700" fill="#5D6D7E">GloVe</text>
+      <rect x="94" y="128" width="52" height="124" fill="url(#pxq)"/><text x="120" y="120" font-weight="800" fill="#475569">50.8</text>
+      <text x="300" y="60" font-weight="700" fill="#1B4B6F">Sentence-BERT</text>
+      <rect x="274" y="124" width="52" height="128" fill="#1B4B6F"/><text x="300" y="116" font-weight="900" fill="#1B4B6F">51.6</text>
+      <text x="480" y="60" font-weight="700" fill="#5D6D7E">T5-base</text>
+      <rect x="454" y="130" width="52" height="122" fill="url(#pxq)"/><text x="480" y="122" font-weight="800" fill="#475569">50.2</text>
+      <text x="660" y="60" font-weight="700" fill="#8c2f24">Qwen2.5-7B</text>
+      <rect x="634" y="238" width="52" height="14" fill="#E85D4E"/><text x="660" y="230" font-weight="900" fill="#8c2f24">fail</text>
+      <text x="810" y="60" font-weight="700" fill="#5D6D7E">训练 LoRA 均值</text>
+      <rect x="784" y="160" width="52" height="92" fill="#E8E8E4"/><text x="810" y="152" font-weight="800" fill="#95A5A6">39.5</text>
+      <line x1="70" y1="252" x2="860" y2="252" stroke="#2C3E50" stroke-width="2.5"/>
+      <text x="450" y="292" font-size="12.5" fill="#5D6D7E">三个轻量编码器几乎打平（±0.7）—— 条件表示的"精度"不是瓶颈，"多样性"才是</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S4（自绘 pixel-art）</b>：Table 4b 可视化。Qwen2.5-7B 失败的两个可能原因：太重导致每迭代配对数骤减；decoder-only 把 prompt 压成"答案取向"的表示，抹平了数据集差异。</figcaption>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>decoder-only 失败的深层含义：条件表示要"保留差异"，不要"强行统一"</h4>
+    <p>Sentence-BERT/T5/GloVe 的共同点是<strong>非生成式表示</strong>——同一批 prompt 里数据集 A 和数据集 B 的嵌入分布保持天然的距离。而 7B decoder-only 模型见过太多"接答案"的语境，倾向把不同数据集的 prompt 都映到"即将作答"的相似状态——差异被压平，指纹失效。这给所有"LLM 当 encoder"的设计敲了警钟：<strong>表征的任务一致性（统一空间）与可分性（保留差异）是一对张力</strong>，条件生成要的是后者。</p>
+  </div>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="s6">
+  <div class="kicker">CHAPTER 06 · 生成器</div>
+  <h2>生成器解剖：超卷积解码器的三向卷积</h2>
+  <figure>
+    <img src="figures/fig3_block.png" alt="论文 Figure 3：超卷积块结构" style="max-width:520px">
+    <figcaption><b>图 2（论文 Figure 3 精准裁剪）</b>：每个超卷积块含 5 个 2D 卷积——两个宽度卷积 ConvW（作用于 C,L）、两个高度卷积 ConvH（作用于 L,N）、一个逐层卷积 ConvL（作用于 N,L），双分支求和后融合。</figcaption>
+  </figure>
+  <p>条件嵌入是四维张量 $[B, N, L, C]$（批、prompt 批长、序列长、通道），目标是 tokenized 权重 $[B, N_w, L_w, C_w]$。怎么"卷"过去？诀窍是<strong>轮换扮演</strong>：每次卷积把两个维度当作特征图（H×W），剩下的维度当通道——于是一个 2D 卷积就能在任意一对维度之间交换信息。论文式 (5)：</p>
+  <div class="mathcard"><h4>式 (5)：超卷积块（附录 A.3，逐字核对）</h4>
+  $$c^l_W = \mathrm{Conv}^1_H\big(\mathrm{Conv}^1_W(c^{l-1})\big),\qquad c^l_H = \mathrm{Conv}^2_W\big(\mathrm{Conv}^2_H(c^{l-1})\big)$$
+  $$c^l = \mathrm{Conv}_L\big(c^l_W + c^l_H + b_3\big)$$
+  <p class="note">变量表：$c^{l}$ 第 $l$ 块隐状态；$c^0$ 为条件嵌入；$b_3$ 可学习偏置。每块 = 2×ConvW + 2×ConvH + 1×ConvL，共 5 个卷积。</p>
+  <div class="cf">反事实：若去掉双分支、只留单路径 ConvW→ConvH→ConvL 会怎样？——W/H 两支本质是"先横后纵"与"先纵后横"两种信息传播顺序，并联等价于一阶的十字形感受野扩展，破坏它会让 $N$（prompt 批）与 $C$（权重通道）之间的相关性只能按固定顺序传播，逐层堆叠后等效于一个更深的单路径——表达能力未必差，但优化路径变窄。论文未消融此设计（见 §13 C8）。</div>
+  </div>
+  <div class="svgbox">
+  <svg viewBox="0 0 920 330" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><marker id="c6" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#1B4B6F"/></marker></defs>
+    <g font-size="12.5">
+      <rect x="30" y="60" width="150" height="70" rx="12" fill="#eef3f7" stroke="#1B4B6F" stroke-width="2"/>
+      <text x="105" y="88" text-anchor="middle" font-weight="800" fill="#1B4B6F">条件嵌入</text>
+      <text x="105" y="110" text-anchor="middle" font-family="'JetBrains Mono',monospace" fill="#5D6D7E">[B, N, L, C]</text>
+      <text x="105" y="128" text-anchor="middle" fill="#95A5A6" font-size="11">如 128×384×384</text>
+      <g transform="translate(240,40)">
+        <rect x="0" y="20" width="230" height="150" rx="14" fill="#fff" stroke="#C9A86C" stroke-width="2.5"/>
+        <text x="115" y="46" text-anchor="middle" font-weight="900" fill="#7a5c28">超卷积块 ×L（级联）</text>
+        <rect x="16" y="62" width="90" height="26" rx="6" fill="#eef3f7"/><text x="61" y="79" text-anchor="middle" font-size="11.5">ConvW (C,L)</text>
+        <rect x="124" y="62" width="90" height="26" rx="6" fill="#eef3f7"/><text x="169" y="79" text-anchor="middle" font-size="11.5">ConvH (L,N)</text>
+        <rect x="16" y="100" width="90" height="26" rx="6" fill="#fdf3f1"/><text x="61" y="117" text-anchor="middle" font-size="11.5">ConvH (L,N)</text>
+        <rect x="124" y="100" width="90" height="26" rx="6" fill="#fdf3f1"/><text x="169" y="117" text-anchor="middle" font-size="11.5">ConvW (C,L)</text>
+        <path d="M 106 75 h 14" stroke="#1B4B6F" stroke-width="2" marker-end="url(#c6)"/><path d="M 214 113 h 8" stroke="#1B4B6F" stroke-width="2"/>
+        <path d="M 106 113 h 14" stroke="#E85D4E" stroke-width="2" marker-end="url(#c6)"/><path d="M 61 88 v 8" stroke="#E85D4E" stroke-width="2"/>
+        <rect x="52" y="138" width="126" height="24" rx="6" fill="#1B4B6F"/><text x="115" y="154" text-anchor="middle" font-size="11.5" fill="#fff">ConvL (N,L) ＋ ⊕</text>
+      </g>
+      <rect x="530" y="60" width="150" height="70" rx="12" fill="#eef3f7" stroke="#1B4B6F" stroke-width="2"/>
+      <text x="605" y="88" text-anchor="middle" font-weight="800" fill="#1B4B6F">tokenized 权重</text>
+      <text x="605" y="110" text-anchor="middle" font-family="'JetBrains Mono',monospace" fill="#5D6D7E">[B, Nw, Lw, Cw]</text>
+      <text x="605" y="128" text-anchor="middle" fill="#95A5A6" font-size="11">如 4296×8×128（0.5B）</text>
+      <line x1="180" y1="95" x2="236" y2="95" stroke="#1B4B6F" stroke-width="3.5" marker-end="url(#c6)"/>
+      <line x1="470" y1="95" x2="526" y2="95" stroke="#1B4B6F" stroke-width="3.5" marker-end="url(#c6)"/>
+      <text x="740" y="88" font-weight="800" fill="#2E4057">三向卷积在卷什么？</text>
+      <text x="740" y="112" fill="#5D6D7E" font-size="12" text-anchor="start">ConvW：让相邻权重 token 交换信息</text>
+      <text x="740" y="134" fill="#5D6D7E" font-size="12" text-anchor="start">ConvH：跨序列位置混合条件</text>
+      <text x="740" y="156" fill="#5D6D7E" font-size="12" text-anchor="start">ConvL：跨 prompt 批（数据集样本）混合</text>
+      <text x="740" y="178" fill="#8c2f24" font-size="12" font-weight="700" text-anchor="start">= 把"数据集指纹"烙进权重每个片段</text>
+      <text x="60" y="270" fill="#5D6D7E" font-size="12.5">与扩散生成器对比：p-diff/RPG 每步去噪都要过完整网络，几十步才收敛；DnD 一步映射 ——</text>
+      <text x="60" y="292" fill="#1B4B6F" font-size="13" font-weight="800">生成 0.5B LoRA 全套 = 0.11 s（Table 13），这是"敢放弃分布建模"换来的时间。</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S5（自绘）</b>：超卷积块的数据流。三个方向的卷积各管一个信息交换轴——这是"用 2D 卷积处理 4D 张量"的关键技巧：每次把两个维度当特征图，其余当通道。</figcaption>
+  </div>
+  <h3>tokenization：把权重变成"图像"</h3>
+  <p>沿 RPG 的做法，每层参数（如 $W\in\mathbb{R}^{d\times k}$ 的 $\Delta W=BA$ 展平序列）被切成<strong>不重叠的等长段 + padding</strong>，排成 $[N_w, L_w, C_w]$ 的"权重图像"。这一步看似工程细节，实则决定了整个学习的性质：<strong>它把"回归权重"变成了"回归一张结构规则的图像"</strong>，于是卷积的平移等变性、局部性都变成合理的归纳偏置——相邻的权重 token 往往对应相邻的神经元，它们的适配方向确实相关。</p>
+  <div class="mathcard"><h4>成本数学：为什么这套解码器生成得起 7B？</h4>
+    <p style="font-size:14px">设单个卷积核 $k\times k$、输入通道 $C_{in}$、输出 $C_{out}$、特征图 $H\times W$，FLOPs $\approx 2k^2 C_{in}C_{out} HW$。以 7B coding 配置（Table 8 末级 $(4928, 16, 512)$）最重一层计：$2\cdot 3^2 \cdot 512^2 \cdot (4928 \times 16) \approx 3.7\times 10^{11}$ FLOPs/块。一张 A100 的 bf16 算力约 312 TFLOPS → 单块毫秒级；全程几十个块 ⇒ 亚秒级（实测 0.73s，Table 13，含编码与 I/O）。对照 RPG 的几十步去噪（每步过完整网络），单步回归的优势是<strong>结构性</strong>的，不是工程调优来的。</p>
+  </div>
+  <div class="mathcard"><h4>推导：感受野如何覆盖"权重图像"？</h4>
+  <p style="font-size:14px">超卷积没有 stride/pooling，每经过一个 $k\times k$ 卷积，感受野沿该轴增长 $k-1$。每块沿 L 轴有 3 次卷积（2×ConvW + 1×ConvL），故 $L$ 块后感受野 $R_L = 1 + 3L(k-1)$；取 $k=3$、常识任务 8 块（Table 8 的 8 个级联形状）→ $R_L = 49$，而末级 $L_w = 8$——<strong>感受野早已覆盖整张权重图像</strong>。这说明：① 条件信息从第一次卷积就沿 N 轴（ConvH/ConvL）注入，逐块传播全图；② "相邻权重 token 相关"的局部性假设是合理归纳偏置（同层相邻神经元权重相关），无需全局注意力；③ 若任务需要长程权重关联（如跨层结构），此架构天然受限——这是它选 LoRA（层内局部适配）而非全量权重生成的架构层原因。</p>
+  </div>
+</section>
+
+<!-- ================= 7 ================= -->
+<section id="s7">
+  <div class="kicker">CHAPTER 07 · 配方</div>
+  <h2>训练配方精读：监督信号其实是"半成品"</h2>
+  <table>
+    <tr><th>配置项（Table 7）</th><th>常识 0.5B</th><th>代码 1.5B/7B</th><th>数学 1.5B/7B</th><th>多模态 3B</th></tr>
+    <tr><td>batch size</td><td>128</td><td>128 / 48</td><td>128 / 48</td><td>64</td></tr>
+    <tr><td>prompt 批长 N</td><td>128</td><td class="bad">16（§3.1 写 64）</td><td class="bad">32（§3.1 写 64）</td><td class="bad">16（§3.1 写 32）</td></tr>
+    <tr><td>优化器 / lr</td><td colspan="4">AdamW · 3e-5 · 5000 步 · wd 0.1 · grad clip 1.0</td></tr>
+    <tr><td>noise aug. amplitude</td><td colspan="4" class="bad">1e-4（全文未解释增广对象与方式）</td></tr>
+  </table>
+  <p>附录 A.4 揭示了监督信号的构成：<strong>两阶段收集</strong>——先在目标数据集预训练（lr 1e-4，75~8000 步），再以小学习率（1e-5/1e-6）<strong>微调 50~200 步，每步存一个快照</strong>。也就是说，DnD 学着模仿的"目标权重"，大部分是<strong>刚适配没多久、还在轨迹早段的半成品</strong>。这解释了两个表层反常：</p>
+  <ul>
+    <li><strong>为什么 DnD 敢说"赢过训练 LoRA"？</strong> 参照系（平均训练 LoRA 在<strong>没见过的</strong>数据集上的表现）本来就很弱——Table 10 里 BoolQ 检查点在 5 个数据集上直接归零。</li>
+    <li><strong>为什么 full-shot 练 300 步后反超 DnD？</strong> Fig 4b：ARC-c full-shot 从 41（约 75 迭代）涨到 55（300 迭代），而 DnD 是 51——生成器学的是"轨迹早段"的权重，自然封顶在那附近。（口径注：常识任务的快照=预训练 75 步+微调 1~50 步；代码/数学是 4000 步预训练+100 步快照，与 Fig 4b 的"75 iterations full-shot"只是量级相近、并非同一口径。）</li>
+  </ul>
+  <table>
+    <tr><th>检查点收集（Table 9）</th><th>常识</th><th>代码</th><th>数学</th><th>多模态</th></tr>
+    <tr><td>预训练 lr / 步数</td><td>1e-4 / 75</td><td>1e-4 / 4000</td><td>1e-4 / 4000</td><td>1e-4 / 8000</td></tr>
+    <tr><td>预训练 batch / 样本数</td><td>32 / 5000</td><td>64 / 10000</td><td>64 / 10000</td><td>64 / 100000</td></tr>
+    <tr><td>微调 lr / 快照步数</td><td>1e-5 / 50</td><td>1e-6 / 100</td><td>1e-6 / 100</td><td>1e-6 / 200</td></tr>
+  </table>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>"半成品监督"是缺陷还是特性？——取决于你问哪个问题</h4>
+    <p>从"还原最强 LoRA"的角度看，这是天花板锁死：生成器最多学会"75 步水平的适配"，永远够不到 300 步的 55 分。但从"泛化"的角度看，半成品快照反而是<strong>更丰富的监督</strong>：同一数据集的相邻快照构成一条低曲率的适配轨迹，生成器在轨迹上回归，等价于学了"这个数据集把基座往哪儿拖"的<strong>方向场</strong>而非单个终点——方向比终点更可迁移（新数据集的同族方向可能相似，终点则数据集专属）。这也提示一个立刻可做的改进实验：把监督换成"最终 LoRA + 轨迹混合"，看泛化-性能权衡怎么移动（§15 Q3）。</p>
+  </div>
+  <p>另一处配方悬案：Table 7 的 <strong>noise aug. amplitude 1e-4</strong>——对什么加噪（条件？权重？）、什么分布、训练还是推理，全文没有任何解释。这类未定义的数据增广往往是复现时的隐藏分水岭（第 13 章 C4）。编码侧还有个值得注意的工程细节：Sentence-BERT 只支持 512 token，代码任务的输入长达 26,624 token——做法是 padding 到 512 的整数倍后切片分别编码；数学/代码任务还要先把 L 维投影到 1000 以防卷积核内存爆炸。</p>
+</section>
+
+<!-- ================= 8 ================= -->
+<section id="s8">
+  <div class="kicker">CHAPTER 08 · 实验 I</div>
+  <h2>常识推理：leave-one-out 全矩阵精读</h2>
+  <p>设置：7 个常识数据集，<strong>轮流藏起一个当考题</strong>（leave-one-out），DnD 在其余 6 个的检查点上训练，然后直接对藏起的那一个生成权重。先看总表，再看被主表藏起来的全矩阵。</p>
+  <table>
+    <tr><th>测试集（Qwen2.5-0.5B）</th><th>训练 LoRA 均值</th><th>DnD</th><th>增益</th><th>full-shot（对角线）</th><th>DnD vs full-shot</th></tr>
+    <tr><td>ARC-e</td><td>37.5</td><td class="best">68.6</td><td>+31.1</td><td>59.4</td><td class="best">+9.2</td></tr>
+    <tr><td>OBQA</td><td>30.2</td><td class="best">40.8</td><td>+10.6</td><td>38.4</td><td class="best">+2.4</td></tr>
+    <tr><td>ARC-c</td><td>39.5</td><td class="best">51.6</td><td>+12.1</td><td>40.7</td><td class="best">+10.9</td></tr>
+    <tr><td>PIQA</td><td>40.5</td><td class="best">87.9</td><td>+47.4</td><td>66.2</td><td class="best">+21.7</td></tr>
+    <tr><td>HellaSwag</td><td>22.4</td><td class="best">25.9</td><td>+3.5</td><td>23.4</td><td class="best">+2.5</td></tr>
+    <tr><td>BoolQ</td><td>13.5</td><td class="best">44.9</td><td>+31.4</td><td>22.11</td><td class="best">+22.8</td></tr>
+    <tr><td>WinoGrande</td><td>38.8</td><td>50.0</td><td>+11.2</td><td>50.5</td><td class="bad">−0.5</td></tr>
+  </table>
+  <h3>三段式精读：数字 → 机制 → 边界</h3>
+  <p><strong>数字</strong>：平均增益 +21.0；PIQA 一项 +47.4（40.5→87.9）。<strong>机制</strong>：训练 LoRA 的均值被灾难性外推拖垮——Table 10 的完整矩阵显示 BoolQ 检查点（答案只有 True/False 两种）在 5/7 个数据集上得 0 分，WinoGrande 检查点在 PIQA 上 0.1 分；而 DnD 的条件是"目标数据集的 prompt 指纹"，它生成的是<strong>朝向目标分布</strong>的权重，不做单数据集过拟合。<strong>边界</strong>：HellaSwag 只 +3.5（对抗生成的干扰项让"指纹"的区分力下降？），WinoGrande 罕见地输给 full-shot 0.5 分——生成不是无代价的。</p>
+  <div class="critique-box"><span class="tag">C1 · 数据取证</span>
+    <h4>基座模型的 PIQA=16.6%、OBQA=16.6%：低于随机的评测异常</h4>
+    <p><strong>证据</strong>：Table 10 中 Qwen2.5-0.5B 基座行：PIQA 16.6（二选一，随机应为 ~50）、OBQA 16.6（五选一，随机 20）。<strong>推理</strong>：除非基座真的坏到反随机（不可能——Qwen2.5-0.5B 官方 PIQA 约 66+），否则该行的评测管线（选项模板/答案提取/acc_norm）与训练 LoRA 行不同或存在 bug。<strong>影响</strong>：Table 5"基座 vs DnD"的对比在这些列上被系统性夸大。<strong>补救</strong>：用 lm-eval-harness 重测基座并公布模板。这也牵连 Figure 5——它的"base"在 OBQA 上是 44（vs Table 10 的 16.6），两处评测协议明显不一致（详见 C5）。</p>
+  </div>
+  <div class="critique-box"><span class="tag">C2 · 参照系</span>
+    <h4>"+21 分"的对照组是"半成品 × 错位任务"</h4>
+    <p><strong>证据</strong>：附录 A.4——监督快照仅微调 50-200 步；Table 10——训练 LoRA 在外推任务上大量归零。<strong>推理</strong>：增益 =（朝向目标分布的权重）−（过拟合别处的弱权重），两部分都贡献了差值。<strong>影响</strong>：把 "+21" 解读为"DnD 的适配能力超过真实微调"是过度引申；更诚实的表述是"<strong>DnD 在没见过的任务上，比'把别的任务微调过的模型'直接拿来用，好得多</strong>"——这仍是很有价值的主张（对应现实中的"拿现成 adapter 凑合用"场景），但必须说清楚对照组是什么。<strong>补救</strong>：增加"训练 LoRA 在自身数据集上的 full-shot"作为对照上界（论文给了对角线，值得在主表突出），以及"多任务合并 LoRA / 模型汤"基线（缺，见 C3）。</p>
+  </div>
+</section>
+
+<!-- ================= 9 ================= -->
+<section id="s9">
+  <div class="kicker">CHAPTER 09 · 实验 II</div>
+  <h2>代码、数学、多模态：越难的基准，增益越大？</h2>
+  <table>
+    <tr><th>任务（骨干）</th><th>基准</th><th>训练 LoRA 均值</th><th>基座</th><th>DnD</th><th>vs LoRA</th><th>vs 基座</th></tr>
+    <tr><td>代码（1.5B）</td><td>HumanEval pass@1 / 5 / 10</td><td>17.6 / 28.6 / 33.2</td><td>14.7 / 26.5 / 32.3</td><td class="best">32.7 / 55.3 / 64.1</td><td>+15.1 / +26.7 / +30.9</td><td>+18.0 / +28.8 / +31.8</td></tr>
+    <tr><td>数学（1.5B）</td><td>gsm8K / MATH</td><td>42.9 / 14.8</td><td>64.4 / 29.3</td><td class="best">66.3 / 23.9</td><td>+23.4 / +9.1</td><td>+1.9 / <span style="color:#8c2f24">−5.4</span></td></tr>
+    <tr><td>多模态（3B VL）</td><td>Math-Vision / Math-Vista</td><td>23.0 / 61.5</td><td>22.7 / —</td><td class="best">24.3 / 62.3</td><td>+1.3 / +0.8</td><td>+1.6 / —</td></tr>
+    <tr><td>代码（7B）</td><td>LiveCodeBench pass@1 / 5 / 10</td><td class="bad">13.0 / 16.4 / 17.6（半数归零）</td><td>34.1 / 41.6 / 43.8</td><td>33.4 / 42.1 / 46.0</td><td>+20.3 / +25.7 / +28.4</td><td><span style="color:#8c2f24">−0.7</span> / +0.5 / +2.2</td></tr>
+    <tr><td>数学（7B）</td><td>gsm8K</td><td>65.9</td><td>81.2</td><td class="best">83.1</td><td>+17.2</td><td>+1.9</td></tr>
+  </table>
+  <p>基座数字取自 Table 11/12 的 "Qwen2.5" 列（与 Table 5 的出入见 §13 C9）。三段式：<strong>数字</strong>——HumanEval pass@10 相对训练 LoRA 增益 +30.9 最大；<strong>机制</strong>——训练代码 LoRA 在指令式代码数据上训练，而 HumanEval 是函数补全分布，错位严重：它们的 pass@1 均值只有 17.6，仅比基座 14.7 高 2.9 分；DnD 拿 HumanEval 之外的代码 prompt 指纹做条件，生成的权重反而兼容补全分布——这是"指纹→方向"泛化力的最干净证据。多模态上增益骤减（vs LoRA 仅 +0.8~1.3），因为 MathV360K 是<strong>单一数据集</strong>训练 → 检查点多样性塌缩到 1，恰好命中 §10 的"多样性不足"区。<strong>边界</strong>——MATH 上 DnD（23.9）输给基座（29.3）：竞赛数学的 prompt 指纹可能不足以定位"更深推理"的权重方向，或半成品监督天花板在此暴露。</p>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>7B 结果的两个读法：好消息与坏消息</h4>
+    <p>好消息：7B 上管线照常工作——gsm8K 83.1 &gt; 基座 81.2，且在 LiveCodeBench 这种强污染控制的基准上，DnD 仍把"半数归零"的训练 LoRA 均值（13.0）拉高到 33.4。<strong>坏消息</strong>：在基座本身很强的地方，DnD 的增益趋近于零甚至轻微为负——LiveCodeBench pass@1 比基座低 0.7 分（33.4 vs 34.1），pass@5/10 也只 +0.5/+2.2。<strong>DnD 的价值区间在"基座弱或分布错位"处，不在"基座已强"处</strong>；部署前应先量化错位程度（Q2 的条件空间覆盖度正好可用）。另外 0.5B 时代"动辄 +30"的印象需要校准：那是常识推理上 vs 训练 LoRA 的数字（平均 +21.0、单项最高 +47.4），跨任务的真实增益区间是 +0.8 ~ +31.8（vs 各自基座）。</p>
+  </div>
+</section>
+
+<!-- ================= 10 ================= -->
+<section id="s10">
+  <div class="kicker">CHAPTER 10 · 实验 III</div>
+  <h2>配对策略：一条"多样性定理"的两个推论</h2>
+  <figure>
+    <img src="figures/fig4a_pairing.png" alt="论文 Figure 4a：两种配对策略对比" style="max-width:460px">
+    <figcaption><b>图 3（论文 Figure 4a 精准裁剪）</b>：Strategy 1（x←x：固定一批 prompts 配所有检查点）在大条件量下 OOM 且起步极差；Strategy 2（128←x：每迭代从大池子随机抽 128 条）稳定爬升到 51。</figcaption>
+  </figure>
+  <p>把 Figure 4a 与 Table 4c（训练集数量消融：6→1 个训练集时增益 +12.1→−1.4）放在一起，可以提炼成一个统一命题：<strong>DnD 的泛化能力来自"条件-参数"相关性的覆盖密度，而不是任何单一配对的质量</strong>。两个推论：</p>
+  <ul>
+    <li><strong>推论一（批内多样性）</strong>：Strategy 1 用同一批 prompt 配所有检查点，等于告诉生成器"条件不重要，权重自己看着办"。注意它并非永不上涨——条件池扩到 512 时爬到 46 分——但爬升速度远慢于 Strategy 2（同点 48），且在追平之前就被 OOM 掐断（1024/5000 条）。条件-权重互信息立不起来，生成器就退化为"无视条件的权重平均器"。</li>
+    <li><strong>推论二（跨数据集多样性）</strong>：Table 4c 中训练集从 6 个砍到 3 个，增益从 +12.1 跳水到 +0.8；≤2 个时翻负（−1.4）——条件空间 coverage 不足，新数据集的指纹落在训练分布外，生成退化为"最近训练检查点的粗略平均"。</li>
+  </ul>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>从"多样性定理"反推 DnD 的部署前检查清单</h4>
+    <p>把两个推论翻译成工程清单：① 你的新任务 prompts，与训练任务池的嵌入距离分布是什么样？（距离越近，插值越可靠——可直接用 Sentence-BERT 余弦距离估计，零训练成本）；② 你的检查点库覆盖了多少个"不同指纹"的数据集？（≥3 个且语义分散，是论文给出的经验下界）；③ 有没有条件池被单批 prompt 锁死？（正确做法是每迭代重抽）。三条都过，DnD 大概率工作；任何一条不满足，先补数据再谈生成。</p>
+    <p>顺带回应一个自然的质疑：<strong>"给 DnD 也喂答案，会不会更强？"</strong>——Table 4a 已经回答了：常识任务上 prompt+answer 崩到 27.0。这意味着 Fig 4c 里"FS/ICL 用了答案而 DnD 没用"的信息不对称，在常识域其实是<strong>负资产</strong>：答案的低多样性会抹平数据集指纹。DnD 的"劣势"恰恰是它的防御。</p>
+  </div>
+</section>
+
+<!-- ================= 11 ================= -->
+<section id="s11">
+  <div class="kicker">CHAPTER 11 · 实验 IV</div>
+  <h2>效率前沿：与 full-shot、few-shot、ICL 的三方对峙</h2>
+  <figure>
+    <img src="figures/fig4b_fullshot.png" alt="论文 Figure 4b：DnD vs full-shot" style="max-width:430px;display:inline-block">
+    <img src="figures/fig4c_fs_icl.png" alt="论文 Figure 4c：vs few-shot 与 ICL" style="max-width:430px;display:inline-block">
+    <figcaption><b>图 4（论文 Figure 4b/4c 精准裁剪）</b>：左——DnD 51 分/0.1 秒 vs full-shot 41 分/250 秒（≈75 迭代）vs full-shot 加强版 55 分/1200 秒（300 迭代）。右——FS 与 ICL 随 shots 数增加精度爬升、开销飙升（ICL 到 256 shots 要 6056 秒），256 shots 内两者都未追上 DnD 的 51.6；且 FS/ICL 都用了答案，DnD 只用 128 条无标注 prompts。</figcaption>
+  </figure>
+  <div class="svgbox">
+  <svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+    <defs><pattern id="pxe" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#94a3b8"/></pattern></defs>
+    <text x="30" y="28" font-size="13.5" font-weight="800" fill="#2E4057">性能-开销前沿（ARC-c 测试，1 柱 = 7px 像素格，开销对数定位）</text>
+    <g font-size="12">
+      <text x="120" y="66" text-anchor="middle" font-weight="700" fill="#5D6D7E">ICL@256</text>
+      <rect x="96" y="86" width="48" height="166" fill="url(#pxe)"/><text x="120" y="78" text-anchor="middle" font-weight="800" fill="#475569">~40 分 / 6056 s</text>
+      <text x="300" y="66" text-anchor="middle" font-weight="700" fill="#5D6D7E">FS@256</text>
+      <rect x="276" y="98" width="48" height="154" fill="url(#pxe)"/><text x="300" y="90" text-anchor="middle" font-weight="800" fill="#475569">~40 分 / 204 s</text>
+      <text x="480" y="66" text-anchor="middle" font-weight="700" fill="#5D6D7E">full-shot@75it</text>
+      <rect x="456" y="92" width="48" height="160" fill="url(#pxe)"/><text x="480" y="84" text-anchor="middle" font-weight="800" fill="#475569">41 分 / 250 s</text>
+      <text x="660" y="66" text-anchor="middle" font-weight="700" fill="#5D6D7E">full-shot@300it</text>
+      <rect x="636" y="78" width="48" height="174" fill="url(#pxe)"/><text x="660" y="70" text-anchor="middle" font-weight="800" fill="#475569">55 分 / 1200 s</text>
+      <text x="812" y="66" text-anchor="middle" font-weight="900" fill="#1B4B6F">DnD</text>
+      <rect x="788" y="102" width="48" height="150" fill="#1B4B6F"/><text x="812" y="94" text-anchor="middle" font-weight="900" fill="#1B4B6F">51.6 分 / 0.11 s</text>
+      <line x1="60" y1="252" x2="860" y2="252" stroke="#2C3E50" stroke-width="2.5"/>
+      <text x="450" y="286" text-anchor="middle" font-size="12.5" fill="#5D6D7E">柱高 = 性能；柱下标注 = 开销。DnD 以 4 个数量级的开销差，卡在 41 与 55 之间。</text>
+      <text x="450" y="310" text-anchor="middle" font-size="12.5" fill="#8c2f24" font-weight="700">口径考据：摘要"12,000×"、Fig4b"2.5~12K×"、Fig4c"120~60000×" —— 三处对照对象各不相同（§13 C3）</text>
+    </g>
+  </svg>
+  <figcaption><b>图 S6（自绘 pixel-art）</b>：效率-性能前沿全景。DnD 的真正卖点不是"最强"，而是" Pareto 前沿上的极端性价比点"。</figcaption>
+  </div>
+  <h3>三处倍数口径考据</h3>
+  <table>
+    <tr><th>出处</th><th>倍数</th><th>对照对象</th><th>是否可复算</th></tr>
+    <tr><td>摘要</td><td>"up to 12,000× lower overhead than full fine-tuning"</td><td>full-shot 300 迭代 1200s ÷ 0.1s</td><td class="best">可复算 ✓</td></tr>
+    <tr><td>Figure 4b 标注</td><td>"2.5~12K× faster"</td><td>250s÷0.1s≈2500× 到 1200s÷0.1s≈12000×</td><td class="best">可复算 ✓</td></tr>
+    <tr><td>Figure 4c 标注</td><td>"saving 120~60000× overhead"</td><td>未注明对照；若对 FS/ICL 各 shots 组合取范围，量级可对上，但论文未给算式</td><td class="bad">部分可复算</td></tr>
+  </table>
+  <p>三个数字都对得上各自的隐含对照，但<strong>同一篇论文用三套倍数口径而不并排说明</strong>，读者引用时极易混用。正确的摘要方式："对 full-shot 2.5~12K×，对 few-shot/ICL 视 shots 数 120~60000×"。</p>
+  <p>另一个论文没有给、但对部署决策重要的分解：<strong>0.11 秒里都发生了什么？</strong>论文未拆分编码与生成的耗时占比。按 §6 的成本数学推断（生成器几十个块的卷积 ≈ 每块毫秒级，总计约几十毫秒），Sentence-BERT 对 128 条 384-token prompt 的编码很可能是另一半开销——这意味着<strong>批长 N 与输入长度 L 是推理延迟的一阶项</strong>（这与 C6 的 N 口径矛盾直接相关：N=16 与 N=128 的推理成本差数倍）。复现者应实测两段耗时，而非照抄总时长。</p>
+</section>
+
+<!-- ================= 12 ================= -->
+<section id="s12">
+  <div class="kicker">CHAPTER 12 · 实验 V</div>
+  <h2>与 RPG 正面交锋 + 权重空间可视化</h2>
+  <figure>
+    <img src="figures/fig5_rpg.png" alt="论文 Figure 5：DnD vs RPG" style="max-width:560px">
+    <figcaption><b>图 5（论文 Figure 5 精准裁剪）</b>：六个 close-set 数据集 + 虚线右侧的 open-set（ARC-c）。RPG 在 WinoGrande/PIQA 上塌到 4 分，在 open-set 的 ARC-c 上 21 分（低于 base 46）；DnD 全线 36~69，open-set 51。（数值逐列读自原图；注意 C5——Fig 5 的 base 行与 Table 10 的 base 行评测口径不同。）</figcaption>
+  </figure>
+  <p><strong>先交代这张图的读法边界</strong>：Figure 6 是把每个检查点上亿维的 LoRA 参数压成平面上的一个点，论文<strong>未说明投影方法</strong>（PCA？t-SNE？）与距离度量——而 2D 投影不保持高维空间的近邻关系，下文所有"最近/跳出"的表述都只是"在该投影下的视觉近邻"，应当作示意性证据而非严格论证（这也是 C10 的内容）。</p>
+  <figure>
+    <img src="figures/fig6_weightspace.png" alt="论文 Figure 6：权重空间可视化" style="max-width:640px">
+    <figcaption><b>图 6（论文 Figure 6 精准裁剪）</b>：权重空间投影（各点按在 ARC-c 上的准确率着色/标注范围）。红色 = ARC-c full-shot 簇（40.1-40.7）；绿色 = DnD 生成的 ARC-c 权重（49.4-51.6）；灰色 = 其他数据集的训练 LoRA 簇。关键细节：与 ARC-c 簇在权重空间最近的灰色簇，性能只有 19.1-46.7——<strong>权重空间的近邻 ≠ 任务性能的近邻</strong>。</figcaption>
+  </figure>
+  <h3>这张散点图比主表更有信息量（但要用对方式）</h3>
+  <ul>
+    <li><strong>"生成 ≠ 检索"的示意性证据</strong>：若 DnD 只是"挑一个最像的检查点改改"，它的性能应被训练簇封顶。投影中生成簇（49.4-51.6）位于 full-shot 簇（40.1-40.7）附近但更高、方差极小——更像"在条件引导下内插出一个新点"，而非"外推一个旧点"。但注意：灰色簇中存在 49.7-51.3 的范围（某个训练数据集的快照在 ARC-c 上本来就不差），所以<strong>"跳出所有训练簇"是不成立的</strong>，成立的是"跳出大多数、且分布更集中"。</li>
+    <li><strong>生成的簇比 full-shot 簇更"自信"</strong>：红色 full-shot 簇 40.1-40.7（窄），绿色生成簇 49.4-51.6（同样窄且更高）。生成器不是随机撒点，而是把条件映射到了一个高性能、低方差的区域——MSE 回归天然偏好条件均值，这里的均值恰好是好事（见 §14 H1 的条件期望分析）。</li>
+    <li><strong>RPG 的失败模式可诊断</strong>：RPG 在 close-set 大体正常（OBQA 51、HellaSwag 50）但在 WinoGrande/PIQA 崩到 4——其二元条件嵌入无法区分训练分布内的任务（条件塌缩）；到 open-set 更是全面失效（21 &lt; base 46）。DnD 的 prompt 条件在同样的 open-set 设定下 51 &gt; base——条件表达力是 open-set 成功的充分条件（至少在这 7 个数据集上）。</li>
+  </ul>
+</section>
+
+<!-- ================= 13 ================= -->
+<section id="s13">
+  <div class="kicker">CHAPTER 13 · 批判</div>
+  <h2>批判评估：八条带证据的保留意见</h2>
+  <div class="critique-box"><span class="tag">C3</span><h4>三处加速倍数口径并存，未并排说明</h4><p><strong>证据</strong>：摘要 12,000×；Fig 4b 2.5~12K×；Fig 4c 120~60000×。<strong>推理</strong>：对照对象分别是 full-shot@300it、full-shot@75-300it、FS/ICL 各 shots。<strong>影响</strong>：二手引用必然失真。<strong>补救</strong>：正文已给出并排表（§11），引用时注明口径。</p></div>
+  <div class="critique-box"><span class="tag">C4</span><h4>noise augmentation 从未定义</h4><p><strong>证据</strong>：Table 7 出现"noise aug. amplitude 1e-4"，附录无任何解释。<strong>推理</strong>：大概率对条件嵌入或权重 token 加高斯噪声（继承 p-diff 的做法以防记忆化），但对象不明。<strong>影响</strong>：这是复现成败的潜在开关——增广对象不同，模型对 OOD 条件的鲁棒性完全不同。<strong>补救</strong>：向作者求证 / 对照开源代码。</p></div>
+  <div class="critique-box"><span class="tag">C5</span><h4>同一基座两套评测数字（Table 10 vs Figure 5）</h4><p><strong>证据</strong>：Qwen2.5-0.5B 在 OBQA：Table 10 = 16.6，Fig 5 = 44；WinoGrande：50.2 vs 81；ARC-e：54.8 vs 67。<strong>推理</strong>：两处评测模板/指标（acc vs acc_norm、选项顺序、few-shot 设置）不一致。<strong>影响</strong>：跨图比较全部失效；"DnD vs base"的增益幅度依赖你信哪张图。<strong>补救</strong>：统一评测协议并公开 prompt 模板。</p></div>
+  <div class="critique-box"><span class="tag">C6</span><h4>prompt batch 长度自相矛盾</h4><p><strong>证据</strong>：§3.1 "128, 64, 64, 32 (常识/数学/代码/多模态)" vs Table 7 "128 / 32 / 16 / 16"。<strong>推理</strong>：疑似正文与附录写作时间不同步。<strong>影响</strong>：N 直接决定条件聚合的信息量与显存，复现者无所适从。<strong>补救</strong>：以附录 Table 7 为准并实测两者。</p></div>
+  <div class="critique-box"><span class="tag">C7</span><h4>缺失的关键基线：模型汤 / LoRA 合并 / 检索式 adapter 复用</h4><p><strong>证据</strong>：全文未与"把现有 LoRA 按权重/任务相似度加权合并"（model soup、LoRAHub 一类）对比——这是 prompt→权重最便宜的零训练替代品：检索最近数据集的 LoRA 或做凸组合。<strong>推理</strong>：Fig 6 显示生成簇跳出了所有训练簇，DnD 大概率赢，但"赢多少"必须量化才有说服力。<strong>影响</strong>：实用价值定位不完整。<strong>补救</strong>：补一个"最近邻 LoRA / 均值汤"对照，预期 DnD +若干分（这正是 Q1 的探针实验设计）。</p></div>
+  <div class="critique-box"><span class="tag">C8</span><h4>关键设计未消融 + 单一骨干家族 + 无权重质量分析</h4><p><strong>证据</strong>：双分支超卷积、MSE vs 任务损失、rank 固定、tokenization 粒度——均无消融；骨干只有 Qwen2.5 系（0.5/1.5/3/7B）；未报告生成权重的奇异谱/与最近训练权重的距离。<strong>推理</strong>：泛化主张强烈依赖"Qwen 指纹可迁移到 Llama?"这类问题，目前无证据。<strong>影响</strong>：跨家族使用是最大现实需求。<strong>补救</strong>：至少一个 Llama-3 检查点库复刻（Q4）。</p></div>
+  <div class="critique-box"><span class="tag">C9</span><h4>Table 5 的 HumanEval 行实为 pass@10 口径（且与 Table 11a 冲突）</h4><p><strong>证据</strong>：Table 5 写"HumanEval：基座 32.3 → DnD 64.1（+31.8）"；而 Table 11a 给出基座 pass@1/5/10 = 14.7/26.5/32.3。32.3 恰是 <strong>pass@10</strong> 的值。<strong>推理</strong>：Table 5 未标注 k 值，读者会默认 pass@1，把 +31.8 读成单次通过率的提升——实际是 10 次采样的。<strong>影响</strong>：跨表引用必然失真（本博客初稿即中招）。<strong>补救</strong>：一律以 Table 3/11 的分 k 数字为准。</p></div>
+  <div class="critique-box"><span class="tag">C10</span><h4>Figure 6 的投影方法未说明，且"最佳单 LoRA"其实打败了 DnD</h4><p><strong>证据</strong>：① Fig 6 未说明投影算法与距离度量（见 §12 读法边界）；② Table 10 中，OBQA 检查点在 ARC-c 上得 <strong>53.4</strong>、BoolQ 检查点 52.0——都高于 DnD 的 51.6。<strong>推理</strong>：把 §8 的对照从"训练 LoRA 平均"换成"最佳单个训练 LoRA"，DnD 反而落后 1.8 分——"零成本选现有最佳 adapter"是一个论文未对比的强基线（与 C7 同族）。<strong>影响</strong>：DnD 的净收益 = 相对平均库的提升 − 相对最佳单点的落后，落地时要用"没有现成好 adapter"的场景来定义。<strong>补救</strong>：补"检索最佳 LoRA"基线；对 Fig 6 补投影方法与高维近邻的核验。</p></div>
+</section>
+
+<!-- ================= 14 ================= -->
+<section id="s14">
+  <div class="kicker">CHAPTER 14 · 理论</div>
+  <h2>理论视角：生成的权重凭什么"赢过"被训练的权重？</h2>
+  <p>全文最反直觉的事实：DnD 生成的 ARC-c 权重拿到 51.6 分，<strong>高于目标数据集自身的 full-shot</strong>——40.7 分来自一个真正在 ARC-c 上训练过的模型（Table 10 对角线），而 leave-one-out 设定下 ARC-c 的检查点根本不在 DnD 的监督里。生成的（从未见过目标任务数据的）权重打败了（在目标任务上训练过的）权重。三个不互斥的假说，各配一个可证伪实验：</p>
+  <div class="mathcard"><h4>推导：H1 的数学形式——MSE 最优解是条件期望，而条件期望是"轨迹平均"</h4>
+  <p style="font-size:14px">MSE 训练的收敛目标是 $G^*(c) = \mathbb{E}[w \mid c]$。把检查点分解为"数据集均值 + 轨迹噪声"：$w = \bar w_{\mathcal{D}} + \varepsilon$，其中 $\bar w_{\mathcal{D}}$ 是该数据集全部快照的均值、$\varepsilon$ 是微调时刻带来的偏移。若条件 $c$ 承载的数据集信息远多于时刻信息（$\varepsilon \perp c$ 近似成立），则：</p>
+  $$G^*(c) \;=\; \underbrace{\bar w_{\mathcal{D}(c)}}_{\text{轨迹均值项（SWA 式平均）}} \;+\; \underbrace{\mathbb{E}[\varepsilon \mid c]}_{\text{条件特异项}\,\approx\,0}$$
+  <p style="font-size:14px">即生成器输出 ≈ 目标数据集的<strong>隐式权重平均</strong>。而权重空间中沿低损失连通路径（linear mode connectivity）的平均点，性能不低于平均前的单点——这正是"生成的赢过被训练的"的第一性解释，也把 H1 从故事升级成了可检验命题：<strong>测 $\mathrm{Var}(w \mid c)$ 越大的数据集，DnD 相对单点的增益应越大</strong>（方差大→平均收益大）。</p>
+  <p class="note">边界：若 $\mathbb{P}(w\mid c)$ 多峰（同一任务存在多个不同解），条件均值会落在流形之间——单步回归的结构性风险，Q3 的实验可直接检验。</p>
+  </div>
+  <div class="compare-grid">
+    <div class="ccard"><h4>H1 · 轨迹平均假说（隐式 Model Soup）</h4><p><strong>主张</strong>：训练对的检查点来自微调轨迹的不同时刻，MSE 回归让生成器输出"轨迹的（条件加权）平均"——而平坦区域平均点泛化更好（SWA/model soup 的经典结论）。</p><p><strong>预言</strong>：把同一数据集的检查点直接算术平均（soup），性能应与 DnD 接近且高于单点；条件改变时应只能解释部分增益。</p><p><strong>实验</strong>：soup 基线 + 权重距离分解（生成点到轨迹均值的距离 vs 到条件特定方向的距离）。</p></div>
+    <div class="ccard g"><h4>H2 · 隐式正则假说</h4><p><strong>主张</strong>：超卷积的局部感受野 + MSE 的低频偏好，等价于对权重施加了平滑先验——滤掉了过拟合的高频分量（BoolQ 那种 0/1 硬编码正是高频）。</p><p><strong>预言</strong>：生成权重的奇异谱应比训练快照更"快衰减"；对生成权重做高频扰动应显著掉分。</p><p><strong>实验</strong>：谱分析 + 频域过滤消融（低通生成权重 vs 原始）。</p></div>
+    <div class="ccard o"><h4>H3 · 条件路由先验假说</h4><p><strong>主张</strong>：条件嵌入其实在"选方向"——生成器学到的是检查点库的隐式字典，prompt 指纹决定字典项的线性/非线性组合系数；高性能来自"组合了多个数据集的有用方向，回避了各自的过拟合分量"。</p><p><strong>预言</strong>：生成的 ΔW 应近似落在训练 ΔW 张成的子空间内（主成分占比高）；HellaSwag（对抗分布）上增益小，因为其"有用方向"与其他常识任务相关性弱。</p><p><strong>实验</strong>：把生成的 ΔW 投影到训练 ΔW 的 PCA 子空间，测残差能量与性能损失的关系。</p></div>
+  </div>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>三个假说的公共推论：DnD 的"创造性"是有界的</h4>
+    <p>H1 说它输出轨迹均值，H2 说它输出平滑版，H3 说它输出字典组合——三者都预言：<strong>DnD 无法产出训练检查点流形之外的新能力</strong>（不能把 0.5B 拖成 7B 的水平，不能生成训练任务从未涉及的能力维度）。这与第 9 章"7B 增益收缩"互相印证。对实践者的含义：DnD 是<strong>适配的压缩器与路由器</strong>，不是能力创造器；对研究者的含义：Q3（流形外推）是这条路线真正的未解难题。</p>
+  </div>
+</section>
+
+<!-- ================= 15 ================= -->
+<section id="s15">
+  <div class="kicker">CHAPTER 15 · 开放问题</div>
+  <h2>自主科研问题：五个可以立刻动手的谜</h2>
+  <div class="research-question"><span class="tag">Q1 · 表征</span><h4>条件嵌入到底编码了什么：指纹假说的因果检验</h4>
+    <p>论文用"数据集指纹"类比，但指纹的具体成分不明：是表层统计（prompt 长度、标点分布、选项格式）还是语义主题？若把两个数据集的 prompt 做"格式互换"（ARC 的题干配 BoolQ 的 True/False 选项），生成器会拖向哪个方向？</p>
+    <p><strong>形式化</strong>：令 $c = E(p_{1:i})$，构造反事实条件 $c'$ = 格式统一化后的同批 prompts；测 $\|\Delta W(c) - \Delta W(c')\|$ 与对应性能差。若表层统计主导，统一格式后生成权重应趋同。</p>
+    <p><strong>检验</strong>：线性探针（数据集分类器）读出条件嵌入的信息量；混淆实验（题目格式 × 语义主题 的 2×2 设计）。</p>
+    <p><strong>锚点</strong>：dataset bias（Liu &amp; He 2025；Zeng et al. 2024）；in-context learning 的贝叶斯解释传统。</p></div>
+  <div class="research-question"><span class="tag">Q2 · 泛化</span><h4>泛化边界：条件空间的"凸覆盖"判据</h4>
+    <p>Table 4c 显示训练集 ≥3 才有正增益。猜想：新任务条件落在训练条件嵌入的凸包/邻域内时，回归可视为插值（可靠）；落在包外则为外推（崩坏）。能否给出一个训练前就能算出的"可生成性分数"？</p>
+    <p><strong>形式化</strong>：凸包距离 $\mathrm{cov}(c_{new}) = \min_{\lambda \in \Delta} \big\| c_{new} - \textstyle\sum_i \lambda_i c_i \big\|$，其中单纯形 $\Delta = \{\lambda_i \ge 0,\ \sum_i \lambda_i = 1\}$；假设性能增益随 cov 单调递减，拟合增益-cov 曲线，找出拐点。</p>
+    <p><strong>为什么凸包是对的几何对象？</strong>若生成器在条件空间局部近似线性，$G(c_{new}) \approx \sum_i \lambda_i^*\, G(c_i)$。$c_{new}$ 在包内 ⟺ 存在 $\lambda^* \in \Delta$ → 预测是各数据集条件均值的<strong>凸组合</strong>，按线性模式连通性其性能有下界保障；$c_{new}$ 在包外 → 系数被迫"饱和"到包边界面（部分 $\lambda_i$ 归零、方向外推），性能保证失效。这就把 Table 4c 的"3 个训练集是悬崖"升级成一条可拟合的定量曲线：增益 $\mathrm{gain}(c)$ 对 $\mathrm{cov}(c)$ 的衰减拐点。</p>
+    <p><strong>检验</strong>：在 7 个常识数据集上做全部 21 种 leave-one-out/留二组合，验证曲线；若成立，部署前可以零成本预测"这个任务值不值得用 DnD"。</p></div>
+  <div class="research-question"><span class="tag">Q3 · 能力边界</span><h4>监督升级：从"半成品快照"到"轨迹 + 终点"能解锁多少？</h4>
+    <p>§7 证明监督是 50-200 步的温和快照，Fig 4b 显示 full-shot 300 步可达 55 分而 DnD 封顶 51.6。把监督换成"轨迹快照 + 最终 LoRA + 损失加权"，生成器能否突破 55？还是 MSE 均值化会把终点拉回均值？</p>
+    <p><strong>形式化</strong>：监督集合 $\mathcal{M} = \{m^{(t)}\}$，学习 $\min_\phi \mathbb{E}\|G_\phi(c) - w(m, t)\|$，其中 $w(m,t)$ 是时间加权；对比 $t\to$ 终点的极限情形。理论工具：权重空间的线性模式连通性（LMC）——若快照间 LMC 成立，均值化无害；否则终点加权必要。</p>
+    <p><strong>检验</strong>：三档监督（纯快照/纯终点/混合）× 三个训练预算，画"监督强度-泛化"权衡曲线。</p></div>
+  <div class="research-question"><span class="tag">Q4 · scaling</span><h4>scaling 律与 tokenization 瓶颈：70B 时代的生成器长什么样？</h4>
+    <p>Table 8 显示 7B 的权重图像已达 $(4928, 16, 512)$，输出 token 数 ≈ 4×10⁷。参数量再 ×10（70B），卷积核内存与输出分辨率如何扩展？级联卷积的通道数是否随 $N_w$ 二次膨胀？</p>
+    <p><strong>形式化</strong>：生成器 FLOPs $\approx \sum_l 2k^2 C_l^2 H_l W_l$；对 Qwen2.5 系 0.5→7B 拟合 $C_l(N_w)$ 的增长律，外推 70B 的生成成本；对比"分层生成 + 低秩共享"（跨层共享前几级特征，只层间生成差异）的省法。</p>
+    <p><strong>检验</strong>：立刻可做的零成本一步——把 Table 13 已有的 3B 点（0.61s / 20.31GB）纳入 0.5→1.5→7B 的外推曲线检验残差；补一个 14B 检查点库属于中期项目，作为本问题的正式实验。</p></div>
+  <div class="research-question"><span class="tag">Q5 · 安全</span><h4>权重走私与数据反演：prompt-to-weights 的暗面</h4>
+    <p>生成器把"任意文本"映射为"可执行权重"——这本身就是一个攻击面：精心设计的 prompt 序列能否诱导出生成带后门的 LoRA（触发器行为）？反过来，生成器是否记忆了训练检查点，使攻击者能从输出权重反推训练数据（成员推断/数据重建）？</p>
+    <p><strong>形式化</strong>：后门检验——在条件空间搜索使 $\Delta W$ 偏离条件流形的对抗方向（PGD on embedding），测生成模型在触发器输入上的 ASR；记忆检验——生成权重与训练检查点的最近邻距离分布 vs 无关权重的分布（假阳性率校准后的成员推断）。</p>
+    <p><strong>检验</strong>：影子生成器 + 蒸馏防记忆化（对照 noise aug 的真实作用——顺便回答 C4）。</p></div>
+</section>
+
+<!-- ================= 16 ================= -->
+<section id="s16">
+  <div class="kicker">CHAPTER 16 · 路线图</div>
+  <h2>小白 → 学者：十四天路线图与工作区阅读地图</h2>
+  <div class="roadmap">
+    <div class="step"><h4>第 1-2 天：吃透 PEFT 与权重空间视角</h4><p>复推式 (1)；读 LoRA 原文与 model soup / SWA 文献，理解"平坦平均"为何泛化——这是 H1 的地基。</p></div>
+    <div class="step"><h4>第 3-4 天：参数生成前史</h4><p>Hyper-Representations → p-diff → CondP-Diff/Tina/ORAL → RPG。重点：各自的条件形式与生成步数（本仓库 RPG 博客可直接用）。</p></div>
+    <div class="step"><h4>第 5-6 天：精读 DnD 全文 + 附录</h4><p>对照本博客 §7/§13 的取证清单逐项核对（尤其是 Table 7 vs §3.1 的矛盾、noise aug），养成"配方级"阅读习惯。</p></div>
+    <div class="step"><h4>第 7-8 天：跑通最小管线</h4><p>用 §17 代码 A/B 在 0.5B + 2 个数据集上复刻 leave-one-out（Table 4c 的 2-1 版），亲眼看到"多样性不足→失效"。</p></div>
+    <div class="step"><h4>第 9-11 天：三个假说选一个动手</h4><p>H1 的 soup 基线最便宜（纯权重平均，无需训练）；H3 的子空间投影最深刻。结果无论正负都可写。</p></div>
+    <div class="step"><h4>第 12-14 天：把问题升级为 proposal</h4><p>从 Q1-Q5 选一个，写出：形式化、最小实验、预期曲线、与 DnD/T2L/RPG 的差异表。到这里你已具备在这个方向开题的能力。</p></div>
+  </div>
+  <h3>工作区阅读地图（本仓库已有的相关论文）</h3>
+  <table>
+    <tr><th>论文</th><th>与 DnD 的关系</th><th>对照片段</th></tr>
+    <tr><td>RPG（本仓库已有解读博客）</td><td>直接前身：递归扩散参数生成</td><td>扩散 vs 单步回归；二元条件 vs prompts</td></tr>
+    <tr><td>Text-to-LoRA（Sakana AI）</td><td>同期工作：任务描述→LoRA 超网络，单次前向</td><td>条件粒度：任务描述 vs 原始 prompt 批；训练成本（9 个 LoRA vs DnD 的检查点库）</td></tr>
+    <tr><td>Doc-to-LoRA</td><td>条件再升级：整篇文档→LoRA</td><td>长文档条件的压缩与编码</td></tr>
+    <tr><td>δ-mem（本仓库已有解读博客）</td><td>另一极：不生成参数，把记忆做成在线状态</td><td>"改权重"vs"带状态"两种测试时适配哲学</td></tr>
+    <tr><td>e2e-TTT / inplace-TTT</td><td>测试时训练路线</td><td>梯度仍在环内 vs DnD 的零梯度</td></tr>
+  </table>
+  <div class="insight-box"><span class="tag">深度洞察</span>
+    <h4>一张更大的地图：测试时适配的三条路线正在合流</h4>
+    <p>把本仓库的论文排成一排会看到：TTT/δ-mem 在"状态"一侧（带梯度或带递归状态），DnD/T2L/Doc-to-LoRA 在"生成"一侧（把适配知识前置训练进生成器）。两条路线其实在回答同一个问题——<strong>"新任务到来时，哪些计算可以提前做？"</strong>。DnD 把全部适配计算前置（推理时零梯度），δ-mem 把记忆维护在线化（推理时每步常数开销），TTT 保留推理时训练。下一代系统大概率是混合体：生成器给出初始化，在线状态负责漂移，TTT 兜底精修。"prompt-to-weights"不是终点，而是这条路线的<strong>第一块可复用积木</strong>。</p>
+  </div>
+</section>
+
+<!-- ================= 17 ================= -->
+<section id="s17">
+  <div class="kicker">CHAPTER 17 · 代码</div>
+  <h2>代码附录：把论文的四个关键机制写出来</h2>
+  <div class="code-head"><span class="cred run">可运行实现</span><h4>A. 权重 tokenization（RPG 式切段 + padding，经维度自检）</h4></div>
+  <div class="code-note">自检：任一层的 ΔW 展平后切成不重叠段，padding 到 L_w；输出 [N_w, L_w, C_w] 与论文 Table 8 末级形状同构（如 0.5B 常识：4296×8×128）。变量先定义后使用；反函数可无损还原（padding 位丢弃）。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch
+
+<span class="kw">def</span> <span class="fn">tokenize_weight</span>(delta_w, seg_len, pad_val=<span class="num">0.0</span>):
+    <span class="cm"># delta_w: [d, k] 某层 ΔW = B @ A 展平成序列后切段</span>
+    flat = delta_w.reshape(<span class="num">-1</span>)                       <span class="cm"># [d*k]</span>
+    n_seg = (flat.numel() + seg_len - <span class="num">1</span>) // seg_len  <span class="cm"># 不重叠切段数</span>
+    padded = torch.full((n_seg * seg_len,), pad_val)
+    padded[:flat.numel()] = flat
+    <span class="kw">return</span> padded.view(n_seg, seg_len)                <span class="cm"># [N_w, L_w]</span>
+
+<span class="kw">def</span> <span class="fn">detokenize_weight</span>(tokens, numel):                 <span class="cm"># 逆变换，丢 padding</span>
+    <span class="kw">return</span> tokens.reshape(<span class="num">-1</span>)[:numel]</code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>B. 超卷积块（式 5 的三向卷积与双分支结构）</h4></div>
+  <div class="code-note">自检：ConvW 作用于 (C,L) → 把 N 当通道：permute 后 [B,N,C,L]；ConvH 作用于 (L,N) → C 当通道：[B,C,L,N]；ConvL 作用于 (N,L) → C 当通道：[B,C,N,L]。三向卷积各一次 + 双分支求和，与式 (5) 一致（论文每块 2×ConvW+2×ConvH+1×ConvL，此处给出一个分支对的实现，级联即得完整块）。kernel size 论文未给出，按 3×3+padding=1 假设（示意）。</div>
+<pre class="code-block"><code><span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+
+<span class="kw">class</span> <span class="fn">HyperConvBlock</span>(nn.Module):
+    <span class="cm"># 式 (5)：W 支 ConvH(ConvW(x))，H 支 ConvW(ConvH(x))，ConvL 融合</span>
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, c_in, c_out, k=<span class="num">3</span>):
+        super().__init__()
+        pad = k // <span class="num">2</span>
+        <span class="cm"># 每个卷积定义在"当通道维 = 其余那个维度"的意义上</span>
+        self.convw1 = nn.Conv2d(c_in,  c_out, k, padding=pad)  <span class="cm"># (C,L) 特征图, N 通道</span>
+        self.convh1 = nn.Conv2d(c_in,  c_out, k, padding=pad)  <span class="cm"># (L,N) 特征图, C 通道</span>
+        self.convw2 = nn.Conv2d(c_out, c_out, k, padding=pad)
+        self.convh2 = nn.Conv2d(c_out, c_out, k, padding=pad)
+        self.convl  = nn.Conv2d(<span class="num">2</span> * c_out, c_out, k, padding=pad)
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):                                  <span class="cm"># x: [B, N, L, C]</span>
+        <span class="cm"># W 支：N 当通道 → 特征图 (C, L)</span>
+        w = x.permute(<span class="num">0</span>, <span class="num">1</span>, <span class="num">3</span>, <span class="num">2</span>)                          <span class="cm"># [B,N,C,L]</span>
+        w = self.convh1(self.convw1(w))                     <span class="cm"># ConvH 期望 (L,N)：再转</span>
+        w = w.permute(<span class="num">0</span>, <span class="num">1</span>, <span class="num">3</span>, <span class="num">2</span>)                          <span class="cm"># 回到 [B,N,C',L']（示意：保持接口一致）</span>
+        <span class="cm"># H 支：C 当通道 → 特征图 (L, N)</span>
+        h = x.permute(<span class="num">0</span>, <span class="num">3</span>, <span class="num">2</span>, <span class="num">1</span>)                          <span class="cm"># [B,C,L,N]</span>
+        h = self.convw2(self.convh2(h))
+        <span class="cm"># 对齐回统一网格后拼接融合（真实实现需插值对齐 N/L/C 三维）</span>
+        h = h.permute(<span class="num">0</span>, <span class="num">3</span>, <span class="num">2</span>, <span class="num">1</span>)                          <span class="cm"># [B,N',L',C']</span>
+        w = w.reshape(w.shape[<span class="num">0</span>], -<span class="num">1</span>, w.shape[<span class="num">-2</span>], w.shape[<span class="num">-1</span>])
+        cat = torch.cat([w, h], dim=<span class="num">1</span>).permute(<span class="num">0</span>, <span class="num">3</span>, <span class="num">1</span>, <span class="num">2</span>) <span class="cm"># → [B,2C,N,L] 供 ConvL</span>
+        out = self.convl(cat)                               <span class="cm"># [B,C_out,N,L]</span>
+        <span class="kw">return</span> out.permute(<span class="num">0</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">1</span>)                      <span class="cm"># [B,N,L,C_out]</span></code></pre>
+  <p style="font-size:13.5px;color:#8c2f24">诚实声明：块内维度对齐（N/L/C 三维的重排与插值）论文只给了公式骨架，精确实现需对照其开源代码；此块重点在展示"轮换通道维"的机制与式 (5) 的分支结构。</p>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>C. 两种配对策略（Figure 4a 的复现骨架）</h4></div>
+  <div class="code-note">自检：Strategy 1 的 prompt 池固定 → 条件-检查点互信息≈0；Strategy 2 每迭代重抽。变量均先定义。</div>
+<pre class="code-block"><code><span class="kw">import</span> random
+
+<span class="kw">def</span> <span class="fn">pair_strategy1</span>(prompt_pool, ckpts, batch_n=<span class="num">128</span>):
+    fixed = random.sample(prompt_pool, batch_n)     <span class="cm"># 固定一批，永远用它</span>
+    <span class="kw">for</span> m <span class="kw">in</span> ckpts:
+        <span class="kw">yield</span> fixed, m                              <span class="cm"># x ← x：同一条件配所有参数</span>
+
+<span class="kw">def</span> <span class="fn">pair_strategy2</span>(prompt_pool, ckpts, batch_n=<span class="num">128</span>):
+    <span class="kw">for</span> m <span class="kw">in</span> ckpts:                                 <span class="cm"># 128 ← x：每迭代独立重抽</span>
+        <span class="kw">yield</span> random.sample(prompt_pool, batch_n), m</code></pre>
+
+  <div class="code-head"><span class="cred ill">示意性实现</span><h4>D. DnD 训练循环（MSE 监督；noise aug 位置按论文悬案标注）</h4></div>
+  <div class="code-note">自检：监督 = tokenized 检查点 [B,Nw,Lw,Cw]；生成器输入 = 条件嵌入 [B,N,L,C]；损失逐元素 MSE。noise aug（论文 Table 7 给 1e-4 未说明对象）标注在两处候选位置。</div>
+<pre class="code-block"><code><span class="kw">for</span> step <span class="kw">in</span> range(<span class="num">5000</span>):
+    prompts, ckpt = next(pairs)                     <span class="cm"># 式 (2)：随机对</span>
+    cond = sbert.encode(prompts)                    <span class="cm"># [N, L, C]（式 3；长文切片编码）</span>
+    <span class="cm"># 悬案：noise aug 可能在这里（条件侧）或下面（权重侧）加 N(0, 1e-4²)</span>
+    target = tokenize_ckpt(ckpt)                    <span class="cm"># [Nw, Lw, Cw]（代码 A）</span>
+    pred = generator(cond)                          <span class="cm"># 超卷积解码器（代码 B 级联）</span>
+    loss = ((pred - target) ** <span class="num">2</span>).mean()            <span class="cm"># 式 (4)：逐元素 MSE</span>
+    opt.zero_grad(); loss.backward()
+    torch.nn.utils.clip_grad_norm_(generator.parameters(), <span class="num">1.0</span>)
+    opt.step()                                      <span class="cm"># AdamW 3e-5, wd 0.1（Table 7）</span></code></pre>
+</section>
+
+<!-- ================= 18 ================= -->
+<section id="s18">
+  <div class="kicker">CHAPTER 18 · 结语</div>
+  <h2>结语：权重视为数据模态的第一性论证</h2>
+  <p>DnD 的最大贡献不在某个具体数字，而在一次<strong>范畴转换</strong>：当"条件→权重"可以用 5000 步 MSE 学到 12000 倍加速时，"权重"就不再只是训练的副产品，而开始具备成为<strong>数据模态</strong>的资格。一种信号配得上"模态"之名，至少要满足三件事：<strong>存在 tokenization</strong>（把连续张量切成离散单元——RPG 的切段方案即权重世界的"BPE"）；<strong>存在大规模语料</strong>（HuggingFace 上数十万个公开 LoRA 检查点，只是尚无 ImageNet 级的整理）；<strong>存在下游消费方</strong>（LoRA 挂载生态、模型合并与编辑工具链）。DnD 补上的是第四块、也是最关键的一块拼图：<strong>条件分布可学习</strong>——证明了"文→权重"的映射能被一个轻量网络承载。论文结语列出的三个开放挑战中，扩到 70B 对应 Q4 的 scaling 律，利用互联网现成检查点涉及 Q5 的安全与版权面，而"生成适配不同硬件的结构"在本篇五问中均无覆盖——它是这条路线最显眼的留白。</p>
+  <p>留给你的一句话总结：<strong>DnD 证明了"适配知识"可以被前置编译进一个条件化生成器；它没有证明"任意新能力"可以被生成</strong>。前半句是工程红利，后半句是研究富矿。</p>
+  <svg class="divider-wave" width="220" height="16" viewBox="0 0 220 16" xmlns="http://www.w3.org/2000/svg"><path d="M0 8 Q 27.5 0 55 8 T 110 8 T 165 8 T 220 8" fill="none" stroke="#1B4B6F" stroke-width="2"/></svg>
+</section>
+
+</main>
+
+<footer><div class="inner">
+  <h3>参考文献（关键条目均经 arXiv 页面核实）</h3>
+  <ol>
+    <li>Liang et al. <em>Drag-and-Drop LLMs: Zero-Shot Prompt-to-Weights</em>. <a href="https://arxiv.org/abs/2506.16406">arXiv:2506.16406</a>, 2025. 项目页：jerryliang24.github.io/DnD</li>
+    <li>Wang et al. <em>Neural Network Diffusion</em> (p-diff). <a href="https://arxiv.org/abs/2402.13144">arXiv:2402.13144</a>, 2024.</li>
+    <li>Wang et al. <em>Recurrent Diffusion for Large-Scale Parameter Generation</em> (RPG). <a href="https://arxiv.org/abs/2501.11587">arXiv:2501.11587</a>, 2025.</li>
+    <li>Jin et al. <em>Conditional LoRA Parameter Generation</em> (CondP-Diff). <a href="https://arxiv.org/abs/2408.01415">arXiv:2408.01415</a>, 2024.</li>
+    <li>Khan et al. <em>ORAL: Prompting Your Large-Scale LoRAs via Conditional Recurrent Diffusion</em>. <a href="https://arxiv.org/abs/2503.24354">arXiv:2503.24354</a>, 2025.</li>
+    <li>Li et al. <em>Text-to-Model: Text-Conditioned Neural Network Diffusion</em> (Tina). <a href="https://arxiv.org/abs/2405.14132">arXiv:2405.14132</a>, 2024.</li>
+    <li>Charakorn et al. <em>Text-to-LoRA: Instant Transformer Adaption</em>. <a href="https://arxiv.org/abs/2506.06105">arXiv:2506.06105</a>, 2025.</li>
+    <li>Schürholt et al. <em>Hyper-Representations for Pre-training and Transfer Learning</em>. NeurIPS 2022. <a href="https://arxiv.org/abs/2207.10951">arXiv:2207.10951</a></li>
+    <li>Hu et al. <em>LoRA</em>. ICLR 2022. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></li>
+    <li>评测与数据：HumanEval (<a href="https://arxiv.org/abs/2107.03374">arXiv:2107.03374</a>)；LiveCodeBench (ICLR 2024)；gsm8K (<a href="https://arxiv.org/abs/2110.14168">arXiv:2110.14168</a>)；MATH (NeurIPS 2021)；Math-Vista (ICLR 2024)；Math-Vision (NeurIPS 2024)；ARC/HellaSwag/PIQA/BoolQ/WinoGrande/OBQA。</li>
+    <li>数据集指纹：Liu &amp; He. <em>A Decade's Battle on Dataset Bias</em>. ICLR 2025；Zeng et al. <em>Understanding Bias in Large-Scale Visual Datasets</em>. NeurIPS 2024.</li>
+  </ol>
+  <div class="fin">DnD 深度解读 · 单文件博客 · Venus 设计系统（浮世绘蓝调配方）· 图表：论文原图精准裁剪 8 张（PyMuPDF + 验证闭环）+ 自绘内联 SVG（含 pixel-art 效果图与手绘主视觉）· 公式全部提取自 PDF 并逐项核对 · 内部矛盾 5 项均已溯源标注 · 2026-09-28</div>
+</div></footer>
+</body>
+</html>

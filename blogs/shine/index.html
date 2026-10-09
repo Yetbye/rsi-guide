@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHINE 深度解读 | 一次前向把 context 炼成 LoRA：可扩展 in-context hypernetwork 的架构设计</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  --bg-primary:#F5EFE0; --bg-secondary:#EDE4CE; --bg-tertiary:#E0D3B5;
+  --text-primary:#1A1410; --text-secondary:#4A3F35; --text-muted:#7A6E60;
+  --accent:#6B1D2A; --accent-light:#8B3040; --accent-pale:#F0DDE0;
+  --gold:#C9A227; --gold-light:#E0C050; --gold-pale:#FBF3D9;
+  --ink:#1A1410; --paper:#FAF6EC;
+  --border:rgba(107,29,42,0.15); --shadow:0 4px 24px rgba(26,20,16,0.08);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Georgia','Noto Serif SC',serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.85;font-size:17px}
+a{color:var(--accent);text-decoration:none}
+/* NAV */
+nav{position:sticky;top:0;z-index:100;background:rgba(245,239,224,0.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:18px;overflow-x:auto;scrollbar-width:none;height:52px}
+.nav-inner::-webkit-scrollbar{display:none}
+.nav-brand{font-weight:700;color:var(--accent);white-space:nowrap;font-size:15px;letter-spacing:0.5px}
+.nav-link{font-size:13px;color:var(--text-secondary);white-space:nowrap;transition:color .2s}
+.nav-link:hover{color:var(--accent)}
+/* HERO */
+.hero{position:relative;overflow:hidden;padding:80px 24px 60px;text-align:center;background:linear-gradient(160deg,#2A0F15 0%,#4A1820 40%,#6B1D2A 70%,#8B3040 100%)}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(201,162,39,0.25),transparent 50%),radial-gradient(ellipse at 70% 80%,rgba(224,192,80,0.15),transparent 40%);pointer-events:none}
+.hero-content{position:relative;max-width:900px;margin:0 auto}
+.hero-tag{display:inline-block;padding:6px 18px;border:1px solid rgba(201,162,39,0.5);border-radius:20px;color:var(--gold-light);font-size:12px;letter-spacing:2px;margin-bottom:28px;text-transform:uppercase}
+.hero h1{font-size:clamp(32px,5vw,52px);color:#FAF6EC;line-height:1.25;margin-bottom:20px;font-weight:700}
+.hero h1 .gold{color:var(--gold-light)}
+.hero-sub{font-size:18px;color:rgba(250,246,236,0.8);max-width:700px;margin:0 auto 32px;line-height:1.7}
+.hero-meta{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;font-size:13px;color:rgba(250,246,236,0.65)}
+.hero-meta span{padding:4px 12px;background:rgba(255,255,255,0.08);border-radius:4px}
+.cover-wrap{max-width:900px;margin:40px auto 0;position:relative}
+.cover-wrap img{width:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.4);border:1px solid rgba(201,162,39,0.3)}
+.cover-caption{margin-top:14px;font-size:13px;color:rgba(250,246,236,0.55);font-style:italic}
+/* STATS */
+.stats-grid{max-width:1000px;margin:-30px auto 0;padding:0 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;position:relative;z-index:10}
+.stat-card{background:var(--paper);border-radius:10px;padding:24px 20px;text-align:center;box-shadow:var(--shadow);border-top:3px solid var(--gold)}
+.stat-num{font-size:32px;font-weight:700;color:var(--accent);line-height:1.2}
+.stat-label{font-size:13px;color:var(--text-muted);margin-top:6px}
+/* CONTENT */
+.content{max-width:860px;margin:0 auto;padding:60px 24px 80px}
+.chapter{margin-bottom:72px;scroll-margin-top:70px}
+.ch-tag{font-size:12px;letter-spacing:3px;color:var(--gold);text-transform:uppercase;font-weight:700;margin-bottom:10px}
+.chapter h2{font-size:clamp(26px,3.5vw,36px);color:var(--accent);margin-bottom:24px;line-height:1.35;border-bottom:2px solid var(--gold);padding-bottom:14px}
+.chapter h3{font-size:22px;color:var(--accent-light);margin:32px 0 14px}
+.chapter h4{font-size:18px;color:var(--text-primary);margin:24px 0 10px}
+.chapter p{margin-bottom:16px;text-align:justify}
+.chapter ul,.chapter ol{margin:0 0 18px 24px}
+.chapter li{margin-bottom:8px}
+.chapter strong{color:var(--accent)}
+/* FORMULA */
+.formula{background:var(--paper);border-left:4px solid var(--gold);padding:20px 24px;margin:24px 0;border-radius:0 8px 8px 0;overflow-x:auto}
+.formula .eq-label{float:right;font-size:13px;color:var(--text-muted);font-style:italic}
+.formula p.note{font-size:14px;color:var(--text-secondary);margin-top:12px;margin-bottom:0}
+/* INSIGHT / CRITIQUE */
+.insight{background:linear-gradient(135deg,var(--gold-pale),#FDF8E8);border:1px solid rgba(201,162,39,0.3);border-radius:10px;padding:20px 24px;margin:28px 0}
+.insight h4{color:var(--gold);margin-top:0;font-size:15px;letter-spacing:1px}
+.critique{background:linear-gradient(135deg,var(--accent-pale),#F8ECEE);border:1px solid rgba(107,29,42,0.2);border-radius:10px;padding:20px 24px;margin:28px 0}
+.critique h4{color:var(--accent);margin-top:0;font-size:15px;letter-spacing:1px}
+/* RQ */
+.rq{background:var(--bg-secondary);border-radius:10px;padding:20px 24px;margin:28px 0;border:1px dashed var(--accent-light)}
+.rq h4{color:var(--accent);margin-top:0;font-size:15px}
+.rq ol{margin-left:20px;margin-bottom:0}
+.rq li{margin-bottom:10px;font-size:15px}
+/* CODE */
+.code-block{background:#1A1410;color:#E8DFC8;border-radius:8px;padding:18px 22px;margin:24px 0;overflow-x:auto;font-family:'Consolas','Monaco',monospace;font-size:14px;line-height:1.7}
+.code-block .cm{color:#8B7E6B}
+.code-block .kw{color:#E0C050}
+.code-block .fn{color:#C9A227}
+.code-block .str{color:#A8C090}
+/* SVG */
+.svg-container{background:var(--paper);border-radius:10px;padding:24px;margin:28px 0;text-align:center;box-shadow:var(--shadow)}
+.svg-container svg{max-width:100%;height:auto}
+.svg-caption{font-size:13px;color:var(--text-muted);margin-top:12px;font-style:italic}
+/* FIGURE */
+.figure{margin:32px 0;text-align:center}
+.figure img{max-width:100%;border-radius:8px;box-shadow:var(--shadow)}
+.figure figcaption{font-size:13px;color:var(--text-muted);margin-top:10px;font-style:italic}
+/* TABLE */
+.table-wrap{overflow-x:auto;margin:28px 0}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--paper);border-radius:8px;overflow:hidden;box-shadow:var(--shadow)}
+th{background:var(--accent);color:#FAF6EC;padding:12px 14px;text-align:left;font-weight:600;font-size:13px}
+td{padding:11px 14px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--gold-pale)}
+td.best{font-weight:700;color:var(--accent)}
+/* FOOTER */
+footer{background:var(--ink);color:rgba(250,246,236,0.6);padding:40px 24px;text-align:center;font-size:13px}
+footer a{color:var(--gold-light)}
+.scroll-hint{text-align:center;color:var(--text-muted);font-size:12px;letter-spacing:2px;margin:20px 0}
+@media(max-width:640px){.content{padding:40px 16px}.hero{padding:50px 16px 40px}}
+</style>
+</head>
+<body>
+
+<nav>
+<div class="nav-inner">
+<span class="nav-brand">SHINE · 深度解读</span>
+<a class="nav-link" href="#ch1">问题</a>
+<a class="nav-link" href="#ch2">三挑战</a>
+<a class="nav-link" href="#ch3">总架构</a>
+<a class="nav-link" href="#ch4">Memory提取</a>
+<a class="nav-link" href="#ch5">瓶颈消除</a>
+<a class="nav-link" href="#ch6">M2P</a>
+<a class="nav-link" href="#ch7">双向流</a>
+<a class="nav-link" href="#ch8">训练</a>
+<a class="nav-link" href="#ch9">MQA实验</a>
+<a class="nav-link" href="#ch10">1QA实验</a>
+<a class="nav-link" href="#ch11">TTT与Scaling</a>
+<a class="nav-link" href="#ch12">批判与未来</a>
+</div>
+</nav>
+
+<section class="hero">
+<div class="hero-content">
+<div class="hero-tag">ICML 2026 · PMLR 306 · 北大 Muhan Zhang 组</div>
+<h1>SHINE：一次前向把 <span class="gold">context 炼成 LoRA</span><br>可扩展 in-context hypernetwork 的架构设计</h1>
+<p class="hero-sub">不微调、不迭代、不占上下文窗口——用冻结 LLM 自身做编码器，从所有层提取 memory states，再经 row/column 交替双向注意力的轻量 Transformer，单次前向生成全层 LoRA。6B token 预训练 + 指令微调，在 9 个 QA 基准上逼近甚至超过 In-Context。</p>
+<div class="hero-meta">
+<span>Qwen3-8B 底座</span>
+<span>Meta LoRA r=128</span>
+<span>生成 LoRA r=8</span>
+<span>M=148 memory tokens</span>
+<span>4层 M2P Transformer</span>
+<span>6B 预训练 tokens</span>
+</div>
+<div class="cover-wrap">
+<img src="assets/cover.jpg" alt="SHINE cover">
+<div class="cover-caption">封面（AI 绘制）：棱镜把一束光折射成多条光带，每条光带结晶成发光的矩阵网格——这正是 SHINE 的隐喻：context 是入射光，memory states 是棱镜分光，M2P Transformer 把光重组为 LoRA 参数的晶格。</div>
+</div>
+</div>
+</section>
+
+<div class="stats-grid">
+<div class="stat-card"><div class="stat-num">0.3s</div><div class="stat-label">单次前向生成 LoRA（amortizable time）</div></div>
+<div class="stat-card"><div class="stat-num">55.6</div><div class="stat-label">MS MARCO MQA F1（vs SFT 33.0）</div></div>
+<div class="stat-card"><div class="stat-num">63.6</div><div class="stat-label">SQuAD F1（超 SEAL 58.2 / PaST 58.9）</div></div>
+<div class="stat-card"><div class="stat-num">~90%</div><div class="stat-label">稀疏注意力节省的 FLOPs</div></div>
+</div>
+
+<div class="content">
+
+<!-- CH1 -->
+<section class="chapter" id="ch1">
+<div class="ch-tag">Chapter 01 · 问题</div>
+<h2>context 到参数的第三条路</h2>
+<p>让 LLM 掌握新信息，传统上只有两条路。第一条是 <strong>prompt engineering / in-context learning (ICL)</strong>：把信息塞进上下文窗口，靠注意力在推理时检索。第二条是 <strong>fine-tuning</strong>：用梯度下降把信息写进模型参数，推理时不再需要原文。</p>
+<p>两条路各有致命伤。ICL 的问题是<strong>上下文窗口是稀缺资源</strong>——每多一段 context，推理延迟和 KV cache 内存就线性增长；而且 context rot（上下文腐烂）已被反复证实：即使检索完美，过长的上下文本身就会拉低模型表现。Fine-tuning 的问题是<strong>训练开销巨大</strong>——每个任务、每段文档都要跑几十上百步梯度下降，超参数敏感，还要为每个任务存一份独立参数。</p>
+<p>SHINE 走的是<strong>第三条路</strong>：用一个 hypernetwork（超网络）在<strong>单次前向传播</strong>中把 context 直接映射成 LoRA 适配器权重。生成的 LoRA 可以像普通微调 LoRA 一样挂在冻结 LLM 上回答问题，<strong>不再需要访问原始 context</strong>。这意味着：</p>
+<ul>
+<li><strong>没有训练开销</strong>：一次前向 = 一个 LoRA，0.3 秒完成，对比 SFT 的数十秒到数分钟。</li>
+<li><strong>不占上下文窗口</strong>：context 被"压缩"进 LoRA 参数，推理时输入只有问题，生成速度和裸模型一样快。</li>
+<li><strong>即时切换任务</strong>：换一段 context = 换一个 LoRA，无需重新训练。</li>
+</ul>
+
+<div class="insight">
+<h4>核心洞察 · in-parameter knowledge</h4>
+<p>SHINE 把这个过程称为 <strong>"transforming in-context knowledge to in-parameter knowledge in one pass"</strong>。这不是简单的记忆压缩——论文在 multi-hop QA 上的表现证明，生成的 LoRA 不仅存储了 context 的字面信息，还捕获了其中的<strong>语义结构和推理关系</strong>，使得模型可以在参数化的 context 上进行多跳推理。</p>
+</div>
+
+<div class="figure">
+<img src="figures/fig2_architecture.png" alt="SHINE overall architecture">
+<figcaption>图 2（论文原图）：SHINE 整体架构。两阶段——(1) Memory Extraction：LLM（增强 Meta LoRA）处理 context 产生 memory states；(2) Parameter Generation：hypernetwork 把 memory states 转成任务特定的 LoRA 适配器，用于最终推理。</figcaption>
+</div>
+</section>
+
+<!-- CH2 -->
+<section class="chapter" id="ch2">
+<div class="ch-tag">Chapter 02 · 动机</div>
+<h2>hypernetwork 生成 LoRA 的三大挑战</h2>
+<p>用 hypernetwork 生成 LLM 的 LoRA 听起来直接，但论文在 §3.1 明确指出了三个根本性挑战，之前的方法都没能同时解决。</p>
+
+<h3>挑战一：Semantic-to-Parameter Alignment（语义到参数的对齐）</h3>
+<p>hypernetwork 的输入是自然语言文本，输出是权重空间中的数值矩阵。这两个空间之间存在巨大的<strong>表征鸿沟</strong>。hypernetwork 需要具备极强的语言理解能力，才能把复杂的文本输入翻译成适配器权重中的精确功能调整。</p>
+<p>之前的方法要么训练一个小型外部编码器从零学起（表达力不足），要么只用 LLM 最后一层的隐藏态（信息瓶颈）。SHINE 的选择是<strong>直接复用冻结 LLM 自身做编码器</strong>——继承预训练好的语言理解能力，而且从<strong>所有层</strong>提取表征，覆盖从低层句法到高层推理的全频谱语义信息。</p>
+
+<h3>挑战二：High-Dimensional Output（高维输出）</h3>
+<p>即使 LoRA 是低秩的，要为 LLM 的<strong>所有层、所有线性层</strong>生成 LoRA 权重，输出维度仍然非常高。以 Qwen3-8B 为例，每层有多个注意力投影和 MLP 线性层，r=8 时单层 LoRA 参数就有数万个，全层加起来是数十万维的输出空间。</p>
+<p>之前的方法（Charakorn et al., 2025; Xiao et al., 2023 等）的典型做法是用一个<strong>小 MLP 分段独立生成权重片段，然后拼接</strong>。论文尖锐地指出：这种 "segment-wise" 生成把权重当成孤立的片段处理，<strong>无法捕捉全局依赖和潜在的结构相关性</strong>，而这些对于连贯的权重适配至关重要。结果就是生成的适配器缺乏全局协调，在复杂任务上表现次优。</p>
+
+<h3>挑战三：Efficiency（效率）</h3>
+<p>要成为 fine-tuning 的可行替代，hypernetwork 必须以<strong>极低的延迟和计算开销</strong>生成适配器，支持任务间的快速切换。如果 hypernetwork 本身比微调还慢，那就失去了意义。</p>
+
+<div class="critique">
+<h4>批判 · prior work 的根本缺陷</h4>
+<p>论文对 prior work 的批判可以浓缩为一句话：<strong>"segment-wise generation treats weights in isolation, failing to capture global dependencies"</strong>。这不仅是工程上的不优雅，而是一个<strong>表达力的根本瓶颈</strong>——LoRA 权重在不同层、不同投影之间存在强耦合（注意力的 Q/K/V/O 必须协调，MLP 的 up/down/gate 必须配合），分段独立生成等于让 hypernetwork 在不知道其他片段的情况下盲猜每一块。SHINE 的核心架构创新——全 Transformer-based hypernetwork + 双向 row/column attention——正是为了解决这个全局依赖问题。</p>
+</div>
+
+<div class="rq">
+<h4>自主科研问题</h4>
+<ol>
+<li>segment-wise 生成的"全局依赖缺失"在多大程度上可以通过增加 MLP 宽度或深度来弥补？是否存在一个宽度阈值，超过后分段生成也能达到全局注意力的效果？</li>
+<li>语义到参数的对齐是否可以通过对比学习（contrastive learning）显式建模——把"语义相似的 context"映射到"LoRA 权重空间中相近的点"？</li>
+<li>高维输出空间是否存在低维流形结构？如果有，能否先在低维隐空间生成 LoRA 编码，再解码到全参数空间，从而进一步降低 hypernetwork 负担？</li>
+</ol>
+</div>
+</section>
+
+<!-- CH3 -->
+<section class="chapter" id="ch3">
+<div class="ch-tag">Chapter 03 · 架构总览</div>
+<h2>两阶段数据流：从 context 到 answer</h2>
+<p>SHINE 的整体架构（Figure 2）可以用一条数据流来概括：</p>
+
+<div class="formula">
+<span class="eq-label">数据流</span>
+$$\text{Context} \xrightarrow{\text{LLM + Meta LoRA}} \text{Memory States} \xrightarrow{\text{M2P Transformer}} \text{Generated LoRA}$$
+$$\text{Question} \xrightarrow{\text{LLM + Generated LoRA}} \text{Answer}$$
+</div>
+
+<p>整个过程分为三个阶段：</p>
+
+<h3>阶段 1：Memory Extraction（记忆提取）</h3>
+<p>在输入 context 后面追加一组<strong>可学习的 memory embeddings</strong>（初始化为可训练参数），组成序列 $h_0 = [X; M_0]$。然后用增强了 <strong>Meta LoRA</strong> 的冻结 LLM 做一次前向传播。关键在于：<strong>不是只取最后一层的输出，而是从每一层都提取 memory tokens 对应的隐藏态</strong>，组成一个三维的 memory tensor $M \in \mathbb{R}^{L \times M \times H}$。</p>
+
+<h3>阶段 2：LoRA Generation（参数生成）</h3>
+<p>把 memory tensor 输入一个专门设计的 <strong>M2P (Memory-to-Parameter) Transformer</strong>。这是一个轻量的双向 Transformer，用交替的 <strong>column attention</strong>（跨层混合）和 <strong>row attention</strong>（跨 memory token 混合）替代全注意力，在 memory states 之间做全局信息交换。最后把输出 reshape 成各层的 LoRA 权重矩阵。</p>
+
+<h3>阶段 3：Downstream Task（下游推理）</h3>
+<p>把生成的 LoRA 挂在同一个冻结 LLM 上，输入问题，输出答案。<strong>此时不再需要原始 context</strong>——所有信息都已经被编码进 LoRA 参数中。</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg">
+<style>
+.t1{font:13px Georgia;fill:#1A1410}.t2{font:11px Georgia;fill:#7A6E60}.t3{font:bold 14px Georgia;fill:#FAF6EC}
+</style>
+<!-- Stage 1 -->
+<rect x="20" y="40" width="200" height="200" rx="10" fill="#F0DDE0" stroke="#6B1D2A" stroke-width="1.5"/>
+<text x="120" y="68" text-anchor="middle" class="t3" fill="#6B1D2A">Stage 1: Memory Extraction</text>
+<rect x="40" y="85" width="160" height="28" rx="4" fill="#6B1D2A"/>
+<text x="120" y="104" text-anchor="middle" class="t3">Context X (N tokens)</text>
+<rect x="40" y="120" width="160" height="28" rx="4" fill="#C9A227"/>
+<text x="120" y="139" text-anchor="middle" class="t3">Memory M₀ (M tokens)</text>
+<text x="120" y="168" text-anchor="middle" class="t1">LLM + Meta LoRA</text>
+<text x="120" y="186" text-anchor="middle" class="t1">单次前向</text>
+<rect x="50" y="198" width="140" height="30" rx="4" fill="#E0D3B5" stroke="#C9A227"/>
+<text x="120" y="218" text-anchor="middle" class="t1">M ∈ R^{L×M×H}</text>
+<!-- Arrow 1 -->
+<path d="M225 140 L265 140" stroke="#6B1D2A" stroke-width="2" marker-end="url(#ah)"/>
+<defs><marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#6B1D2A"/></marker></defs>
+<!-- Stage 2 -->
+<rect x="270" y="40" width="220" height="200" rx="10" fill="#FBF3D9" stroke="#C9A227" stroke-width="1.5"/>
+<text x="380" y="68" text-anchor="middle" class="t3" fill="#8B6914">Stage 2: M2P Transformer</text>
+<rect x="290" y="85" width="180" height="26" rx="4" fill="#E0D3B5"/>
+<text x="380" y="103" text-anchor="middle" class="t1">+ 2D Positional Encoding</text>
+<rect x="290" y="117" width="180" height="26" rx="4" fill="#6B1D2A"/>
+<text x="380" y="135" text-anchor="middle" class="t3">Column Attn (跨层)</text>
+<rect x="290" y="149" width="180" height="26" rx="4" fill="#8B3040"/>
+<text x="380" y="167" text-anchor="middle" class="t3">Row Attn (跨 token)</text>
+<text x="380" y="192" text-anchor="middle" class="t2">交替堆叠 · 双向信息流</text>
+<rect x="300" y="202" width="160" height="28" rx="4" fill="#C9A227"/>
+<text x="380" y="221" text-anchor="middle" class="t3">全层 LoRA 权重</text>
+<!-- Arrow 2 -->
+<path d="M495 140 L535 140" stroke="#6B1D2A" stroke-width="2" marker-end="url(#ah2)"/>
+<defs><marker id="ah2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#6B1D2A"/></marker></defs>
+<!-- Stage 3 -->
+<rect x="540" y="40" width="200" height="200" rx="10" fill="#F0DDE0" stroke="#6B1D2A" stroke-width="1.5"/>
+<text x="640" y="68" text-anchor="middle" class="t3" fill="#6B1D2A">Stage 3: 下游推理</text>
+<rect x="560" y="85" width="160" height="28" rx="4" fill="#6B1D2A"/>
+<text x="640" y="104" text-anchor="middle" class="t3">Question (无 context)</text>
+<text x="640" y="140" text-anchor="middle" class="t1">LLM + Generated LoRA</text>
+<text x="640" y="160" text-anchor="middle" class="t2">冻结骨干 · 仅推理</text>
+<rect x="570" y="180" width="140" height="36" rx="4" fill="#C9A227"/>
+<text x="640" y="203" text-anchor="middle" class="t3">Answer</text>
+<text x="640" y="232" text-anchor="middle" class="t2">生成速度 = 裸模型</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：SHINE 三阶段数据流。Stage 1 用 LLM+Meta LoRA 单次前向提取多层 memory；Stage 2 用 M2P Transformer 的交替 column/row 双向注意力生成全层 LoRA；Stage 3 用 LLM+生成的 LoRA 回答问题，不再需要 context。</div>
+</div>
+
+<div class="insight">
+<h4>设计哲学 · 复用而非新建</h4>
+<p>SHINE 架构最值得注意的设计哲学是<strong>极致的复用</strong>：编码器用的是冻结 LLM 自身（不引入外部编码器），memory 用的是 LLM 各层的隐藏态（不额外训练大编码器），生成的 LoRA 用的是标准 LoRA 格式（可以直接挂在任何支持 LoRA 的推理框架上）。整个系统中唯一需要从头训练的是 Meta LoRA、初始 memory embeddings 和 M2P Transformer——参数量相对 LLM 骨干来说非常小。这种"以小博大"的设计是 SHINE 可扩展性的基础。</p>
+</div>
+</section>
+
+<!-- CH4 -->
+<section class="chapter" id="ch4">
+<div class="ch-tag">Chapter 04 · 方法</div>
+<h2>Memory Extraction：从所有层提取记忆</h2>
+<p>Memory Extraction 是 SHINE 的第一个核心创新。之前的 in-context hypernetwork（如 Charakorn et al., 2025）通常只用<strong>单个状态</strong>（比如最后一层的 <[BOS_never_used_51bce0c785ca2f68081bfa7d91973934]> 或最后一个 token）来代表整个 context，然后用这个单状态生成所有层的 LoRA。论文指出这引入了<strong>严重的信息瓶颈</strong>——一个向量不可能承载生成全层高维权重所需的全部信息。</p>
+
+<h3>输入构造</h3>
+<p>考虑一个有 $L$ 层、隐藏维度 $H$ 的 Transformer 骨干。输入由两部分拼接而成：context token embeddings $X$（长度 $N$）和可学习的 memory embeddings $M_0$（长度 $M$）：</p>
+
+<div class="formula">
+<span class="eq-label">式 (1)</span>
+$$h_0 = [X; M_0] \in \mathbb{R}^{(N+M) \times H}$$
+</div>
+
+<p>这里的关键是 <strong>$M_0$ 是可学习的参数</strong>，不是固定的特殊 token。在训练过程中，这些 memory embeddings 学会了如何"吸引"和"聚合" context 中的语义信息——它们扮演着<strong>信息槽</strong>的角色，在 LLM 的前向传播中被 context 填充。</p>
+
+<h3>Meta LoRA 的作用</h3>
+<p>LLM 骨干是冻结的，但 SHINE 在每层都加了一个 <strong>Meta LoRA</strong>（rank=128，远大于生成的 LoRA rank=8）。Meta LoRA 是可训练的，它的作用是<strong>增强 LLM 处理 memory extraction 任务的能力</strong>——让冻结的预训练 LLM 学会如何把 context 信息"注入"到追加的 memory tokens 中。</p>
+
+<div class="insight">
+<h4>为什么需要 Meta LoRA？</h4>
+<p>冻结 LLM 的注意力机制是为语言建模预训练的，它天然倾向于把所有 token 平等对待。但 memory extraction 任务需要一种特殊的行为：让 memory tokens 成为<strong>信息汇聚的焦点</strong>，从 context tokens 中吸收和压缩语义。Meta LoRA 提供了足够的容量（rank=128）来调整注意力模式，使得 memory tokens 能够高效地从 context 中提取信息。这是一种"轻量微调"——只训练 LoRA 参数，不碰骨干，但足以让 LLM 适应新的提取任务。</p>
+</div>
+
+<h3>多层提取</h3>
+<p>前向传播后，设 $h_i$ 为第 $i$ 层的输出隐藏态。SHINE 从<strong>每一层</strong>都提取最后 $M$ 个 token（即 memory tokens）的隐藏态：</p>
+
+<div class="formula">
+<span class="eq-label">式 (2)-(3)</span>
+$$M_i = h_i[N:N+M, :] \in \mathbb{R}^{M \times H}, \quad i = 1, \dots, L$$
+$$M = \text{Stack}([M_1, \dots, M_L]) \in \mathbb{R}^{L \times M \times H}$$
+</div>
+
+<p>最终得到一个三维张量 $M$，三个维度分别是：层索引 $L$、memory token 索引 $M$、隐藏维度 $H$。这个张量包含了从低层到高层的全频谱语义信息——低层的 memory states 更多编码句法和局部结构，高层的更多编码语义和推理。</p>
+
+<div class="critique">
+<h4>批判 · 多层提取的代价与必要性</h4>
+<p>从所有层提取 memory states 的代价是 memory tensor 的大小正比于 $L$。对于 8B 模型（$L \approx 32$），$M=148, H=4096$ 时，memory tensor 有 $32 \times 148 \times 4096 \approx 19.4M$ 个元素——这在推理时需要额外的显存和计算。但论文的论证是：这个代价是必要的，因为单层提取有信息瓶颈，而多层提取为后续的 M2P Transformer 提供了足够丰富的输入。一个值得探讨的问题是：是否所有层的 memory states 都同等重要？是否可以只提取部分关键层（比如每隔一层）来降低代价？论文的 scaling 实验表明增加 M2P 深度有帮助，但没有系统地消融提取层数。</p>
+</div>
+
+<div class="code-block">
+<span class="cm"># Memory Extraction 的伪代码</span>
+<span class="kw">def</span> <span class="fn">memory_extraction</span>(context_ids, memory_embeddings, llm, meta_lora):
+    <span class="cm"># context_ids: (B, N), memory_embeddings: (B, M, H)</span>
+    X = llm.embed(context_ids)              <span class="cm"># (B, N, H)</span>
+    h0 = torch.cat([X, memory_embeddings], dim=1)  <span class="cm"># (B, N+M, H)</span>
+
+    <span class="cm"># 前向传播，收集每一层的输出</span>
+    hidden_states = []
+    h = h0
+    <span class="kw">for</span> layer <span class="kw">in</span> llm.layers:
+        h = layer(h, lora=meta_lora)        <span class="cm"># Meta LoRA 增强每一层</span>
+        hidden_states.append(h)              <span class="cm"># 收集所有层</span>
+
+    <span class="cm"># 从每层提取最后 M 个 token 的隐藏态</span>
+    memory_states = torch.stack([
+        h[:, -M:, :] <span class="kw">for</span> h <span class="kw">in</span> hidden_states
+    ], dim=1)                                 <span class="cm"># (B, L, M, H)</span>
+    <span class="kw">return</span> memory_states
+</div>
+</section>
+
+<!-- CH5 -->
+<section class="chapter" id="ch5">
+<div class="ch-tag">Chapter 05 · 理论</div>
+<h2>M = ⌈rD/H⌉：消除瓶颈的数学保证</h2>
+<p>SHINE 的一个精巧设计是 memory 长度 $M$ 的选择不是拍脑袋的超参数，而是有<strong>明确的数学依据</strong>。论文在式 (4) 中给出了计算公式：</p>
+
+<div class="formula">
+<span class="eq-label">式 (4)</span>
+$$M = \left\lceil \frac{rD}{H} \right\rceil$$
+</div>
+
+<p>其中：</p>
+<ul>
+<li>$r$ = 生成的 LoRA 的 rank</li>
+<li>$D$ = 单个 LLM 层中所有线性层的输入维度与输出维度之和</li>
+<li>$H$ = 隐藏维度</li>
+</ul>
+
+<h3>为什么是这个公式？</h3>
+<p>逻辑很直接。单层 LoRA 的参数量是 $rD$（每个线性层 $W \in \mathbb{R}^{I \times O}$ 的 LoRA 由 $A \in \mathbb{R}^{I \times r}$ 和 $B \in \mathbb{R}^{r \times O}$ 组成，参数量 $r(I+O)$，对所有线性层求和就是 $rD$）。</p>
+<p>而 memory tensor 中对应单层的 memory states 大小是 $M \times H$（$M$ 个 token，每个 $H$ 维）。为了保证 memory states 有足够的容量来"承载"生成 LoRA 所需的信息，论文要求：</p>
+
+<div class="formula">
+<span class="eq-label">容量约束</span>
+$$M \cdot H \geq r \cdot D \quad \Longrightarrow \quad M \geq \frac{rD}{H}$$
+</div>
+
+<p>取上取整得到式 (4)。这个约束确保了<strong>memory states 的参数量大于等于 LoRA 的参数量</strong>，从信息论的角度消除了"输入容量小于输出容量"的瓶颈。</p>
+
+<h3>实际数值</h3>
+<p>在 Qwen3-8B 的实验设置中：$r=8$，$H=4096$，$D$ 是单层所有线性层的输入+输出维度之和（注意力的 Q/K/V/O 投影 + MLP 的 up/down/gate 投影）。代入后得到 $M = 148$。</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>参数</th><th>符号</th><th>Qwen3-8B 取值</th><th>说明</th></tr>
+<tr><td>LoRA rank</td><td>$r$</td><td>8</td><td>生成的 LoRA 的秩</td></tr>
+<tr><td>单层维度和</td><td>$D$</td><td>~75,776</td><td>所有线性层输入+输出维度之和</td></tr>
+<tr><td>隐藏维度</td><td>$H$</td><td>4,096</td><td>LLM 隐藏层维度</td></tr>
+<tr><td>Memory 长度</td><td>$M$</td><td>148</td><td>$\lceil 8 \times 75776 / 4096 \rceil = \lceil 148.0 \rceil$</td></tr>
+<tr><td>单层 memory 参数量</td><td>$M \times H$</td><td>606,208</td><td>≥ 单层 LoRA 参数量 $rD = 606,208$</td></tr>
+</table>
+</div>
+
+<div class="insight">
+<h4>理论深度 · 容量匹配不等于信息匹配</h4>
+<p>$M = \lceil rD/H \rceil$ 保证的是<strong>参数量的容量匹配</strong>——memory states 有足够的"空间"来存储生成 LoRA 所需的信息。但这只是必要条件，不是充分条件。真正的挑战是<strong>信息匹配</strong>：memory states 中存储的信息是否恰好是生成高质量 LoRA 所需的信息？这取决于两个因素：(1) LLM+Meta LoRA 能否把 context 中的关键语义信息有效地提取到 memory states 中；(2) M2P Transformer 能否从 memory states 中正确地"解读"出 LoRA 权重。SHINE 的训练流程（pretraining 的 reconstruction/completion + IFT）正是在端到端地优化这个信息匹配过程。</p>
+</div>
+
+<div class="critique">
+<h4>批判 · 上取整的边界情况</h4>
+<p>当 $rD/H$ 不是整数时，上取整意味着 memory 容量略大于 LoRA 参数量——这是安全的。但当 $r$ 很大（比如 r=64 或 128）时，$M$ 会线性增长，导致 memory tensor 变大、M2P Transformer 的计算量增加。论文的实验只用到了 r=8，没有探索高 rank 场景下的效率权衡。另一个问题是：$D$ 的计算是否应该包括所有线性层？有些方法（如 QLoRA）只对注意力投影做 LoRA，不对 MLP 做，这会显著减小 $D$，从而减小 $M$。SHINE 对所有线性层都生成 LoRA，这是表达力和效率之间的一个选择。</p>
+</div>
+
+<div class="rq">
+<h4>自主科研问题</h4>
+<ol>
+<li>$M = \lceil rD/H \rceil$ 是容量的下界，但实际需要的 $M$ 是否可能更小？如果 M2P Transformer 有足够的表达力，能否用更短的 memory 序列生成相同质量的 LoRA？</li>
+<li>memory 容量的"过剩"部分（上取整带来的冗余）是否被利用了？还是只是浪费？能否通过正则化或剪枝来发现实际需要的最小 $M$？</li>
+<li>如果对不同层使用不同的 LoRA rank（比如高层 rank 大、低层 rank 小），$M$ 的计算公式应该如何修改？是否需要为每层分配不同数量的 memory tokens？</li>
+</ol>
+</div>
+</section>
+
+<!-- CH6 -->
+<section class="chapter" id="ch6">
+<div class="ch-tag">Chapter 06 · 方法</div>
+<h2>M2P Transformer：row/column 交替的双向注意力</h2>
+<p>M2P (Memory-to-Parameter) Transformer 是 SHINE 的第二个核心创新。它的输入是三维 memory tensor $M \in \mathbb{R}^{L \times M \times H}$，输出是同形状的 $\hat{M}$，然后被 reshape 成各层的 LoRA 权重。</p>
+
+<h3>Step 1：二维位置编码</h3>
+<p>memory tensor 有两个结构维度：层索引和 memory token 索引。为了让 Transformer 感知到这个二维结构，SHINE 用了两组可学习的位置编码：</p>
+
+<div class="formula">
+<span class="eq-label">式 (5)-(6)</span>
+$$P_{\text{layer}} \in \mathbb{R}^{L \times 1 \times H}, \quad P_{\text{token}} \in \mathbb{R}^{1 \times M \times H}$$
+$$\tilde{M} = M + P_{\text{layer}} + P_{\text{token}}$$
+</div>
+
+<p>通过 broadcasting 相加，每个位置 $(i, j)$ 的编码是 $P_{\text{layer}}[i] + P_{\text{token}}[j]$——这类似于二维图像中的行列位置编码，让模型知道每个 memory state 来自哪一层、是第几个 token。</p>
+
+<h3>Step 2：稀疏注意力——column 和 row 交替</h3>
+<p>如果把 $\tilde{M}$ 展平成长度 $L \cdot M$ 的序列，全注意力的复杂度是 $O((LM)^2)$，对于 $L=32, M=148$ 来说是 $(4736)^2 \approx 22M$ 个注意力对——计算量不可忽视。</p>
+<p>SHINE 的解决方案是<strong>分解注意力</strong>：交替使用 column attention 和 row attention。</p>
+
+<p><strong>奇数层用 column attention</strong>（式 7）：对每个 memory token 位置 $j$，在所有层之间做自注意力——即固定 token 索引，让不同层的同一个 memory 位置交换信息。</p>
+
+<div class="formula">
+<span class="eq-label">式 (7) · Column Attention</span>
+$$Y^{(i)}_{:,j} = \text{SelfAttn}(Z^{(i)}_{:,j}), \quad j = 1, 2, \dots, M$$
+</div>
+
+<p><strong>偶数层用 row attention</strong>（式 8）：对每一层 $j$，在所有 memory tokens 之间做自注意力——即固定层索引，让同一层的不同 memory 位置交换信息。</p>
+
+<div class="formula">
+<span class="eq-label">式 (8) · Row Attention</span>
+$$Y^{(i)}_j = \text{SelfAttn}(Z^{(i)}_j), \quad j = 1, 2, \dots, L$$
+</div>
+
+<p>注意力之后，所有层共享同一个 2 层 MLP 来更新每个 token：</p>
+
+<div class="formula">
+<span class="eq-label">式 (9)</span>
+$$Z^{(i+1)}_{jk} = \text{MLP}(Y^{(i)}_{jk}), \quad j = 1, \dots, L,\ k = 1, \dots, M$$
+</div>
+
+<h3>复杂度分析</h3>
+<p>Column attention 的复杂度：$M$ 次自注意力，每次长度 $L$，所以 $O(M \cdot L^2)$。Row attention：$L$ 次自注意力，每次长度 $M$，所以 $O(L \cdot M^2)$。总复杂度：</p>
+
+<div class="formula">
+<span class="eq-label">复杂度</span>
+$$O(LM^2 + ML^2) \quad \text{vs} \quad O((LM)^2) \text{（全注意力）}$$
+</div>
+
+<p>论文报告这种稀疏注意力相比全注意力可以节省<strong>高达 90% 的 FLOPs</strong>（Appendix B.5）。</p>
+
+<div class="figure">
+<img src="figures/fig3_m2p.png" alt="M2P Transformer architecture">
+<figcaption>图 3（论文原图）：M2P Transformer 架构。四步——(1) 记录每层的 memory hidden states；(2) 加层位置编码和 token 位置编码；(3) 双向 Transformer（交替 column/row attention）；(4) reshape 成各层 LoRA 权重。</figcaption>
+</div>
+
+<div class="svg-container">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:12px Georgia;fill:#1A1410}.t2{font:11px Georgia;fill:#7A6E60}.t3{font:bold 13px Georgia;fill:#FAF6EC}</style>
+<!-- 3D memory tensor representation -->
+<text x="350" y="25" text-anchor="middle" class="t1" font-size="14" font-weight="bold">Memory Tensor M ∈ R^{L×M×H}</text>
+
+<!-- Layer rows -->
+<g transform="translate(80,50)">
+<text x="-10" y="20" text-anchor="end" class="t2">Layer 1</text>
+<text x="-10" y="60" text-anchor="end" class="t2">Layer 2</text>
+<text x="-10" y="100" text-anchor="end" class="t2">...</text>
+<text x="-10" y="140" text-anchor="end" class="t2">Layer L</text>
+<!-- tokens -->
+<g id="tokens">
+<rect x="0" y="5" width="30" height="25" rx="3" fill="#6B1D2A"/><text x="15" y="22" text-anchor="middle" class="t3">m1</text>
+<rect x="35" y="5" width="30" height="25" rx="3" fill="#8B3040"/><text x="50" y="22" text-anchor="middle" class="t3">m2</text>
+<rect x="70" y="5" width="30" height="25" rx="3" fill="#A05060"/><text x="85" y="22" text-anchor="middle" class="t3">...</text>
+<rect x="105" y="5" width="30" height="25" rx="3" fill="#C9A227"/><text x="120" y="22" text-anchor="middle" class="t3">mM</text>
+</g>
+<use href="#tokens" y="40"/>
+<use href="#tokens" y="80"/>
+<use href="#tokens" y="120"/>
+</g>
+
+<!-- Column attention arrow (vertical, across layers) -->
+<g transform="translate(280,50)">
+<rect x="0" y="0" width="180" height="170" rx="8" fill="#FBF3D9" stroke="#C9A227" stroke-width="1.5"/>
+<text x="90" y="25" text-anchor="middle" class="t1" font-weight="bold" fill="#8B6914">Column Attention</text>
+<text x="90" y="45" text-anchor="middle" class="t2">奇数层 · 跨层混合</text>
+<!-- vertical arrows -->
+<line x1="40" y1="60" x2="40" y2="150" stroke="#6B1D2A" stroke-width="2" marker-end="url(#va)"/>
+<line x1="90" y1="150" x2="90" y2="60" stroke="#6B1D2A" stroke-width="2" marker-end="url(#va)"/>
+<line x1="140" y1="60" x2="140" y2="150" stroke="#6B1D2A" stroke-width="2" marker-end="url(#va)"/>
+<text x="90" y="165" text-anchor="middle" class="t2">固定 token 位置 · 所有层交换信息</text>
+<defs><marker id="va" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#6B1D2A"/></marker></defs>
+</g>
+
+<!-- Row attention arrow (horizontal, across tokens) -->
+<g transform="translate(490,50)">
+<rect x="0" y="0" width="180" height="170" rx="8" fill="#F0DDE0" stroke="#6B1D2A" stroke-width="1.5"/>
+<text x="90" y="25" text-anchor="middle" class="t1" font-weight="bold" fill="#6B1D2A">Row Attention</text>
+<text x="90" y="45" text-anchor="middle" class="t2">偶数层 · 跨 token 混合</text>
+<!-- horizontal arrows -->
+<line x1="20" y1="70" x2="160" y2="70" stroke="#C9A227" stroke-width="2" marker-end="url(#ha)"/>
+<line x1="160" y1="100" x2="20" y2="100" stroke="#C9A227" stroke-width="2" marker-end="url(#ha)"/>
+<line x1="20" y1="130" x2="160" y2="130" stroke="#C9A227" stroke-width="2" marker-end="url(#ha)"/>
+<text x="90" y="165" text-anchor="middle" class="t2">固定层索引 · 所有 token 交换信息</text>
+<defs><marker id="ha" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#C9A227"/></marker></defs>
+</g>
+
+<text x="350" y="260" text-anchor="middle" class="t2">交替堆叠：Column → Row → Column → Row → ... · 双向信息流 · O(LM²+ML²) 复杂度</text>
+<text x="350" y="280" text-anchor="middle" class="t2">相比全注意力 O((LM)²) 节省高达 90% FLOPs</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：M2P Transformer 的稀疏注意力机制。Column attention（奇数层）在固定 token 位置上跨所有层做自注意力；Row attention（偶数层）在固定层索引上跨所有 token 做自注意力。交替堆叠实现全局信息交换，同时把复杂度从 O((LM)²) 降到 O(LM²+ML²)。</div>
+</div>
+</section>
+
+<!-- CH7 -->
+<section class="chapter" id="ch7">
+<div class="ch-tag">Chapter 07 · 理论</div>
+<h2>双向信息流：模拟反向传播的设计直觉</h2>
+<p>M2P Transformer 最深刻的设计不是稀疏注意力本身，而是<strong>双向信息流</strong>。这是 SHINE 与之前 in-context hypernetwork 的本质区别，也是论文反复强调的核心创新。</p>
+
+<h3>之前方法的"层间盲"问题</h3>
+<p>之前的 in-context 方法（如 Chen et al., 2025; Charakorn et al., 2026）也用 LLM 的隐藏态生成 LoRA，但它们有一个共同的局限：第 $i$ 层的隐藏态只包含来自<strong>低层（$j \leq i$）</strong>的信息——因为 Transformer 的前向传播是自底向上的，信息只能从低层流向高层，不能反向。</p>
+<p>这意味着如果用第 $i$ 层的隐藏态生成第 $i$ 层的 LoRA，那么第 $i$ 层的 LoRA 生成<strong>看不到高层的信息</strong>。论文称之为 <strong>"blindness of layer-wise generation"</strong>（层间生成的盲目性）。</p>
+
+<h3>SHINE 的解决方案：双向混合</h3>
+<p>SHINE 的 M2P Transformer 在 memory states 之间做<strong>双向的</strong>信息混合——既跨层又跨 token。Column attention 让不同层的同一个 memory 位置交换信息，这意味着<strong>深层的信息可以回流到浅层</strong>。</p>
+
+<div class="insight">
+<h4>核心直觉 · 模拟反向传播</h4>
+<p>论文给出了一个非常精妙的直觉：这种深层→浅层的信息流动<strong>模拟了反向传播过程</strong>。在标准的反向传播中，浅层参数的梯度在数学上依赖于深层参数的梯度——梯度从损失层（输出端）反向传播到输入层。同样地，在生成 LoRA 时，浅层的 LoRA 权重应该考虑到深层的语义信息——因为深层编码了更抽象的语义，而这些语义应该指导浅层的适配。M2P 的双向 column attention 正是让这种"深层指导浅层"的信息流动成为可能。</p>
+</div>
+
+<h3>为什么这很重要？</h3>
+<p>考虑一个具体的例子：假设 context 是一篇关于量子力学的文章。深层的 memory states 可能编码了"这是一篇物理论文"的高层语义，而浅层的 memory states 可能编码了具体的术语和符号。如果浅层的 LoRA 生成看不到深层信息，它可能无法知道应该把哪些术语当作专业词汇来特殊处理。而通过双向信息流，深层的"这是物理论文"的信号可以指导浅层的 LoRA 生成，使得浅层也能做出符合整体语义的适配。</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 680 280" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:12px Georgia;fill:#1A1410}.t2{font:11px Georgia;fill:#7A6E60}.t3{font:bold 13px Georgia;fill:#FAF6EC}</style>
+<!-- Left: prior work (causal only) -->
+<g transform="translate(30,20)">
+<rect x="0" y="0" width="280" height="240" rx="10" fill="#F5F0E5" stroke="#7A6E60" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="140" y="28" text-anchor="middle" class="t1" font-weight="bold" fill="#7A6E60">Prior Work：单向信息流</text>
+<!-- layers -->
+<rect x="60" y="50" width="160" height="28" rx="4" fill="#C0B8A8"/><text x="140" y="69" text-anchor="middle" class="t3">Layer L (深层)</text>
+<rect x="60" y="90" width="160" height="28" rx="4" fill="#B0A898"/><text x="140" y="109" text-anchor="middle" class="t3">Layer L-1</text>
+<rect x="60" y="130" width="160" height="28" rx="4" fill="#A09888"/><text x="140" y="149" text-anchor="middle" class="t3">...</text>
+<rect x="60" y="170" width="160" height="28" rx="4" fill="#908878"/><text x="140" y="189" text-anchor="middle" class="t3">Layer 1 (浅层)</text>
+<!-- causal arrows (only up) -->
+<line x1="140" y1="198" x2="140" y2="162" stroke="#7A6E60" stroke-width="1.5" marker-end="url(#ca)"/>
+<line x1="140" y1="158" x2="140" y2="122" stroke="#7A6E60" stroke-width="1.5" marker-end="url(#ca)"/>
+<line x1="140" y1="118" x2="140" y2="82" stroke="#7A6E60" stroke-width="1.5" marker-end="url(#ca)"/>
+<defs><marker id="ca" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#7A6E60"/></marker></defs>
+<text x="140" y="225" text-anchor="middle" class="t2">浅层看不到深层 → "层间盲"</text>
+</g>
+
+<!-- Right: SHINE (bidirectional) -->
+<g transform="translate(370,20)">
+<rect x="0" y="0" width="280" height="240" rx="10" fill="#FBF3D9" stroke="#C9A227" stroke-width="1.5"/>
+<text x="140" y="28" text-anchor="middle" class="t1" font-weight="bold" fill="#8B6914">SHINE：双向信息流</text>
+<rect x="60" y="50" width="160" height="28" rx="4" fill="#6B1D2A"/><text x="140" y="69" text-anchor="middle" class="t3">Layer L (深层)</text>
+<rect x="60" y="90" width="160" height="28" rx="4" fill="#8B3040"/><text x="140" y="109" text-anchor="middle" class="t3">Layer L-1</text>
+<rect x="60" y="130" width="160" height="28" rx="4" fill="#A05060"/><text x="140" y="149" text-anchor="middle" class="t3">...</text>
+<rect x="60" y="170" width="160" height="28" rx="4" fill="#C9A227"/><text x="140" y="189" text-anchor="middle" class="t3">Layer 1 (浅层)</text>
+<!-- bidirectional arrows -->
+<line x1="125" y1="198" x2="125" y2="82" stroke="#6B1D2A" stroke-width="2" marker-end="url(#sa)"/>
+<line x1="155" y1="82" x2="155" y2="198" stroke="#C9A227" stroke-width="2" marker-end="url(#sa2)"/>
+<defs><marker id="sa" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#6B1D2A"/></marker>
+<marker id="sa2" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#C9A227"/></marker></defs>
+<text x="100" y="145" text-anchor="middle" class="t2" fill="#6B1D2A">前向</text>
+<text x="180" y="145" text-anchor="middle" class="t2" fill="#8B6914">反向</text>
+<text x="140" y="225" text-anchor="middle" class="t2">深层→浅层回流 · 模拟反向传播</text>
+</g>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：单向 vs 双向信息流。左：prior work 中信息只能从低层流向高层（前向传播的因果性），浅层生成 LoRA 时看不到深层语义。右：SHINE 的 M2P Transformer 通过双向 column attention 让深层信息回流到浅层，模拟反向传播中"深层梯度指导浅层更新"的机制。</div>
+</div>
+
+<div class="critique">
+<h4>批判 · 双向信息流的局限性</h4>
+<p>虽然双向信息流在直觉上很有说服力，但论文没有提供直接的消融实验来证明"深层→浅层回流"本身的贡献——M2P Transformer 的消融是整体的（有没有 M2P、M2P 深度多少），而不是单独隔离双向性的贡献。一个更严格的实验应该是：对比双向 column attention 与单向（因果）column attention，看双向性带来多大提升。此外，"模拟反向传播"是一个类比，不是严格的数学对应——反向传播中的梯度是有特定方向和大小的，而 attention 中的信息混合是无方向的加权平均。这个类比在多大程度上是字面意义上的，还是仅仅是启发性的，值得进一步研究。</p>
+</div>
+
+<div class="rq">
+<h4>自主科研问题</h4>
+<ol>
+<li>能否设计一个更严格的消融：把 M2P 的 column attention 改成因果掩码（只允许低层→高层），对比双向版本，量化"深层→浅层回流"的实际贡献？</li>
+<li>双向信息流是否可以更显式地模拟反向传播——比如用梯度方向作为 attention 的偏置，或者用 U-Net 风格的跳跃连接来传递深层信息？</li>
+<li>信息回流是否存在"过混合"的风险——如果深层和浅层的信息过度混合，是否会丢失层级特异性，导致所有层的 LoRA 趋于相似？</li>
+</ol>
+</div>
+</section>
+
+<!-- CH8 -->
+<section class="chapter" id="ch8">
+<div class="ch-tag">Chapter 08 · 训练</div>
+<h2>两阶段训练：Pretraining + Instruction Fine-Tuning</h2>
+<p>SHINE 的训练流程模仿标准 LLM 的开发生命周期，分为两个阶段：<strong>预训练</strong>（自监督的语言建模）和<strong>指令微调</strong>（QA 任务对齐）。论文强调高质量 context-QA 数据集很稀缺，所以需要先用大规模自监督数据预训练，再用小规模高质量 QA 数据微调。</p>
+
+<h3>可训练参数</h3>
+<p>整个系统中可训练的参数只有三部分：</p>
+<ul>
+<li>$\Theta_T$：M2P Transformer 的参数</li>
+<li>$\Theta_M$：Meta LoRA 的参数（rank=128，挂在冻结 LLM 的每一层）</li>
+<li>$m$：初始 memory embeddings（$M$ 个可学习向量）</li>
+</ul>
+<p>冻结的 LLM 骨干参数 $\Theta_{LLM}$ 不更新。生成的 LoRA $\Theta_{GLoRA}$ 是 context 和 hypernetwork 的函数：$\Theta_{GLoRA} = f(c; \Theta_T, \Theta_M, m)$。</p>
+
+<h3>阶段 1：预训练</h3>
+<p>预训练使用 <strong>6B token</strong>的数据集（来自 TransMLA，Meng et al., 2025），训练 1 个 epoch，峰值学习率 5e-5。预训练有两个互补的自监督目标：</p>
+
+<h4>目标 A：Reconstruction（重建）</h4>
+<p>hypernetwork 把完整 context $c$ 转成 LoRA $\Theta_{GLoRA}$。然后用特殊命令 `&lt;RECON&gt;` 提示 LLM，训练它输出原始 context $c$。损失是交叉熵：</p>
+
+<div class="formula">
+<span class="eq-label">式 (10)</span>
+$$J_{RECON} = -\log P(c \mid \langle\text{RECON}\rangle; \Theta_{GLoRA}, \Theta_{LLM})$$
+</div>
+
+<p>这个任务确保生成的 LoRA 保留了输入 context 的<strong>完整信息</strong>——如果 LoRA 能让 LLM 逐字重建原文，说明信息没有丢失。</p>
+
+<h4>目标 B：Completion（补全）</h4>
+<p>为了增强泛化和防止过拟合，hypernetwork 的输入不是完整 context，而是<strong>截断的 partial context</strong> $c'$——随机截断最后 10%–30% 的 token。生成的 LoRA 必须推断缺失的信息，让 LLM 恢复完整的原始 context $c$：</p>
+
+<div class="formula">
+<span class="eq-label">式 (11)</span>
+$$J_{COMP} = -\log P(c \mid \langle\text{COMP}\rangle; \Theta'_{GLoRA}, \Theta_{LLM}), \quad \Theta'_{GLoRA} = f(c'; \Theta_T, \Theta_M, m)$$
+</div>
+
+<p>这个任务比 reconstruction 更难——它要求 hypernetwork 不仅存储信息，还要<strong>推断和补全</strong>缺失的部分，这迫使它学习 context 中的语义结构和规律，而不仅仅是字面记忆。</p>
+
+<p>两个目标联合训练，随机采样，$\lambda = 0.5$：</p>
+<div class="formula">
+$$J_{TOTAL} = \lambda J_{RECON} + (1-\lambda) J_{COMP}$$
+</div>
+
+<h3>阶段 2：Instruction Fine-Tuning (IFT)</h3>
+<p>预训练后，hypernetwork 能有效地内化 context 信息。IFT 阶段把这个能力对齐到下游推理任务，使生成的适配器支持问答。</p>
+
+<p>IFT 使用 Context-Question-Answer $(c, q, a)$ 数据集。每个训练步中，hypernetwork 基于 context $c$ 生成 LoRA，然后把问题 $q$ 和答案 $a$ 格式化成聊天模板，最小化答案 tokens 的交叉熵：</p>
+
+<div class="formula">
+<span class="eq-label">式 (12)</span>
+$$J_{IFT} = -\log P(a \mid q; \Theta_{GLoRA}, \Theta_{LLM})$$
+</div>
+
+<p>IFT 分两步进行：</p>
+<ol>
+<li><strong>MQA 微调</strong>：在多 QA 对数据集上训练（主要是 MS MARCO MQA，占 76%），2 个 epoch，学习率 3e-5。MQA 数据每个 context 有 15 个 QA 对，训练模型在多轮对话中持续回答。</li>
+<li><strong>1QA 微调</strong>：在单 QA 对数据集上继续训练 1 个 epoch，学习率 1e-5。这一步对齐到标准的单跳/多跳 QA 基准。</li>
+</ol>
+
+<div class="insight">
+<h4>训练设计的深度分析</h4>
+<p>SHINE 的训练流程有几个值得注意的设计决策：</p>
+<p><strong>(1) 为什么需要 pretraining？</strong> 因为高质量 context-QA 数据稀缺，直接在小规模 QA 数据上训练会过拟合。6B token 的自监督预训练让 hypernetwork 学会通用的"context→参数"映射能力，然后 IFT 只需要做任务对齐。</p>
+<p><strong>(2) 为什么 completion 比 reconstruction 重要？</strong> Reconstruction 只考验记忆能力——LoRA 能存储多少信息。Completion 考验推理能力——从部分信息推断缺失部分。后者迫使 hypernetwork 学习 context 的语义结构，这对于下游 QA（需要推理而非背诵）至关重要。</p>
+<p><strong>(3) 为什么 MQA → 1QA 的两阶段 IFT？</strong> MQA 训练多轮对话能力（context 中有多个问题，需要持续回答），1QA 训练标准 QA 基准上的表现。先 MQA 后 1QA 的课程学习顺序，让模型先学会复杂的多轮场景，再精化单轮 QA。</p>
+</div>
+
+<div class="code-block">
+<span class="cm"># SHINE 训练的伪代码</span>
+<span class="kw">def</span> <span class="fn">train_step</span>(batch, llm, meta_lora, m2p, memory_embeddings, optimizer, stage):
+    <span class="cm"># Stage 1: Memory Extraction</span>
+    memory_states = memory_extraction(
+        batch.context_ids, memory_embeddings, llm, meta_lora
+    )  <span class="cm"># (B, L, M, H)</span>
+
+    <span class="cm"># Stage 2: M2P Transformer 生成 LoRA</span>
+    generated_lora = m2p(memory_states)  <span class="cm"># 各层 LoRA 权重</span>
+
+    <span class="cm"># Stage 3: 计算损失</span>
+    <span class="kw">if</span> stage == <span class="str">"pretrain_recon"</span>:
+        prompt = <span class="str">"&lt;RECON&gt;"</span>
+        target = batch.context_ids  <span class="cm"># 重建原文</span>
+    <span class="kw">elif</span> stage == <span class="str">"pretrain_comp"</span>:
+        prompt = <span class="str">"&lt;COMP&gt;"</span>
+        target = batch.full_context_ids  <span class="cm"># 补全截断的原文</span>
+    <span class="kw">else</span>:  <span class="cm"># IFT</span>
+        prompt = batch.question
+        target = batch.answer  <span class="cm"># 只在答案 tokens 上计算损失</span>
+
+    logits = llm(prompt, lora=generated_lora)
+    loss = cross_entropy(logits, target)
+
+    <span class="cm"># 只更新 meta_lora + m2p + memory_embeddings</span>
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    <span class="kw">return</span> loss
+</div>
+</section>
+
+<!-- CH9 -->
+<section class="chapter" id="ch9">
+<div class="ch-tag">Chapter 09 · 实验</div>
+<h2>MQA 多轮对话与效率分析</h2>
+<p>实验使用 <strong>Qwen3-8B</strong> 作为骨干模型。默认设置：Meta LoRA rank=128，生成 LoRA rank=8，$M=148$（按式 4 计算），最大 context 长度 1150 tokens，4 层 M2P Transformer。训练在 8×NVIDIA A100 上进行，使用 AdamW + 线性调度 + warmup。</p>
+
+<h3>预训练结果</h3>
+<p>预训练后，在 Wikitext-2 的不同长度文章上评估 reconstruction 和 completion 能力。Figure 5 显示两个任务在所有 context 长度上都达到了一致的低 loss 和低 PPL（perplexity 大多在 1.0–2.0 之间）。唯一的小例外是 context 长度约 100 tokens 处有一些离群点，论文归因于数据集中无意义的短文本——中位数性能仍然稳健。</p>
+
+<h3>MQA 多轮对话结果</h3>
+<p>在 MS MARCO MQA 测试集上评估多轮对话（每个 context 有 15 个 QA 对）。LLM 自回归生成答案，基于当前问题和之前生成的答案。<strong>原始 context 对 LLM 隐藏</strong>——只能通过生成的 LoRA 访问 context 信息。</p>
+
+<p>对比四个基线：</p>
+<ul>
+<li><strong>Naive</strong>：系统提示 + 对话历史（无 context）</li>
+<li><strong>In-Context</strong>：系统提示 + 完整 context + 对话历史（黄金基线，推理时能访问完整 context）</li>
+<li><strong>SFT</strong>：在每个 context 的 5 段对话上微调 rank=8 LoRA 10 个 epoch</li>
+<li><strong>SHINE</strong>：单次前向生成 LoRA</li>
+</ul>
+
+<div class="table-wrap">
+<table>
+<tr><th>方法</th><th>F1 Score</th><th>Amortizable Time (s)</th><th>Generation Time (s)</th></tr>
+<tr><td>Naive</td><td>23.2</td><td>0.0</td><td>11.0</td></tr>
+<tr><td>In-Context</td><td class="best">69.4</td><td>0.0</td><td>14.2</td></tr>
+<tr><td>SFT</td><td>33.0</td><td>29.3</td><td>11.0</td></tr>
+<tr><td>SHINE</td><td class="best">55.6</td><td>0.3</td><td>11.0</td></tr>
+</table>
+</div>
+
+<p>关键发现：</p>
+<ul>
+<li>SHINE 的 F1（55.6）<strong>远超 SFT（33.0）</strong>和 Naive（23.2），接近 In-Context（69.4）。</li>
+<li>SHINE 的 amortizable time（生成 LoRA 的一次性开销）仅 <strong>0.3 秒</strong>，而 SFT 需要 29.3 秒（近 100 倍差距）。</li>
+<li>SHINE 的 generation time（11.0s）和 Naive/SFT 一样快，<strong>比 In-Context（14.2s）快</strong>——因为不需要处理长 context。</li>
+</ul>
+
+<div class="figure">
+<img src="figures/fig6_multiturn.png" alt="Multi-turn conversation F1">
+<figcaption>图 6（论文原图）：多轮对话 F1-Score 随对话轮次的变化。SHINE 在 1 轮对话上接近 In-Context，但随着轮次增加性能下降——论文归因于缺乏长上下文后训练。</figcaption>
+</div>
+
+<div class="critique">
+<h4>批判 · 多轮性能下降的根因</h4>
+<p>Figure 6 显示 SHINE 在多轮对话中性能随轮次下降。论文的解释是"缺乏长上下文后训练"——虽然原始 context 已经被吸收进 LoRA，但 QA 对不断增加对话长度，导致长上下文推理困难。这个解释有道理，但不够深入。更根本的问题可能是：<strong>生成的 LoRA 是静态的</strong>——它在 Stage 1 一次性生成，之后不会根据对话历史更新。而 In-Context 方法中，每一轮的答案都会被加入上下文，模型可以利用之前的答案来帮助回答后续问题。SHINE 的静态 LoRA 无法积累对话历史中的新信息。一个可能的改进方向是让 LoRA 在多轮对话中动态更新（比如用每轮的 QA 对做一次轻量的 LoRA 微调），但这会增加推理开销。</p>
+</div>
+
+<h3>效率分析</h3>
+<p>Figure 7 对比了四种方法的计算量（FLOPs）和峰值内存使用。SHINE 相比 SFT 显著减少了微调计算量，相比 In-Context 降低了生成时的内存/计算开销。关键优势在于：</p>
+<ul>
+<li><strong>Amortizable FLOPs</strong>：SHINE 的 LoRA 生成是一次性的，且只有单次前向的计算量；SFT 需要多轮梯度下降，计算量巨大。</li>
+<li><strong>Peak Generation Memory</strong>：SHINE 推理时不需要存储 context 的 KV cache，只有问题的 KV cache；In-Context 需要存储完整 context 的 KV cache，内存随 context 长度线性增长。</li>
+<li><strong>Generation FLOPs</strong>：SHINE 的生成 FLOPs 和 Naive/SFT 相当（因为输入只有问题），In-Context 的生成 FLOPs 随 context 长度增长。</li>
+</ul>
+
+<div class="insight">
+<h4>效率的本质 · 把 O(N) 变成 O(1)</h4>
+<p>SHINE 效率优势的本质是<strong>把 context 的处理从推理时转移到了生成时</strong>。在 In-Context 方法中，每一次推理都要处理完整的 context（O(N) 的计算和内存，N 是 context 长度）。在 SHINE 中，context 只需要处理一次（生成 LoRA，O(N) 但只做一次），之后的每一次推理只需要处理问题（O(1) 的 context 相关开销）。对于需要多次问答的场景（比如多轮对话、多个问题），这种"一次生成，多次使用"的模式可以摊销 context 处理的开销，显著降低总成本。</p>
+</div>
+</section>
+
+<!-- CH10 -->
+<section class="chapter" id="ch10">
+<div class="ch-tag">Chapter 10 · 实验</div>
+<h2>1QA 九数据集：从单跳到多跳推理</h2>
+<p>MQA 微调后，SHINE 继续在 1QA 数据集上微调 1 个 epoch（学习率 1e-5），然后在 6 个代表性 QA 基准上评估，加上 SQuAD 的三个长上下文变体（512/1K/2K tokens），共 9 个数据集。</p>
+
+<h3>评估设置</h3>
+<ul>
+<li><strong>单跳 QA</strong>：SQuAD、MS MARCO v1、MS MARCO v2</li>
+<li><strong>多跳 QA</strong>：HotpotQA、MuSiQue、2WikiMultihopQA（使用默认 distractor 设置）</li>
+<li><strong>长上下文变体</strong>：SQuAD-512、SQuAD-1K、SQuAD-2K（context 拼接至平均长度 N tokens，加入 distractor 段落增加难度）</li>
+</ul>
+
+<p>对比基线：Naive、In-Context、Generative Adapter（Chen et al., 2025，另一个 hypernetwork 方法）。此外还做了消融：SHINE(1/2 MQA) 和 SHINE(1/2 1QA) 分别只用一半的 MQA 或 1QA 数据训练，验证两种数据的有效性。</p>
+
+<h3>结果</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>方法</th><th>SQuAD</th><th>MS MARCO v1</th><th>MS MARCO v2</th><th>HotpotQA</th><th>MuSiQue</th><th>2Wiki</th><th>SQuAD-512</th><th>SQuAD-1K</th><th>SQuAD-2K</th></tr>
+<tr><td>Naive</td><td>22.0</td><td>19.6</td><td>16.0</td><td>26.9</td><td>11.8</td><td>27.8</td><td>22.0</td><td>22.0</td><td>22.0</td></tr>
+<tr><td>In-Context</td><td class="best">86.8</td><td>34.2</td><td>31.3</td><td class="best">68.7</td><td class="best">36.3</td><td class="best">48.7</td><td class="best">85.9</td><td class="best">85.1</td><td class="best">84.9</td></tr>
+<tr><td>Gen Adapter</td><td>70.3</td><td>35.0</td><td>27.9</td><td>40.8</td><td>19.4</td><td>32.9</td><td>48.8</td><td>43.0</td><td>39.9</td></tr>
+<tr><td>SHINE (1/2 MQA)</td><td>59.3</td><td>39.1</td><td>40.8</td><td>57.7</td><td>28.2</td><td>61.0</td><td>49.2</td><td>42.7</td><td>33.8</td></tr>
+<tr><td>SHINE (1/2 1QA)</td><td>62.2</td><td>40.2</td><td>39.9</td><td>56.2</td><td>26.7</td><td>57.8</td><td>50.9</td><td>42.4</td><td>34.6</td></tr>
+<tr><td>SHINE</td><td class="best">63.6</td><td class="best">40.7</td><td class="best">40.1</td><td class="best">59.0</td><td class="best">28.5</td><td class="best">60.2</td><td class="best">53.4</td><td class="best">44.5</td><td class="best">37.5</td></tr>
+</table>
+</div>
+
+<p>关键发现：</p>
+<ul>
+<li>SHINE 在所有 9 个数据集上<strong>远超 Naive 和 Generative Adapter</strong>。</li>
+<li>在 MS MARCO v1/v2、2Wiki 上，SHINE <strong>超过了 In-Context</strong>（40.7 vs 34.2，40.1 vs 31.3，60.2 vs 48.7）。</li>
+<li>在 SQuAD 和 HotpotQA 上，SHINE 接近但仍低于 In-Context（63.6 vs 86.8，59.0 vs 68.7）。</li>
+<li>完整训练的 SHINE 在 9 个数据集中的 7 个上优于 1/2 MQA 和 1/2 1QA 变体，验证了 MQA 和 1QA 数据都有效。</li>
+</ul>
+
+<div class="insight">
+<h4>核心发现 · LoRA 不仅记忆，还能推理</h4>
+<p>最值得注意的结果是 SHINE 在<strong>多跳 QA</strong>（HotpotQA、MuSiQue、2Wiki）上的表现。这些任务需要模型从 context 的不同部分收集信息并进行推理，而不是简单的字面匹配。SHINE 在没有显式 CoT（Chain-of-Thought）步骤的情况下，在 HotpotQA 上达到 59.0、2Wiki 上达到 60.2，远超 Generative Adapter（40.8、32.9）。论文指出这表明生成的 LoRA <strong>不仅记忆了 context 的字面信息，还捕获了其中的语义结构和推理关系</strong>，使得模型可以在参数化的 context 上进行多跳推理。这是一个非常强的结果——它证明 hypernetwork 生成的 LoRA 不是简单的"记忆压缩"，而是真正的"知识内化"。</p>
+</div>
+
+<div class="critique">
+<h4>批判 · SQuAD 上的差距</h4>
+<p>SHINE 在 SQuAD 上与 In-Context 有较大差距（63.6 vs 86.8，差 23 分）。这个差距在长上下文变体上更大（SQuAD-2K: 37.5 vs 84.9，差 47 分）。论文没有深入分析这个差距的原因。可能的解释包括：(1) SQuAD 的答案通常是 context 中的精确片段，需要高保真的字面记忆，而 LoRA 的低秩结构可能无法精确存储所有细节；(2) 长上下文时，memory extraction 的信息瓶颈更加严重——1150 token 的 context 被压缩到 148 个 memory token，压缩比约 8:1，可能丢失关键细节；(3) In-Context 方法可以在推理时直接"查阅"context，而 SHINE 必须依赖 LoRA 中存储的信息，对于需要精确定位的任务处于劣势。这个差距指出了 SHINE 当前的一个核心局限：<strong>高保真的字面记忆能力不足</strong>。</p>
+</div>
+
+<div class="rq">
+<h4>自主科研问题</h4>
+<ol>
+<li>SQuAD 上的差距主要来自信息瓶颈还是 LoRA 表达力？如果增加生成 LoRA 的 rank（比如 r=16 或 32），能否缩小 SQuAD 上的差距？</li>
+<li>长上下文（SQuAD-2K）上性能急剧下降，是否是因为 M=148 的 memory 容量不足？如果按 context 长度动态调整 M，能否改善长上下文表现？</li>
+<li>SHINE 在 MS MARCO 上超过 In-Context，但在 SQuAD 上落后——这是否意味着 LoRA 更擅长存储"语义"而非"字面"？能否设计一个混合系统，用 LoRA 存储语义、用外部检索存储字面？</li>
+</ol>
+</div>
+</section>
+
+<!-- CH11 -->
+<section class="chapter" id="ch11">
+<div class="ch-tag">Chapter 11 · 实验</div>
+<h2>对比 TTT 与 Scalability 分析</h2>
+
+<h3>对比 Test-Time Training (TTT)</h3>
+<p>SHINE 和 TTT 都在推理时更新模型参数，但更新方式不同：TTT 通过基于梯度的优化迭代更新，SHINE 通过 hypernetwork 单次前向直接生成。论文在 SQuAD 上对比了 SHINE 与领先的 TTT 基线 SEAL 和 PaST。</p>
+
+<p>TTT 方法通常需要在多个文档上迭代优化，性能随训练 context 数量 $n$ 变化。论文选取 $n=200$（通常是 TTT 的最佳平衡点，数据足够且灾难性遗忘可控）。</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>方法</th><th>SQuAD Score</th><th>特点</th></tr>
+<tr><td colspan="3" style="background:#EDE4CE;font-weight:700">Test-Time Training（迭代优化，耗时长，训练开销大）</td></tr>
+<tr><td>Base Model</td><td>32.7</td><td>无适配</td></tr>
+<tr><td>Train on Passage</td><td>36.0</td><td>在 passage 上微调</td></tr>
+<tr><td>Train + Synthetic</td><td>50.6</td><td>+ 合成数据</td></tr>
+<tr><td>Train + GPT-4.1 Synthetic</td><td>59.4</td><td>+ GPT-4.1 合成数据</td></tr>
+<tr><td>SEAL</td><td>58.2</td><td>TTT 基线</td></tr>
+<tr><td>PaST 50</td><td>58.9</td><td>TTT 基线</td></tr>
+<tr><td colspan="3" style="background:#FBF3D9;font-weight:700">Hypernetwork（单次前向，即时生成，无训练开销）</td></tr>
+<tr><td>SHINE</td><td class="best">63.6</td><td>单次前向生成 LoRA</td></tr>
+</table>
+</div>
+
+<p>SHINE（63.6）超过了所有 TTT 基线，包括使用 GPT-4.1 合成数据的方法（59.4）。关键优势是：TTT 需要在数百篇文章上迭代训练，使用 SFT 和 RL 技术和合成数据，而 SHINE 只需要单次前向传播，计算开销可忽略。</p>
+
+<div class="insight">
+<h4>TTT vs Hypernetwork 的本质区别</h4>
+<p>TTT 和 hypernetwork 代表了两种不同的"推理时适配"哲学：</p>
+<p><strong>TTT = 在线学习</strong>：在测试时继续训练，用梯度下降把新信息写进参数。优点是理论上可以达到任意精度（只要训练足够），缺点是慢、需要优化、有灾难性遗忘风险。</p>
+<p><strong>Hypernetwork = 直接映射</strong>：用一个预训练好的映射函数（hypernetwork）把 context 直接转成参数。优点是快（单次前向）、无需优化、无遗忘，缺点是映射质量受限于 hypernetwork 的训练数据和表达力。</p>
+<p>SHINE 的结果表明，在 QA 任务上，一个训练良好的 hypernetwork 可以超过需要大量迭代的 TTT 方法。这暗示"直接映射"可能比"在线学习"更高效——前提是 hypernetwork 见过足够多的训练数据（6B tokens）。</p>
+</div>
+
+<h3>Scalability 分析</h3>
+<p>论文从两个方向评估了 SHINE 的可扩展性：</p>
+
+<h4>方向 1：Scaling Backbone LLM</h4>
+<p>保持所有超参数不变（生成 LoRA rank、Meta LoRA rank、M2P 深度），只改变骨干 LLM 的规模。所有模型在完成 40% 预训练 schedule 后评估。结果显示<strong>增大 LLM 规模带来持续的性能提升</strong>。</p>
+
+<h4>方向 2：Scaling Hyperparameters</h4>
+<p>进一步研究 hypernetwork 内部组件的 scaling 影响：</p>
+<ul>
+<li><strong>M2P Transformer 层数</strong>：增加 M2P 深度带来性能提升。</li>
+<li><strong>LoRA ranks</strong>：增加 Meta LoRA rank 和生成 LoRA rank 都带来提升。</li>
+</ul>
+
+<p>论文强调：<strong>所有 scaling 方向都显示出一致的性能提升，没有出现 capacity bottleneck 的迹象</strong>。这意味着 SHINE 的架构有潜力通过更大规模的训练和更大的模型来进一步提升性能。</p>
+
+<div class="critique">
+<h4>批判 · Scaling 实验的局限性</h4>
+<p>Scalability 分析是论文的一个亮点，但也有局限：</p>
+<p><strong>(1) 只评估了 40% 预训练 schedule</strong>：scaling 实验在 40% 训练时评估，可能不能完全反映收敛后的行为。</p>
+<p><strong>(2) LLM 规模范围有限</strong>：论文没有明确说明测试了哪些 LLM 规模，但从 Qwen3-8B 出发，可能只测试了较小的规模范围（比如 1.5B/3B/8B）。没有测试更大的模型（如 30B+），无法确认 scaling law 在更大规模上是否继续成立。</p>
+<p><strong>(3) 没有给出 scaling law 拟合</strong>：论文只说"有提升"，但没有给出定量的 scaling law（比如性能 vs 参数量的幂律关系），无法预测在更大规模上的性能。</p>
+<p><strong>(4) 计算效率的 scaling 未讨论</strong>：增大 M2P 深度和 LoRA rank 会增加计算开销，论文没有讨论性能提升和计算开销之间的权衡。</p>
+</div>
+
+<div class="rq">
+<h4>自主科研问题</h4>
+<ol>
+<li>SHINE 的 scaling law 是什么形式？能否用幂律 $L = aN^{-b} + L_0$ 拟合性能 vs 参数量的关系，从而预测更大规模的性能？</li>
+<li>增大骨干 LLM 时，M2P Transformer 的最优深度是否也需要增大？是否存在一个与 LLM 规模匹配的 M2P 深度比例？</li>
+<li>SHINE 的性能提升是否最终会饱和？如果会，饱和点在哪里——是 memory 容量、M2P 表达力、还是训练数据量？</li>
+</ol>
+</div>
+</section>
+
+<!-- CH12 -->
+<section class="chapter" id="ch12">
+<div class="ch-tag">Chapter 12 · 批判与未来</div>
+<h2>局限、批判与未来方向</h2>
+
+<h3>已证实的局限</h3>
+
+<h4>1. 高保真字面记忆不足</h4>
+<p>SHINE 在 SQuAD 上与 In-Context 有 23 分差距（63.6 vs 86.8），在长上下文 SQuAD-2K 上差距扩大到 47 分（37.5 vs 84.9）。这表明 LoRA 的低秩结构和 memory 的信息瓶颈使得 SHINE 难以精确存储 context 中的所有字面细节。对于需要精确片段匹配的任务（如 SQuAD），SHINE 处于劣势。</p>
+
+<h4>2. 多轮对话性能下降</h4>
+<p>在 MS MARCO MQA 上，SHINE 的性能随对话轮次增加而下降。原因是生成的 LoRA 是静态的，无法在对话过程中积累新信息。而 In-Context 方法可以把每轮的答案加入上下文，持续利用历史信息。</p>
+
+<h4>3. Context 长度限制</h4>
+<p>实验中最大 context 长度为 1150 tokens。虽然预训练结果显示在 1100 tokens 内性能稳定，但没有测试更长的 context（如 4K、8K、32K）。对于需要处理长文档的场景，SHINE 的表现未知。</p>
+
+<h4>4. 只在 Qwen3-8B 上验证</h4>
+<p>所有主实验都在 Qwen3-8B 上进行。虽然 scaling 实验暗示可以扩展到其他规模，但没有在其他模型架构（如 LLaMA、Mistral、GPT 系列）上验证。SHINE 的设计是否对所有 LLM 架构都有效，还需要更多验证。</p>
+
+<h3>深层批判</h3>
+
+<div class="critique">
+<h4>批判一 · "in-parameter knowledge" 的边界</h4>
+<p>SHINE 把生成的 LoRA 称为 "in-parameter knowledge"，但这个说法需要谨慎。LoRA 是低秩的（r=8），它的参数空间远小于完整模型。这意味着 LoRA 能存储的信息量是有限的——它更像是一个"偏置"或"调整方向"，而不是完整的知识存储。SHINE 在多跳 QA 上的好成绩表明 LoRA 可以捕获语义结构，但在 SQuAD 上的差距表明它无法精确存储所有细节。未来的研究需要更精确地刻画：<strong>一个 rank=r 的 LoRA 到底能存储多少信息？信息的类型（语义 vs 字面）如何影响存储效率？</strong></p>
+</div>
+
+<div class="critique">
+<h4>批判二 · Hypernetwork 的元泛化问题</h4>
+<p>SHINE 的 hypernetwork 是在特定数据分布上训练的（6B token 预训练 + MS MARCO 等 QA 数据微调）。它的"context→LoRA"映射能力是否能泛化到训练分布之外的 context 类型？比如：代码、数学公式、多语言文本、结构化数据（表格、JSON）。论文没有做分布外泛化的实验。如果 hypernetwork 的映射能力高度依赖训练分布，那么它的实用性会受到限制——每遇到新类型的 context，可能都需要重新微调 hypernetwork。</p>
+</div>
+
+<div class="critique">
+<h4>批判三 · 与 RAG 的关系未充分讨论</h4>
+<p>SHINE 和 RAG（Retrieval-Augmented Generation）都是处理外部知识的方法，但路径不同：RAG 在推理时检索相关文档加入上下文，SHINE 把 context 压缩进 LoRA。论文没有系统地对比 SHINE 和 RAG。一个自然的问题是：<strong>SHINE 和 RAG 是竞争关系还是互补关系？</strong> 对于需要高保真字面记忆的任务，RAG 可能更优；对于需要语义推理的任务，SHINE 可能更优。能否设计一个混合系统，用 SHINE 处理语义、用 RAG 处理字面？这个方向值得探索。</p>
+</div>
+
+<h3>未来方向</h3>
+
+<div class="insight">
+<h4>值得探索的研究方向</h4>
+<ol>
+<li><strong>动态 LoRA 更新</strong>：让生成的 LoRA 在多轮对话中根据新的 QA 对做轻量更新，解决静态 LoRA 无法积累新信息的问题。</li>
+<li><strong>更长 context 的支持</strong>：探索 memory 长度 M 与 context 长度的动态关系，或者用分层/分块的 memory extraction 处理超长 context。</li>
+<li><strong>混合 SHINE + RAG</strong>：用 SHINE 存储语义结构，用 RAG 补充高保真字面细节，结合两者优势。</li>
+<li><strong>多模态 context</strong>：扩展 SHINE 处理图像、音频等多模态 context，生成多模态 LoRA。</li>
+<li><strong>LoRA 组合与分解</strong>：多个 context 生成的 LoRA 能否安全地组合（加权求和、张量分解）？SHINE 生成的 LoRA 是否具有可组合性？</li>
+<li><strong>理论分析</strong>：建立 hypernetwork 生成 LoRA 的表达力理论——什么类型的函数可以被 rank=r 的 LoRA 表示？hypernetwork 需要多大容量才能生成任意 rank=r 的 LoRA？</li>
+</ol>
+</div>
+
+<h3>总结</h3>
+<p>SHINE 是 context→LoRA 方向上一个架构优雅、实验扎实的工作。它的核心贡献可以浓缩为三点：</p>
+<ol>
+<li><strong>多层 memory extraction</strong>：从 LLM 所有层提取 memory states，消除了之前方法的单状态信息瓶颈，并用 $M = \lceil rD/H \rceil$ 提供了容量的数学保证。</li>
+<li><strong>M2P Transformer 的双向稀疏注意力</strong>：交替的 column/row attention 实现了全局信息交换和深层→浅层的信息回流（模拟反向传播），同时把复杂度从 $O((LM)^2)$ 降到 $O(LM^2+ML^2)$，节省 90% FLOPs。</li>
+<li><strong>6B token 预训练 + 两阶段 IFT</strong>：大规模自监督预训练建立通用的 context→参数映射能力，MQA→1QA 的指令微调对齐到下游 QA 任务。</li>
+</ol>
+<p>在 9 个 QA 基准上，SHINE 远超 Generative Adapter 和 SFT，在部分数据集上超过 In-Context，在 SQuAD 上仍有差距。0.3 秒的 LoRA 生成时间和与裸模型相当的推理速度，使得 SHINE 成为一个有实用潜力的方案。</p>
+<p>SHINE 的局限——高保真字面记忆不足、多轮性能下降、context 长度限制——也指出了这个方向的核心挑战：<strong>如何在低秩参数空间中高效、高保真地存储和推理外部知识</strong>。这不仅是 SHINE 的问题，也是整个 hypernetwork-for-LLM 领域的核心问题。</p>
+
+<div class="rq">
+<h4>终极科研问题</h4>
+<ol>
+<li>一个 rank=r 的 LoRA 的信息容量上限是多少？能否用信息论给出严格的上界？</li>
+<li>hypernetwork 生成的 LoRA 与直接微调得到的 LoRA 在参数空间中是否处于同一区域？如果不是，差异来自哪里？</li>
+<li>能否把 SHINE 扩展到生成完整模型参数（而不仅是 LoRA）？需要什么架构和训练上的突破？</li>
+<li>SHINE 的 "context→LoRA" 映射是否是可逆的？能否从生成的 LoRA 反推出原始 context？这对隐私和安全有什么影响？</li>
+</ol>
+</div>
+</section>
+
+</div>
+
+<footer>
+<p>SHINE: A Scalable In-Context Hypernetwork for Mapping Context to LoRA in a Single Pass</p>
+<p>Yewei Liu, Xiyuan Wang, Yansheng Mao, Yoav Gelberg, Haggai Maron, Muhan Zhang · ICML 2026 · PMLR 306</p>
+<p>Code: <a href="https://github.com/MuLabPKU/SHINE">github.com/MuLabPKU/SHINE</a></p>
+<p style="margin-top:12px;font-size:12px;opacity:0.6">博客解读 · 理论聚焦论文原创架构 · 所有公式与数据均来自原文</p>
+</footer>
+
+</body>
+</html>

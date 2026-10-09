@@ -1,0 +1,17 @@
+[
+ {
+  "name": "dnd_blog/assets/hero_cover_A",
+  "size": "2048*1024",
+  "prompt": "[PURPOSE]: Academic paper blog cover illustration, premium quality. [STYLE]: Exquisite dreamlike watercolor painting, wet-on-wet washes, delicate gold-leaf accents, luminous glow, visible fine paper grain, Art Nouveau elegance, museum poster quality. [SUBJECT]: A translucent giant hand made of light drags a small stack of glowing paper prompt cards (with faint unreadable text lines) from the upper left, and drops them toward a magnificent crystalline transformer tower on the right; where the cards touch the tower, radiant low-rank weight matrices bloom like luminous stained-glass lattices, scattering golden particles; thin streams of light connect the cards to the lattice cells like a plug being inserted. A subtle cursor arrow of light draws a graceful arc across the sky. [COLOR]: deep ukiyo blue (#1B4B6F) night sky at top fading to warm cream, coral (#E85D4E) accents, antique gold (#C9A86C), soft cyan glow, lavender shadows. [COMPOSITION]: Split composition, upper-left to lower-right diagonal flow, rich layers, cinematic depth. No readable text, no watermark, no signature."
+ },
+ {
+  "name": "dnd_blog/assets/hero_cover_B",
+  "size": "2048*1024",
+  "prompt": "[PURPOSE]: Academic paper blog cover illustration, premium quality. [STYLE]: Refined watercolor with ink linework, ukiyo-e inspired, elegant negative space, gold leaf flecks, textured cream paper. [SUBJECT]: Center: a glowing desktop surface like a magic study desk; left: a folder spilling many small luminous prompt cards; right: a small glowing LoRA crystal (a blue low-rank lattice prism) materializing above an open slot of a miniature neural network; a stylized drag trail of golden sparkles arcs from the folder to the crystal, ending in a bright drop point; faint blueprint lines of transformer blocks float in the background. [COLOR]: ukiyo indigo blue (#1B4B6F), warm paper cream (#FAF9F6), vermilion coral (#E85D4E) seal accents, antique gold (#C9A86C), soft teal. [COMPOSITION]: Horizontal triptych flow: folder -> drag arc -> crystal slot; balanced, serene, premium. No readable text, no watermark, no signature."
+ },
+ {
+  "name": "dnd_blog/assets/hero_cover_C",
+  "size": "2048*1024",
+  "prompt": "[PURPOSE]: Academic paper blog cover illustration, premium quality. [STYLE]: Luxurious watercolor night-sky panorama, wet-on-wet, glowing constellations, gold dust, fine paper texture, dreamy but crisp focus. [SUBJECT]: A vast river of tiny glowing prompt cards flows across a deep blue night sky like the Milky Way; the river pours over a waterfall of light into a giant crystalline matrix lattice (like a stained-glass window of weight matrices) standing on a horizon; each cell of the lattice catches a card and lights up in blue-gold; the lattice softly illuminates the silhouette of a sleeping city of transformer towers below; a single elegant light-cursor arrow hovers mid-sky pointing at the lattice. [COLOR]: deep blue (#1B4B6F) to midnight, coral pink clouds, antique gold light, cream moonlight. [COMPOSITION]: Panoramic, left-to-right narrative flow, epic yet serene. No readable text, no watermark, no signature."
+ }
+]

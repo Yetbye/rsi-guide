@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text-to-LoRA 深度解读 | 一句话生成 LoRA：Sakana AI 的即时适配 hypernetwork</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{
+  /* === Venus · 配方 A 浮世绘蓝调 === */
+  --bg-primary:#FAF9F6; --bg-secondary:#F5F5F0; --bg-tertiary:#E8E8E4;
+  --text-primary:#2C3E50; --text-secondary:#5D6D7E; --text-muted:#95A5A6;
+  --color-primary:#1B4B6F; --color-secondary:#5A8F7B; --color-tertiary:#2E4057;
+  --accent-warm:#E85D4E; --accent-gold:#C9A86C; --accent-soft:#FFB7C5;
+  --ink:#2C3E50; --paper:#FAF9F6;
+  --border:rgba(27,75,111,0.15); --shadow:0 4px 24px rgba(44,62,80,0.08);
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:0.4s;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Noto Sans SC',-apple-system,sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.85;font-size:17px}
+h1,h2,h3,h4{font-family:'Noto Serif SC','Playfair Display',Georgia,serif}
+a{color:var(--color-primary);text-decoration:none}
+/* NAV */
+nav{position:sticky;top:0;z-index:100;background:rgba(250,249,246,0.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:18px;overflow-x:auto;scrollbar-width:none;height:52px}
+.nav-inner::-webkit-scrollbar{display:none}
+.nav-brand{font-weight:700;color:var(--color-primary);white-space:nowrap;font-size:15px;letter-spacing:0.5px;font-family:'Noto Serif SC',serif}
+.nav-link{font-size:13px;color:var(--text-secondary);white-space:nowrap;transition:color .2s}
+.nav-link:hover{color:var(--accent-warm)}
+/* HERO — Venus 模板 A 浅色渐变+图片卡片 */
+.hero{position:relative;min-height:96vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:100px 24px 80px;
+background:linear-gradient(135deg,#FAF9F6 0%,#EEF2F7 18%,#F0EDE4 50%,#FFFBEB 100%)}
+.hero::before{content:'';position:absolute;inset:0;
+background:radial-gradient(ellipse 520px 320px at 12% 22%,rgba(27,75,111,0.10),transparent 60%),
+radial-gradient(ellipse 520px 320px at 88% 78%,rgba(232,93,78,0.08),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:820px;text-align:center}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.6);backdrop-filter:blur(12px);border:1px solid rgba(27,75,111,0.3);color:var(--color-primary);padding:7px 20px;border-radius:100px;font-size:11px;font-weight:600;letter-spacing:3px;margin-bottom:24px;box-shadow:0 4px 20px rgba(27,75,111,0.1)}
+.hero h1{font-size:clamp(2.2rem,6vw,3.8rem);font-weight:900;letter-spacing:-0.02em;line-height:1.15;margin:12px 0 16px;
+background:linear-gradient(135deg,var(--color-tertiary) 0%,var(--color-primary) 40%,var(--color-secondary) 70%,var(--accent-warm) 100%);
+-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-tagline{font-size:18px;color:var(--text-secondary);max-width:680px;margin:0 auto 28px;line-height:1.7;font-family:'Noto Serif SC',serif}
+.hero-desc{font-size:15px;color:var(--text-muted);max-width:640px;margin:0 auto 24px}
+.hero-art{margin:28px auto 8px;max-width:780px;width:100%}
+.hero-img{width:100%;height:auto;border-radius:16px;box-shadow:0 24px 70px -24px rgba(27,75,111,0.25);border:1px solid rgba(27,75,111,0.1)}
+.hero-caption{font-size:12px;color:var(--text-muted);margin-top:12px;font-style:italic}
+.hero-stats{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:24px}
+.hero-stats span{padding:5px 14px;background:rgba(27,75,111,0.06);border-radius:6px;font-size:12px;color:var(--color-primary);font-family:'JetBrains Mono',monospace}
+.scroll-hint{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--text-muted);letter-spacing:2px;animation:float 2s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(6px)}}
+/* STATS */
+.stats-grid{max-width:1000px;margin:-30px auto 0;padding:0 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;position:relative;z-index:10}
+.stat-card{background:var(--paper);border-radius:10px;padding:24px 20px;text-align:center;box-shadow:var(--shadow);border-top:3px solid var(--color-primary)}
+.stat-num{font-size:32px;font-weight:700;color:var(--color-primary);line-height:1.2;font-family:'Noto Serif SC',serif}
+.stat-label{font-size:13px;color:var(--text-muted);margin-top:6px}
+/* CONTENT */
+.content{max-width:860px;margin:0 auto;padding:60px 24px 80px}
+.chapter{margin-bottom:72px;scroll-margin-top:70px}
+.ch-tag{font-size:12px;letter-spacing:3px;color:var(--accent-warm);text-transform:uppercase;font-weight:700;margin-bottom:10px;font-family:'JetBrains Mono',monospace}
+.chapter h2{font-size:clamp(24px,3.5vw,34px);color:var(--color-primary);margin-bottom:24px;line-height:1.35;border-bottom:2px solid var(--color-secondary);padding-bottom:14px}
+.chapter h3{font-size:21px;color:var(--color-tertiary);margin:32px 0 14px}
+.chapter h4{font-size:17px;color:var(--text-primary);margin:24px 0 10px}
+.chapter p{margin-bottom:16px;text-align:justify}
+.chapter ul,.chapter ol{margin:0 0 18px 24px}
+.chapter li{margin-bottom:8px}
+.chapter strong{color:var(--color-primary)}
+/* FORMULA */
+.formula{background:var(--bg-secondary);border-left:4px solid var(--color-secondary);padding:20px 24px;margin:24px 0;border-radius:0 8px 8px 0;overflow-x:auto}
+.formula .eq-label{float:right;font-size:13px;color:var(--text-muted);font-style:italic}
+.formula p.note{font-size:14px;color:var(--text-secondary);margin-top:12px;margin-bottom:0}
+/* INSIGHT — Venus 深度洞察框 */
+.insight-box{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-radius:16px;padding:24px;margin:24px 0;border-left:4px solid #10b981}
+.insight-box .tag{background:#10b981;color:white;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.insight-box h4{margin-top:12px;color:var(--color-tertiary);font-size:16px}
+.insight-box p{margin-bottom:0;color:var(--text-primary)}
+/* CRITIQUE */
+.critique-box{background:linear-gradient(135deg,#ffe4e6,#fecdd3);border-radius:16px;padding:24px;margin:24px 0;border-left:4px solid var(--accent-warm)}
+.critique-box .tag{background:var(--accent-warm);color:white;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.critique-box h4{margin-top:12px;color:var(--color-tertiary);font-size:16px}
+.critique-box p{margin-bottom:0}
+/* RQ */
+.rq-box{background:var(--bg-secondary);border-radius:10px;padding:20px 24px;margin:28px 0;border:1px dashed var(--accent-gold)}
+.rq-box h4{color:var(--accent-warm);margin-top:0;font-size:15px}
+.rq-box ol{margin-left:20px;margin-bottom:0}
+.rq-box li{margin-bottom:10px;font-size:15px}
+/* CODE */
+.code-block{background:#1B2838;color:#E8EDF2;border-radius:8px;padding:18px 22px;margin:24px 0;overflow-x:auto;font-family:'JetBrains Mono','Fira Code',monospace;font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.code-block .cm{color:#7F8C9B}
+.code-block .kw{color:#5A8F7B}
+.code-block .fn{color:#C9A86C}
+.code-block .str{color:#E85D4E}
+.code-block .num{color:#FFB7C5}
+/* SVG */
+.svg-container{background:var(--paper);border-radius:10px;padding:24px;margin:28px 0;text-align:center;box-shadow:var(--shadow)}
+.svg-container svg{max-width:100%;height:auto}
+.svg-caption{font-size:13px;color:var(--text-muted);margin-top:12px;font-style:italic}
+/* FIGURE */
+.figure{margin:32px 0;text-align:center}
+.figure img{max-width:100%;border-radius:8px;box-shadow:var(--shadow)}
+.figure figcaption{font-size:13px;color:var(--text-muted);margin-top:10px;font-style:italic}
+/* TABLE */
+.table-wrap{overflow-x:auto;margin:28px 0}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--paper);border-radius:8px;overflow:hidden;box-shadow:var(--shadow)}
+th{background:var(--color-primary);color:#FAF9F6;padding:12px 14px;text-align:left;font-weight:600;font-size:13px}
+td{padding:11px 14px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(90,143,123,0.06)}
+td.best{font-weight:700;color:var(--accent-warm)}
+/* Venus 双层边框 — 仅用于重点数据区 */
+.double-border{border:2px solid var(--color-primary);position:relative;border-radius:12px;padding:20px}
+.double-border::before{content:'';position:absolute;inset:6px;border:1px solid var(--accent-warm);opacity:0.4;pointer-events:none;border-radius:8px}
+/* FOOTER */
+footer{background:var(--color-tertiary);color:rgba(250,249,246,0.6);padding:40px 24px;text-align:center;font-size:13px}
+footer a{color:var(--accent-gold)}
+@media(max-width:640px){.content{padding:40px 16px}.hero{padding:70px 16px 50px}}
+</style>
+</head>
+<body>
+
+<nav>
+<div class="nav-inner">
+<span class="nav-brand">Text-to-LoRA · 深度解读</span>
+<a class="nav-link" href="#ch1">问题</a>
+<a class="nav-link" href="#ch2">核心思想</a>
+<a class="nav-link" href="#ch3">架构</a>
+<a class="nav-link" href="#ch4">Reconstruction</a>
+<a class="nav-link" href="#ch5">SFT</a>
+<a class="nav-link" href="#ch6">泛化之谜</a>
+<a class="nav-link" href="#ch7">压缩实验</a>
+<a class="nav-link" href="#ch8">Zero-shot</a>
+<a class="nav-link" href="#ch9">消融</a>
+<a class="nav-link" href="#ch10">批判与未来</a>
+</div>
+</nav>
+
+<section class="hero">
+<div class="hero-wrap">
+<div class="hero-badge">ICML 2025 · SAKANA AI</div>
+<h1>Text-to-LoRA<br>一句话生成 LoRA</h1>
+<p class="hero-tagline">用自然语言描述任务，hypernetwork 单次前向生成 LoRA 适配器——无需数据集、无需微调、无需超参数，479 个任务训练后零样本泛化到未见任务。</p>
+<p class="hero-desc">Rujikorn Charakorn, Edoardo Cetin, Yujin Tang, Robert T. Lange · Sakana AI · PMLR 267</p>
+<div class="hero-art">
+<img src="assets/cover.jpg" alt="Text-to-LoRA cover" class="hero-img">
+<p class="hero-caption">封面（AI 绘制，浮世绘水彩）：左侧书法文字流如海浪奔涌， mid-stream 化为靛蓝矩阵晶格，最终结晶为金色适配器模块——文字到权重的炼金术。</p>
+</div>
+<div class="hero-stats">
+<span>Mistral-7B 底座</span>
+<span>LoRA r=8 · Q/V</span>
+<span>T2L-L 55M 参数</span>
+<span>479 SNI 任务</span>
+<span>零样本 10 基准</span>
+<span>单次前向生成</span>
+</div>
+</div>
+<div class="scroll-hint">↓ SCROLL TO READ</div>
+</section>
+
+<div class="stats-grid">
+<div class="stat-card"><div class="stat-num">67.7</div><div class="stat-label">零样本 10 基准平均（T2L-L）</div></div>
+<div class="stat-card"><div class="stat-num">55M</div><div class="stat-label">T2L-L 可训练参数（压缩数百 LoRA）</div></div>
+<div class="stat-card"><div class="stat-num">~73%</div><div class="stat-label">Reconstruction 恢复 oracle 性能</div></div>
+<div class="stat-card"><div class="stat-num">1×</div><div class="stat-label">单次前向生成全层 LoRA</div></div>
+</div>
+
+<div class="content">
+
+<!-- CH1 -->
+<section class="chapter" id="ch1">
+<div class="ch-tag">Chapter 01 · 问题</div>
+<h2>从微调走向语言驱动的即时适配</h2>
+<p>大语言模型（LLM）是通用工具，但落到具体任务时几乎总需要适配。传统路径有两条：<strong>prompt engineering</strong>（把任务描述塞进上下文）和 <strong>fine-tuning</strong>（用梯度下降把任务能力写进参数）。两条路各有硬伤：prompt 受上下文窗口限制且推理时反复付费；fine-tuning 需要 curated 数据集、反复试超参数、为每个任务存一份独立参数。</p>
+<p>LoRA（Low-Rank Adaptation）的出现大幅降低了微调成本——只学习低秩增量矩阵 $\Delta W = BA$，骨干权重冻结。但即使是 LoRA，<strong>每个任务仍然需要独立的训练流程</strong>：准备数据集、设置学习率和 batch size、跑若干 epoch、验证收敛。这不仅是工程开销，更根本的问题是：<strong>任务之间的知识无法迁移</strong>——为数学题训练的 LoRA 和为科学问答训练的 LoRA 是两个孤立的文件，它们之间没有任何共享机制。</p>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>LoRA 库的结构性浪费</h4>
+<p>近年来社区积累了大量预训练 LoRA 适配器（GSM8K、ARC、MMLU……），但它们是<strong>离散的、不可组合的</strong>。每个 LoRA 是一个独立的权重文件，使用时只能挂一个。这引发了一个核心问题：<strong>这些 LoRA 之间是否共享同一个底层适配机制？如果有，能否用一个神经网络来"压缩"所有 LoRA，并根据自然语言描述"解码"出任意任务的 LoRA？</strong>这正是 Text-to-LoRA（T2L）要回答的问题。</p>
+</div>
+
+<p>T2L 的提案极其直接：训练一个 <strong>hypernetwork</strong>，输入是任务的自然语言描述（如"解决小学数学应用题"），输出是该任务的完整 LoRA 权重。整个过程在<strong>单次前向传播</strong>中完成——不需要数据集、不需要梯度下降、不需要超参数调优。用户只需用一句话描述想要的能力，T2L 即时生成对应的 LoRA。</p>
+
+<p>论文的两个核心研究问题：</p>
+<ol>
+<li><strong>能否端到端训练一个神经网络来压缩大量预训练 LoRA？</strong></li>
+<li><strong>能否仅根据自然语言指令，在测试时为未见任务解码出新的任务特定 LoRA？</strong></li>
+</ol>
+
+<div class="figure">
+<img src="figures/fig1_overview.png" alt="T2L conceptual overview">
+<figcaption>图 1（论文原图）：左——T2L 训练流程概览。给定任务描述嵌入，hypernetwork 生成 LoRA 适配矩阵 $\Delta W$。权重可通过 reconstruction loss（蒸馏预训练 LoRA）或 SFT loss（多任务监督微调）优化。右上——不同压缩比下相对 oracle 的性能。右下——增加训练数据集数量时零样本性能提升。</figcaption>
+</div>
+</section>
+
+<!-- CH2 -->
+<section class="chapter" id="ch2">
+<div class="ch-tag">Chapter 02 · 核心思想</div>
+<h2>Hypernetwork 作为 LoRA 的间接编码</h2>
+<p>T2L 的理论根基是 <strong>hypernetwork</strong>（超网络）和 <strong>indirect encoding</strong>（间接编码）两个概念的结合。</p>
+
+<h3>Hypernetwork 基础</h3>
+<p>Hypernetwork（Ha et al., 2016）是一个生成另一个网络参数的神经网络。给定层特定的描述向量 $\phi_l$，参数为 $\theta$ 的 hypernetwork 生成基础模型第 $l$ 层的参数：$W_l = h_\theta(\phi_l)$。传统上层描述向量是 one-hot 或可学习向量，$\theta$ 通过下游任务端到端优化。</p>
+
+<p>Hypernetwork 的关键属性是<strong>间接编码</strong>（Schmidhuber, 1997）：hypernetwork 自身的参数量远小于它生成的目标网络参数量。压缩通过间接共享参数实现——不是直接存储每个权重，而是学习一个生成权重的函数。</p>
+
+<h3>T2L 的公式化</h3>
+<p>对于每个目标模块 $m$（如 query projection）和层索引 $l$，T2L 的 hypernetwork 根据任务 $t_i$ 的自然语言描述 $z_i$ 生成两个低秩矩阵 $A, B$：</p>
+
+<div class="formula">
+<span class="eq-label">式 (3)-(4)</span>
+$$\Delta W^i_{m,l} = h_\theta(\phi^i_{m,l}), \quad \text{with}$$
+$$\phi^i_{m,l} = \text{concat}\big(f(z_i),\ E[m],\ E[l]\big)$$
+</div>
+
+<p>其中：</p>
+<ul>
+<li>$f(z_i)$：自然语言任务描述的向量表示（通常是双向 transformer 的 CLS token 或 LLM 的最后 token 激活）</li>
+<li>$E[m]$：模块类型的可学习嵌入（query / value projection）</li>
+<li>$E[l]$：层索引的可学习嵌入</li>
+</ul>
+
+<p>关键设计：$m$ 和 $l$ 的值可以 <strong>batch 化</strong>，使得 T2L 能在单次前向中为所有模块和层索引生成 $\Delta W$。这是"单次前向生成全层 LoRA"的工程基础。</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:13px 'Noto Sans SC',sans-serif;fill:#2C3E50}.t2{font:11px 'Noto Sans SC',sans-serif;fill:#5D6D7E}.t3{font:bold 13px 'Noto Serif SC',serif;fill:#FAF9F6}</style>
+<!-- Input side -->
+<rect x="30" y="40" width="160" height="50" rx="8" fill="#1B4B6F"/>
+<text x="110" y="70" text-anchor="middle" class="t3">任务描述 z_i</text>
+<text x="110" y="105" text-anchor="middle" class="t2">"解决小学数学题"</text>
+
+<rect x="30" y="130" width="75" height="36" rx="6" fill="#5A8F7B"/>
+<text x="67" y="153" text-anchor="middle" class="t3">E[m]</text>
+<rect x="115" y="130" width="75" height="36" rx="6" fill="#5A8F7B"/>
+<text x="152" y="153" text-anchor="middle" class="t3">E[l]</text>
+
+<!-- f(z) encoder -->
+<rect x="220" y="45" width="100" height="40" rx="6" fill="#E85D4E"/>
+<text x="270" y="70" text-anchor="middle" class="t3">f(·)</text>
+<text x="270" y="100" text-anchor="middle" class="t2">任务编码器</text>
+
+<!-- concat -->
+<circle cx="380" cy="100" r="18" fill="#C9A86C"/>
+<text x="380" y="106" text-anchor="middle" class="t3" font-size="18">+</text>
+<text x="380" y="135" text-anchor="middle" class="t2">concat</text>
+
+<!-- phi -->
+<rect x="430" y="85" width="120" height="36" rx="6" fill="#2E4057"/>
+<text x="490" y="108" text-anchor="middle" class="t3">φ^i_{m,l}</text>
+
+<!-- hypernetwork -->
+<rect x="580" y="60" width="150" height="80" rx="10" fill="#1B4B6F" stroke="#5A8F7B" stroke-width="2"/>
+<text x="655" y="95" text-anchor="middle" class="t3">Hypernetwork</text>
+<text x="655" y="118" text-anchor="middle" class="t2" fill="#A8C0D0">h_θ (MLP × N)</text>
+
+<!-- Output -->
+<rect x="580" y="180" width="150" height="50" rx="8" fill="#E85D4E"/>
+<text x="655" y="210" text-anchor="middle" class="t3">ΔW^i_{m,l} = BA</text>
+
+<!-- Arrows -->
+<defs><marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1B4B6F"/></marker></defs>
+<line x1="190" y1="65" x2="218" y2="65" stroke="#1B4B6F" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="320" y1="65" x2="362" y2="90" stroke="#1B4B6F" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="105" y1="166" x2="362" y2="108" stroke="#5A8F7B" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="398" y1="100" x2="428" y2="103" stroke="#1B4B6F" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="550" y1="103" x2="578" y2="100" stroke="#1B4B6F" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="655" y1="140" x2="655" y2="178" stroke="#E85D4E" stroke-width="2" marker-end="url(#ah)"/>
+
+<!-- Batch note -->
+<rect x="30" y="220" width="700" height="70" rx="8" fill="#F5F5F0" stroke="#E8E8E4"/>
+<text x="50" y="248" class="t1" font-weight="bold">批量生成机制：</text>
+<text x="50" y="272" class="t2">将所有 (m, l) 组合 batch 化输入 hypernetwork → 单次前向同时生成所有层、所有模块的 A/B 矩阵 → 组装为完整 LoRA 适配器。</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：T2L 的核心数据流。任务描述经编码器 f(·) 得到语义向量，与模块嵌入 E[m]、层嵌入 E[l] 拼接为描述向量 φ，输入 hypernetwork 生成 LoRA 权重 ΔW。批量机制使得单次前向生成全层 LoRA。</div>
+</div>
+
+<div class="critique-box">
+<span class="tag">批判</span>
+<h4>间接编码的表达力边界</h4>
+<p>Hypernetwork 的间接编码意味着它不是在"记忆"每个 LoRA 的权重，而是在学习一个从任务描述到权重空间的<strong>映射函数</strong>。这个映射的表达力受限于 hypernetwork 的容量和训练数据的覆盖度。一个根本问题是：<strong>任务描述到 LoRA 权重的映射是否是良定义的？</strong>也就是说，相似的任务描述是否一定对应相似的 LoRA 权重？论文的实验（尤其是 reconstruction 训练无法泛化的发现）暗示这个映射比表面看起来更复杂——数值上不同的 LoRA 可能实现功能上相似的适配，而 hypernetwork 需要学会在这些"功能等价"的解中选择或平均。</p>
+</div>
+</section>
+
+<!-- CH3 -->
+<section class="chapter" id="ch3">
+<div class="ch-tag">Chapter 03 · 架构</div>
+<h2>三种输出头：L / M / S 的复杂度-性能权衡</h2>
+<p>Hypernetwork 的大部分参数来自输出层，它与目标权重的大小线性相关（Von Oswald et al., 2019）。为了探索复杂度-性能权衡，T2L 提出了三种架构变体：<strong>L</strong>（最大）、<strong>M</strong>（中等）、<strong>S</strong>（最小）。三者使用相同的骨干架构（任务编码器 + 若干 MLP 层），仅在输出头和可学习嵌入上不同。</p>
+
+<div class="figure">
+<img src="figures/fig2_arch.png" alt="T2L architecture variations">
+<figcaption>图 2（论文原图）：T2L 架构变体概览。任务编码器输出与模块嵌入、深度嵌入拼接，经 MLP 层后进入输出头。虚线框显示单次前向的输出尺寸：L 同时输出 A 和 B [2, r, d]，M 共享 A/B 头 [r, d]，S 每次输出一个 rank [d]。</figcaption>
+</div>
+
+<h3>L 架构：同时输出 A 和 B</h3>
+<p>最大的变体。最终线性层同时输出低秩矩阵 A 和 B，输出头的权重连接数为：</p>
+<div class="formula">
+$$|\theta_{head}| = d_{out} \times 2 \times r \times d$$
+</div>
+<p>其中 $d_{out}$ 是最后一个 MLP 块的输出大小（默认 512），$r$ 是 LoRA rank，$d$ 是输入/输出维度。L 架构的归纳偏置最弱——它允许 A 和 B 之间有完全灵活的关系，但参数量最大。</p>
+
+<h3>M 架构：共享 A/B 输出头</h3>
+<p>中等大小。A 和 B 共享同一个输出层，由可学习嵌入决定当前输出 A 还是 B。输出头大小减半：</p>
+<div class="formula">
+$$|\theta_{head}| = d_{out} \times r \times d$$
+</div>
+<p>M 架构引入了一个温和的归纳偏置：A 和 B 的生成共享相同的特征变换，仅通过一个嵌入信号区分。这在 LoRA 的语境下有一定道理——A 和 B 虽然功能不同（A 通常是"下投影"、B 是"上投影"），但它们都来自同一个任务描述，共享中间表征是合理的。</p>
+
+<h3>S 架构：每次输出一个 rank</h3>
+<p>最小、归纳偏置最强的变体。hypernetwork 每次只输出低秩矩阵的一个 rank（一个向量），输出头大幅缩小：</p>
+<div class="formula">
+$$|\theta_{head}| = d_{emb} \times d$$
+</div>
+<p>S 架构需要额外的 rank 嵌入来指示当前生成第几个 rank，并且需要 $r$ 次前向（或 batch 化的 $r$ 次并行）才能组装完整的 A 或 B。这种设计的强归纳偏置是：<strong>LoRA 的不同 rank 之间共享相同的生成函数</strong>，仅通过 rank 嵌入区分。这类似于 weight tying / parameter sharing 的思想。</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>架构</th><th>输出头尺寸</th><th>可训练参数</th><th>归纳偏置</th><th>单次前向</th></tr>
+<tr><td><strong>L</strong></td><td>$d_{out} \times 2rd$</td><td>55M</td><td>最弱（A/B 完全灵活）</td><td>生成全部 A+B</td></tr>
+<tr><td><strong>M</strong></td><td>$d_{out} \times rd$</td><td>34M</td><td>中等（A/B 共享头）</td><td>生成全部 A+B</td></tr>
+<tr><td><strong>S</strong></td><td>$d_{emb} \times d$</td><td>5M</td><td>最强（rank 间共享）</td><td>需 batch 化 rank</td></tr>
+</table>
+</div>
+
+<p>参考：一个 LoRA 适配器有 $r \times d \times 2 \times L \times |M|$ 个可训练参数（$L$=层数，$|M|$=目标模块数）。在 Mistral-7B + r=8 + Q/V only 的配置下，LoRA 本身有 3.4M 参数。T2L-L 的 55M 参数虽然比单个 LoRA 大，但它<strong>压缩了数百个 LoRA</strong>，平均每个任务的存储成本极低。</p>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>为什么 S 架构在某些任务上反而更好？</h4>
+<p>在 Table 1 的 reconstruction 实验中，S 架构在 PIQA（83.9 vs L 的 69.7）和 WG（58.1 vs L 的 51.2）上显著优于 L 和 M。论文假设这来自<strong>有损压缩的正则化效应</strong>——S 架构的强归纳偏置相当于对目标 LoRA 施加了更强的平滑先验，这在 oracle LoRA 过拟合的任务上（PIQA、WG 的 oracle 甚至比 base model 还差）反而起到了正则化作用。这揭示了一个反直觉的现象：<strong>更小的 hypernetwork 不一定是更差的近似器——它可能是更好的正则化器</strong>。</p>
+</div>
+
+<div class="code-block">
+<span class="cm">[示意性实现] T2L hypernetwork 前向传播（M 架构）</span>
+<span class="kw">class</span> <span class="fn">T2LHypernetwork</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, task_dim, n_modules, n_layers,
+                 mlp_dims=[512,512,512], r=8, d=4096):
+        <span class="kw">super</span>().__init__()
+        self.module_emb = nn.Embedding(n_modules, task_dim)  <span class="cm"># E[m]</span>
+        self.layer_emb = nn.Embedding(n_layers, task_dim)     <span class="cm"># E[l]</span>
+        self.ab_emb = nn.Embedding(2, task_dim)               <span class="cm"># A/B 选择嵌入 (M 架构)</span>
+        <span class="cm"># MLP 骨干</span>
+        layers = []
+        in_d = task_dim * 3  <span class="cm"># concat(f(z), E[m], E[l]) + AB 嵌入</span>
+        <span class="kw">for</span> out_d <span class="kw">in</span> mlp_dims:
+            layers += [nn.Linear(in_d, out_d), nn.GELU()]
+            in_d = out_d
+        self.mlp = nn.Sequential(*layers)
+        <span class="cm"># M 架构输出头：共享 A/B，输出 [r, d]</span>
+        self.head = nn.Linear(mlp_dims[-1], r * d)
+        self.r, self.d = r, d
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, task_emb, module_ids, layer_ids):
+        <span class="cm"># task_emb: [B, task_dim] 来自 f(z_i)</span>
+        <span class="cm"># 批量生成所有 (m, l, A/B) 组合</span>
+        B = task_emb.shape[0]
+        em = self.module_emb(module_ids)    <span class="cm"># [B, task_dim]</span>
+        el = self.layer_emb(layer_ids)      <span class="cm"># [B, task_dim]</span>
+        eab = self.ab_emb(ab_ids)           <span class="cm"># [B, task_dim]</span>
+        phi = torch.cat([task_emb, em, el, eab], dim=-1)
+        feat = self.mlp(phi)                 <span class="cm"># [B, 512]</span>
+        out = self.head(feat)                <span class="cm"># [B, r*d]</span>
+        <span class="kw">return</span> out.view(B, self.r, self.d)  <span class="cm"># [B, r, d]</span>
+</div>
+</section>
+
+<!-- CH4 -->
+<section class="chapter" id="ch4">
+<div class="ch-tag">Chapter 04 · 训练</div>
+<h2>训练范式一：Reconstruction（蒸馏预训练 LoRA）</h2>
+<p>训练 T2L 最直接的方式是<strong>重建预训练的任务特定 LoRA</strong>。这种方式可以利用公开的 LoRA 库（Brüel-Gabrielsson et al., 2024; Zhao et al., 2024），或者用两阶段流程：先训练一批 LoRA，再训练 T2L 重建它们。</p>
+
+<h3>Reconstruction Loss</h3>
+<p>给定一个 LoRA 适配器库 $\Omega$，reconstruction 损失为：</p>
+
+<div class="formula">
+<span class="eq-label">式 (6)</span>
+$$\mathcal{L}(\Omega, \theta) = \mathbb{E}_{\Delta W^i \sim \Omega} \big|\Delta W^i - h_\theta(\phi^i)\big|$$
+</div>
+
+<p>这是一个简单的 L1 重建损失：T2L 生成的 LoRA 权重应尽可能接近目标 LoRA 的权重。</p>
+
+<h3>任务嵌入的选择</h3>
+<p>仅用于压缩 LoRA 时，可以用 one-hot 或可学习向量作为任务嵌入。但这些嵌入<strong>不允许零样本生成未见任务</strong>——one-hot 只能表示训练集中的任务，可学习向量对未见任务没有定义。</p>
+<p>为了实现零样本生成，T2L 额外用<strong>自然语言任务描述的嵌入</strong>作为条件。这使得 T2L 能为各种任务（包括未见任务）生成 LoRA，只要给出对应的任务描述。</p>
+
+<h3>实验结果：9 个基准任务的重建</h3>
+<p>论文在 9 个基准任务上训练了任务特定 LoRA（oracle），然后训练 T2L 重建它们。Table 1 显示：</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>方法</th><th>ArcC</th><th>ArcE</th><th>BQ</th><th>GSM8K</th><th>HS</th><th>OQA</th><th>PIQA</th><th>WG</th><th>MBPP</th><th>Avg</th></tr>
+<tr><td>Base model</td><td>65.4</td><td>77.8</td><td>71.6</td><td>40.9</td><td>49.7</td><td>54.2</td><td>72.8</td><td>45.0</td><td>43.1</td><td>55.8</td></tr>
+<tr><td>T2L (Recon) L</td><td>76.6</td><td>89.8</td><td>89.4</td><td>53.9</td><td>92.6</td><td>85.0</td><td>69.6</td><td>51.2</td><td>51.8</td><td>73.3</td></tr>
+<tr><td>T2L (Recon) M</td><td>76.5</td><td>89.9</td><td>89.4</td><td>53.9</td><td>92.5</td><td>84.9</td><td>70.4</td><td>51.6</td><td>52.8</td><td>73.5</td></tr>
+<tr><td>T2L (Recon) S</td><td>75.4</td><td>88.8</td><td>87.8</td><td>49.1</td><td>89.7</td><td>76.7</td><td class="best">84.2</td><td class="best">56.9</td><td>48.0</td><td>73.0</td></tr>
+<tr><td>Task-specific LoRA</td><td>76.6</td><td>89.9</td><td>89.4</td><td>53.5</td><td>92.6</td><td>85.0</td><td>69.9</td><td>51.1</td><td>52.1</td><td>73.3</td></tr>
+</table>
+</div>
+
+<p>关键发现：</p>
+<ul>
+<li>T2L 用 one-hot 或自然语言任务嵌入都能<strong>完全恢复 oracle 适配器的性能</strong>（avg 73.3-73.5 vs oracle 73.3）。</li>
+<li>T2L 在若干基准上<strong>超过了任务特定 LoRA</strong>（绿色高亮，如 S 在 PIQA 84.2 vs oracle 69.9）。</li>
+<li>论文假设这个增益来自<strong>有损压缩的正则化效应</strong>——对已训练 LoRA 权重的损失压缩起到了正则化作用。这在 PIQA 和 WG 上最明显，那里的 oracle LoRA 过拟合并表现得比 base model 还差。</li>
+</ul>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>压缩即正则化：一个意外的发现</h4>
+<p>T2L 的 reconstruction 训练本质上是在做 LoRA 的有损压缩——用一个小得多的 hypernetwork 来近似原始 LoRA 权重。通常有损压缩意味着信息损失和性能下降，但 T2L 在 PIQA 和 WG 上反而超过了原始 LoRA。这暗示这些任务上的原始 LoRA 存在<strong>过拟合</strong>——它们在训练集上拟合得太好，在测试集上反而泛化差。T2L 的压缩相当于对 LoRA 权重施加了一个低秩/平滑先验，去除了过拟合的噪声分量。这个现象与知识蒸馏中的"学生网络有时超过教师网络"有异曲同工之妙——压缩过程本身就是一种正则化。</p>
+</div>
+
+<h3>增加任务数时的压缩性能</h3>
+<p>论文进一步探索了 one-hot T2L 在增加训练任务数（{16, 32, 64, 128, 256, 479}）时的表现。随着任务数增加，平均训练 L1 重建误差增加（从 $<10^{-4}$ 到 $>8 \times 10^{-4}$），相对 oracle 的性能下降。但关键发现是：</p>
+<ul>
+<li>当重建误差 $< 10^{-4}$ 时，T2L 完全恢复 oracle 性能。</li>
+<li>即使在 $> 8 \times 10^{-4}$ 的高误差下，所有架构仍能维持约 <strong>65% 的 oracle 性能</strong>，且不再继续下降。</li>
+<li>这表明 T2L 学到的是 LoRA 的<strong>有损压缩</strong>，但压缩有一个"地板效应"——性能不会无限下降。</li>
+</ul>
+</section>
+
+<!-- CH5 -->
+<section class="chapter" id="ch5">
+<div class="ch-tag">Chapter 05 · 训练</div>
+<h2>训练范式二：SFT（端到端多任务监督）</h2>
+<p>Reconstruction 训练需要预先存在的 LoRA 库，而且——正如论文随后发现的——<strong>reconstruction 训练的 T2L 无法泛化到未见任务</strong>。为了解决这个问题，论文提出了第二种训练范式：直接在微调数据集上端到端训练 T2L。</p>
+
+<h3>SFT Loss</h3>
+<p>T2L 的 SFT 训练目标为：</p>
+
+<div class="formula">
+<span class="eq-label">式 (5)</span>
+$$\theta = \arg\min_\theta \mathbb{E}_{D_i \sim \mathcal{D},\ z_i \sim \mathcal{Z}_i} \mathcal{L}_{SFT}\big(D_i,\ \Psi,\ h_\theta(\phi^i)\big)$$
+</div>
+
+<p>其中 $\Psi$ 是冻结的基础模型权重，$h_\theta(\phi^i)$ 是 T2L 为任务 $t_i$ 生成的 LoRA。与单任务 SFT（式 1）和多任务 LoRA（式 2）不同，T2L 的 SFT 是<strong>任务条件化的</strong>——同一个 hypernetwork 根据任务描述生成不同的 LoRA，然后在对应任务的数据集上计算损失。</p>
+
+<h3>为什么 SFT 优于 Reconstruction？</h3>
+<p>论文给出了一个关键论证：如果现有的训练 LoRA 不是按功能自然聚类的，reconstruction 训练就会有问题。例如，$t_1$ 和 $t_2$ 可能是两个相关任务，需要相似的 LLM 能力，但 $\Delta W^1$ 和 $\Delta W^2$ 可能落在<strong>不同的局部最小值</strong>。Reconstruction 训练的 T2L 必须压缩数值上不同的 $\Delta W^1$ 和 $\Delta W^2$，这使得它更不可能泛化。</p>
+<p>相比之下，SFT 训练的 T2L 可以<strong>隐式地学习任务聚类</strong>——它不要求生成的 LoRA 接近某个预训练的目标，而是直接在下游任务上优化性能。这已被证明可以改善零样本 LoRA 路由性能（Ostapenko et al., 2024）。</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:13px 'Noto Sans SC',sans-serif;fill:#2C3E50}.t2{font:11px 'Noto Sans SC',sans-serif;fill:#5D6D7E}.t3{font:bold 13px 'Noto Serif SC',serif;fill:#FAF9F6}</style>
+<!-- Left: Reconstruction -->
+<rect x="20" y="20" width="340" height="240" rx="12" fill="#FFF5F0" stroke="#E85D4E" stroke-width="1.5"/>
+<text x="190" y="50" text-anchor="middle" class="t1" font-weight="bold" fill="#E85D4E">Reconstruction 训练</text>
+<!-- Target LoRAs (different minima) -->
+<circle cx="90" cy="100" r="25" fill="#E85D4E" opacity="0.6"/>
+<text x="90" y="105" text-anchor="middle" class="t3">ΔW¹</text>
+<circle cx="180" cy="130" r="25" fill="#E85D4E" opacity="0.4"/>
+<text x="180" y="135" text-anchor="middle" class="t3">ΔW²</text>
+<circle cx="270" cy="95" r="25" fill="#E85D4E" opacity="0.5"/>
+<text x="270" y="100" text-anchor="middle" class="t3">ΔW³</text>
+<text x="190" y="175" text-anchor="middle" class="t2">目标：逼近数值上的 ΔW</text>
+<text x="190" y="195" text-anchor="middle" class="t2">问题：相关任务可能在不同最小值</text>
+<rect x="60" y="210" width="260" height="36" rx="6" fill="#E85D4E"/>
+<text x="190" y="233" text-anchor="middle" class="t3">L1 重建损失 |ΔW - h(φ)|</text>
+
+<!-- Right: SFT -->
+<rect x="400" y="20" width="340" height="240" rx="12" fill="#F0FDF4" stroke="#5A8F7B" stroke-width="1.5"/>
+<text x="570" y="50" text-anchor="middle" class="t1" font-weight="bold" fill="#5A8F7B">SFT 训练</text>
+<!-- Functional clusters -->
+<ellipse cx="490" cy="110" rx="55" ry="35" fill="#5A8F7B" opacity="0.2"/>
+<text x="490" y="115" text-anchor="middle" class="t2">推理类任务</text>
+<ellipse cx="640" cy="115" rx="50" ry="30" fill="#1B4B6F" opacity="0.2"/>
+<text x="640" y="120" text-anchor="middle" class="t2">知识类任务</text>
+<text x="570" y="175" text-anchor="middle" class="t2">目标：直接优化下游任务性能</text>
+<text x="570" y="195" text-anchor="middle" class="t2">优势：隐式学习功能聚类，可泛化</text>
+<rect x="440" y="210" width="260" height="36" rx="6" fill="#5A8F7B"/>
+<text x="570" y="233" text-anchor="middle" class="t3">端到端 SFT 损失 L_SFT(D, Ψ, h(φ))</text>
+
+<!-- Arrow between -->
+<defs><marker id="ah2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#C9A86C"/></marker></defs>
+<line x1="365" y1="140" x2="395" y2="140" stroke="#C9A86C" stroke-width="2.5" marker-end="url(#ah2)"/>
+<text x="380" y="125" text-anchor="middle" class="t2" fill="#C9A86C">泛化</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：Reconstruction vs SFT 训练范式对比。左：Reconstruction 目标是逼近数值上的预训练 LoRA，但相关任务可能落在不同局部最小值，阻碍泛化。右：SFT 直接优化下游性能，隐式学习功能聚类，支持零样本泛化。</div>
+</div>
+
+<h3>训练细节</h3>
+<ul>
+<li>使用 Super Natural Instructions (SNI) 数据集的 500 任务子集（跟随 Brüel-Gabrielsson et al., 2024）。</li>
+<li>11 个任务用于留出验证，10 个因评估基准数据污染被移除，最终 <strong>479 个训练数据集</strong>。</li>
+<li>每个数据集有 128 个自然语言任务描述。</li>
+<li>每个训练 minibatch 中的数据点，在线从对应数据集中采样一个描述。</li>
+<li>所有样本为英文。</li>
+</ul>
+
+<div class="critique-box">
+<span class="tag">批判</span>
+<h4>SFT 训练的计算成本</h4>
+<p>SFT 训练 T2L 需要在每次前向中：(1) 用 T2L 生成 LoRA，(2) 把 LoRA 挂到 LLM 上，(3) 在任务数据上做前向和反向传播。这意味着每次训练迭代都需要一次完整的 LLM 前向+反向，计算成本不低。论文在 479 个任务上训练，虽然没有明确报告总训练时间，但考虑到 Mistral-7B 的规模，这需要可观的 GPU 资源。相比之下，reconstruction 训练只需要 T2L 的前向+反向（不需要 LLM 前向），计算成本低得多。这是一个重要的权衡：<strong>SFT 换来泛化能力，但训练成本显著更高</strong>。</p>
+</div>
+</section>
+
+<!-- CH6 -->
+<section class="chapter" id="ch6">
+<div class="ch-tag">Chapter 06 · 核心发现</div>
+<h2>泛化之谜：为什么 Reconstruction 不能泛化？</h2>
+<p>论文最深刻的发现之一是：<strong>用 reconstruction loss 训练的 T2L 无法零样本泛化到未见任务，而用 SFT 训练的可以</strong>。这个发现不仅是工程上的，更揭示了 LoRA 权重空间的本质结构。</p>
+
+<h3>实验证据</h3>
+<p>论文在 Section 5.4 和 Appendix D 中详细研究了这个问题。核心观察是：</p>
+<ul>
+<li>Reconstruction 训练的 T2L 在训练任务上能完美重建 LoRA（avg 73.3 vs oracle 73.3），但在未见任务上生成的 LoRA 性能很差。</li>
+<li>SFT 训练的 T2L 在训练任务上性能略低，但在未见任务上显著更好（零样本 avg 67.7 vs base 55.8）。</li>
+</ul>
+
+<h3>理论解释：LoRA 的功能等价类</h3>
+<p>论文的解释（Appendix D）是：<strong>不同的 LoRA 权重可以实现功能上等价的适配</strong>。也就是说，对于同一个任务，存在多个数值上不同但功能上相似的 $\Delta W$ 解。Reconstruction 训练的 T2L 学到的是"从任务描述到特定数值解"的映射，但由于训练集中每个任务只有一个特定的 $\Delta W$（某个随机初始化+优化轨迹的产物），T2L 学到的映射是<strong>过拟合到这些特定解</strong>的。当遇到未见任务时，T2L 不知道应该选择哪个功能等价的解，生成的权重可能落在一个"坏"的区域。</p>
+
+<p>SFT 训练则不同：它不要求生成的 LoRA 接近任何特定的数值解，只要求生成的 LoRA 在下游任务上表现好。这使得 T2L 可以在功能等价的解空间中<strong>自由选择</strong>，学到的是"从任务描述到好的功能区域"的映射，而不是"到特定数值点"的映射。</p>
+
+<div class="svg-container">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg">
+<style>.t1{font:13px 'Noto Sans SC',sans-serif;fill:#2C3E50}.t2{font:11px 'Noto Sans SC',sans-serif;fill:#5D6D7E}.t3{font:bold 12px 'Noto Serif SC',serif;fill:#FAF9F6}</style>
+<!-- Weight space visualization -->
+<rect x="20" y="20" width="720" height="260" rx="12" fill="#FAF9F6" stroke="#E8E8E4"/>
+<text x="380" y="48" text-anchor="middle" class="t1" font-weight="bold">LoRA 权重空间中的功能等价类</text>
+
+<!-- Good region (functional) -->
+<ellipse cx="250" cy="160" rx="120" ry="80" fill="#5A8F7B" opacity="0.15"/>
+<ellipse cx="250" cy="160" rx="120" ry="80" fill="none" stroke="#5A8F7B" stroke-width="2" stroke-dasharray="6,3"/>
+<text x="250" y="100" text-anchor="middle" class="t2" fill="#5A8F7B">"好"的功能区域</text>
+
+<!-- Specific solutions (dots) -->
+<circle cx="200" cy="150" r="8" fill="#E85D4E"/>
+<circle cx="280" cy="170" r="8" fill="#E85D4E"/>
+<circle cx="230" cy="190" r="8" fill="#E85D4E"/>
+<text x="200" y="140" text-anchor="middle" class="t2">ΔW¹</text>
+<text x="280" y="160" text-anchor="middle" class="t2">ΔW²</text>
+<text x="230" y="210" text-anchor="middle" class="t2">ΔW³</text>
+
+<!-- Recon arrow: to specific point -->
+<line x1="100" y1="80" x2="195" y2="148" stroke="#E85D4E" stroke-width="2" stroke-dasharray="4,2"/>
+<text x="80" y="70" class="t2" fill="#E85D4E">Recon: 逼近特定点</text>
+
+<!-- Bad region -->
+<ellipse cx="550" cy="170" rx="80" ry="60" fill="#E85D4E" opacity="0.1"/>
+<ellipse cx="550" cy="170" rx="80" ry="60" fill="none" stroke="#E85D4E" stroke-width="1.5" stroke-dasharray="4,3"/>
+<text x="550" y="140" text-anchor="middle" class="t2" fill="#E85D4E">"坏"区域</text>
+<circle cx="550" cy="175" r="8" fill="#E85D4E" opacity="0.5"/>
+<text x="550" y="200" text-anchor="middle" class="t2">未见任务的生成</text>
+
+<!-- SFT arrow: to good region -->
+<line x1="420" y1="80" x2="245" y2="145" stroke="#5A8F7B" stroke-width="2.5"/>
+<defs><marker id="ah3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#5A8F7B"/></marker></defs>
+<line x1="420" y1="80" x2="250" y2="148" stroke="#5A8F7B" stroke-width="2.5" marker-end="url(#ah3)"/>
+<text x="430" y="70" class="t2" fill="#5A8F7B">SFT: 瞄准好区域</text>
+
+<!-- Bottom explanation -->
+<rect x="40" y="245" width="680" height="25" rx="4" fill="#F5F5F0"/>
+<text x="380" y="262" text-anchor="middle" class="t2">同一任务存在多个功能等价的 ΔW 解 → Recon 过拟合到特定解 → 未见任务落入坏区域；SFT 直接优化功能 → 泛化到好区域</text>
+</svg>
+<div class="svg-caption">图（自绘 SVG）：LoRA 权重空间的功能等价类示意。同一任务的好解散布在"好功能区域"内（绿色虚线），Reconstruction 训练过拟合到特定数值点（红点），未见任务时可能生成到"坏区域"；SFT 直接优化下游性能，学到的是到好区域的映射。</div>
+</div>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>从"记住答案"到"学会解题"</h4>
+<p>Reconstruction vs SFT 的区别可以类比为教育中的"死记硬背"vs"理解学习"。Reconstruction 训练的 T2L 记住了每个训练任务的 LoRA 权重（"答案"），但没有学会为什么这些权重有效（"解题方法"）。当遇到新任务时，它只能猜测一个答案，可能猜错。SFT 训练的 T2L 则学会了根据任务描述生成有效的 LoRA（"解题方法"），因为它的训练信号直接来自下游性能，而不是与某个特定答案的接近度。这个类比虽然粗略，但抓住了核心：<strong>优化目标决定了学到的表示的泛化性质</strong>。</p>
+</div>
+</section>
+
+<!-- CH7 -->
+<section class="chapter" id="ch7">
+<div class="ch-tag">Chapter 07 · 实验</div>
+<h2>LoRA 压缩：数百个适配器的有损编码</h2>
+<p>T2L 的第一个实验目标是验证它能否有效压缩大量预训练 LoRA。这不仅是一个工程问题（存储效率），更是一个科学问题：<strong>不同任务的 LoRA 之间是否共享足够的结构，使得一个小 hypernetwork 能够同时编码数百个？</strong></p>
+
+<h3>压缩比与性能的关系</h3>
+<p>Figure 1（右上）展示了不同压缩比下 T2L 相对 oracle 的性能。压缩比从 1 到 512，T2L(L/M/S) 三种架构的相对性能都维持在 0.85-1.0 之间，远高于 Average LoRA（简单平均所有 LoRA，约 0.6）和 Base model（约 0.55）。</p>
+
+<p>关键观察：</p>
+<ul>
+<li>即使在 512 倍压缩比下，T2L 仍能维持约 85% 的 oracle 性能。</li>
+<li>三种架构的压缩性能相近，L 略优但差距很小。</li>
+<li>Average LoRA（把所有 LoRA 元素-wise 平均）性能急剧下降，说明简单平均不是有效的压缩方式——T2L 学到的是<strong>任务条件化的生成</strong>，而不是全局平均。</li>
+</ul>
+
+<h3>训练任务数与重建误差</h3>
+<p>Figure 3 展示了增加训练任务数（{16, 32, 64, 128, 256, 479}）时的表现。随着任务数增加：</p>
+<ul>
+<li>平均 L1 重建误差从 $<10^{-4}$ 增加到 $>8 \times 10^{-4}$（hypernetwork 需要编码更多样的 LoRA）。</li>
+<li>相对 oracle 的性能从接近 1.0 下降到约 0.65-0.75。</li>
+<li>但性能有一个<strong>地板效应</strong>——即使在最高误差下，性能也不会低于约 65%，且不再继续下降。</li>
+</ul>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>压缩的地板效应说明了什么？</h4>
+<p>性能地板效应（约 65% oracle 性能）暗示 LoRA 权重空间中存在一个<strong>共享的"主干"结构</strong>——即使 hypernetwork 完全无法编码任务特定的细节，它生成的 LoRA 仍然包含了所有任务共享的适配方向（比如"增加注意力锐度"或"调整输出分布"）。这个共享主干贡献了约 65% 的性能提升，而任务特定的细节贡献了剩余的 35%。这个分解对于理解 LoRA 的本质很重要：<strong>LoRA 适配 = 通用适配方向 + 任务特定调整</strong>，前者可以被小模型高效编码，后者需要更多容量。</p>
+</div>
+
+<h3>压缩的实际意义</h3>
+<p>T2L-L 有 55M 参数，可以压缩 479 个 LoRA（每个 3.4M，总计约 1.6B 参数）。压缩比约为 <strong>29:1</strong>。更重要的是，T2L 的参数是固定的——增加更多任务不需要增加存储，只需要在训练时见过更多任务。这使得 T2L 可以作为一个<strong>通用的 LoRA 生成器</strong>，用户不需要存储和管理数百个 LoRA 文件，只需要一个 T2L 模型和任务描述。</p>
+</section>
+
+<!-- CH8 -->
+<section class="chapter" id="ch8">
+<div class="ch-tag">Chapter 08 · 实验</div>
+<h2>Zero-shot：为未见任务即时生成 LoRA</h2>
+<p>这是 T2L 最核心的实验：<strong>在训练时完全未见过的任务上，仅根据自然语言描述生成 LoRA，性能如何？</strong></p>
+
+<h3>评估设置</h3>
+<p>SFT 训练的 T2L（479 SNI 任务）在 10 个广泛使用的基准上零样本评估，覆盖推理、数学、科学、编码、世界知识等能力：</p>
+<ul>
+<li><strong>推理/科学</strong>：ARC-Challenge, ARC-Easy, OpenBookQA, PIQA</li>
+<li><strong>数学</strong>：GSM8K</li>
+<li><strong>常识</strong>：BoolQ, HellaSwag, Winogrande</li>
+<li><strong>编码</strong>：HumanEval, MBPP</li>
+</ul>
+
+<p>对比基线包括：</p>
+<ul>
+<li><strong>无测试时适配</strong>：Base model、Prepending task desc.、3-shot ICL、Average LoRA、Multi-task LoRA</li>
+<li><strong>零样本适配</strong>：Arrow Routing（Ostapenko et al., 2024, SOTA 零样本 LoRA 路由）、Hyperdecoders（per-instance hypernetwork）、T2L (SFT) S/M/L</li>
+<li><strong>Oracle</strong>：任务特定 LoRA（上界）</li>
+</ul>
+
+<h3>核心结果</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>方法</th><th>ArcC</th><th>ArcE</th><th>BQ</th><th>HS</th><th>OQA</th><th>PIQA</th><th>WG</th><th>MBPP</th><th>Avg(8)</th><th>GSM8K</th><th>HE</th><th>Avg(10)</th></tr>
+<tr><td colspan="13" style="background:#EEF2F7;font-weight:700">无测试时适配</td></tr>
+<tr><td>Mistral-7B</td><td>65.4</td><td>77.8</td><td>71.6</td><td>49.7</td><td>54.2</td><td>72.8</td><td>45.0</td><td>43.1</td><td>60.0</td><td>40.9</td><td>37.2</td><td>55.8</td></tr>
+<tr><td>Prepend desc.</td><td>72.0</td><td>85.8</td><td>67.6</td><td>58.9</td><td>63.4</td><td>77.9</td><td>59.0</td><td>41.6</td><td>65.8</td><td>40.9</td><td>39.0</td><td>60.6</td></tr>
+<tr><td>3-shot ICL</td><td>72.1</td><td>85.9</td><td>71.7</td><td>59.0</td><td>66.2</td><td>76.2</td><td>58.0</td><td>42.6</td><td>66.5</td><td>40.9</td><td>37.2</td><td>61.0</td></tr>
+<tr><td>Average LoRA</td><td>70.7</td><td>84.4</td><td>75.4</td><td>59.9</td><td>59.0</td><td>78.0</td><td>54.3</td><td>47.1</td><td>66.1</td><td>42.4</td><td>37.8</td><td>60.9</td></tr>
+<tr><td>Multi-task LoRA</td><td>76.2</td><td>88.3</td><td>85.5</td><td>65.2</td><td>68.0</td><td>81.8</td><td>62.4</td><td>48.1</td><td>71.9</td><td>47.5</td><td>39.6</td><td>66.3</td></tr>
+<tr><td colspan="13" style="background:#F0FDF4;font-weight:700">零样本适配</td></tr>
+<tr><td>Arrow Routing</td><td>60.9</td><td>86.2</td><td>87.6</td><td>80.8</td><td>48.6</td><td>83.0</td><td>68.5</td><td>50.2</td><td>70.7</td><td>N/A</td><td>28.7</td><td>N/A</td></tr>
+<tr><td>Hyperdecoders</td><td>76.6</td><td>88.5</td><td>83.9</td><td>65.2</td><td>76.6</td><td>81.3</td><td>64.9</td><td>51.6</td><td>73.6</td><td>43.6</td><td>40.9</td><td>67.3</td></tr>
+<tr><td>T2L (SFT) S</td><td>76.0</td><td>88.7</td><td>83.8</td><td>68.0</td><td>71.6</td><td>82.3</td><td>61.0</td><td>41.2</td><td>71.6</td><td>47.3</td><td>39.0</td><td>65.9</td></tr>
+<tr><td>T2L (SFT) M</td><td>77.2</td><td>89.0</td><td>84.3</td><td>65.1</td><td>76.1</td><td>81.8</td><td>64.0</td><td>50.5</td><td>73.5</td><td>45.2</td><td>41.3</td><td>67.5</td></tr>
+<tr><td class="best">T2L (SFT) L</td><td class="best">77.5</td><td class="best">88.9</td><td>85.0</td><td>66.5</td><td>75.5</td><td>82.1</td><td>64.2</td><td>51.9</td><td class="best">73.9</td><td>45.8</td><td>39.2</td><td class="best">67.7</td></tr>
+<tr><td colspan="13" style="background:#FFF5F0;font-weight:700">Oracle（上界）</td></tr>
+<tr><td>Task-specific LoRA</td><td>76.6</td><td>89.9</td><td>89.4</td><td>92.6</td><td>85.0</td><td>69.9</td><td>51.1</td><td>52.1</td><td>75.8</td><td>53.5</td><td>N/A</td><td>N/A</td></tr>
+</table>
+</div>
+
+<p>关键发现：</p>
+<ul>
+<li><strong>T2L (SFT) L 零样本 avg 67.7</strong>，超过 Multi-task LoRA（66.3）、3-shot ICL（61.0）、Base model（55.8）。</li>
+<li>T2L 在 8 个任务的 avg 上达到 73.9，接近 Hyperdecoders（73.6）和 oracle（75.8）。</li>
+<li>T2L 在若干任务上<strong>超过 oracle 任务特定 LoRA</strong>（绿色高亮，如 ArcC 77.5 vs 76.6，PIQA 82.1 vs 69.9）。</li>
+<li>T2L 超过 Arrow Routing（SOTA 零样本 LoRA 路由方法）在可比指标上。</li>
+<li>GSM8K（45.8 vs oracle 53.5）和 HumanEval（39.2）上仍有明显差距——这些任务与训练分布差异最大（训练任务不含代码生成）。</li>
+</ul>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>零样本生成的能力边界</h4>
+<p>T2L 在零样本上的表现揭示了它的能力边界：</p>
+<p><strong>擅长</strong>：与训练任务分布相近的任务（多选 QA、常识推理、科学问答）。这些任务的 LoRA 适配模式在训练中被充分覆盖，T2L 可以从任务描述中识别出"这是哪类任务"并生成对应的适配。</p>
+<p><strong>不擅长</strong>：与训练分布差异大的任务（代码生成 HumanEval/MBPP、数学推理 GSM8K）。SNI 训练集中几乎没有代码生成任务，T2L 没有见过"代码任务的 LoRA 长什么样"，因此无法生成有效的适配。这说明 T2L 的零样本泛化是<strong>基于任务分布内的插值</strong>，而不是真正的分布外泛化。</p>
+</div>
+</section>
+
+<!-- CH9 -->
+<section class="chapter" id="ch9">
+<div class="ch-tag">Chapter 09 · 消融</div>
+<h2>消融分析：Scaling、嵌入与架构</h2>
+
+<h3>9.1 增加训练任务数（Scaling）</h3>
+<p>论文探索了 T2L 的可扩展性：变化训练任务数并按比例扩展训练计算预算。Table 3（Figure 1 右下）显示：</p>
+<ul>
+<li>增加训练任务数和计算预算后，T2L 普遍受益。</li>
+<li>L 和 M 架构从 64→128→256→479 任务中持续提升。</li>
+<li>S 架构在 479 任务时没有从扩展训练中受益——<strong>可能因为模型容量有限</strong>，无法吸收更多任务的信息。</li>
+<li>论文还发现（Appendix C）：<strong>必须按任务数比例扩展计算预算</strong>。如果固定预算而增加任务数，性能反而会下降（每个任务的训练步数减少）。M 架构在 256+ 任务时，扩展预算的版本明显优于固定预算版本。</li>
+</ul>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>Scaling law 的雏形</h4>
+<p>T2L 的 scaling 实验暗示了一个类似 LLM scaling law 的规律：<strong>零样本性能随训练任务数和计算预算的增加而提升</strong>。Figure 1 右下的曲线显示，从 64 到 489 任务，T2L-L 的 avg benchmark 性能从约 65 提升到约 67.5，且仍在上升。这暗示 T2L 可能受益于更大规模的训练（更多任务、更多计算、更大的 hypernetwork）。但论文没有给出定量的 scaling law 拟合（如性能 vs 任务数的幂律关系），这是一个开放问题。</p>
+</div>
+
+<h3>9.2 任务嵌入模型</h3>
+<p>Table 4 比较了两种任务描述嵌入模型：</p>
+<ul>
+<li><strong>gte-large-en-v1.5</strong>：双向 transformer，用最后一层 CLS token 激活。</li>
+<li><strong>Mistral-7B-Instruct</strong>：用序列最后一个 token 的激活表示描述。</li>
+</ul>
+<p>在 128 任务上 SFT 训练后，两种嵌入模型产生的 T2L 具有<strong>可比的泛化能力</strong>。这说明 T2L 对任务描述嵌入方法具有鲁棒性——只要嵌入能捕捉任务的语义信息，具体用什么模型影响不大。</p>
+
+<h3>9.3 架构对比</h3>
+<p>三种架构（L/M/S）在零样本上的表现：</p>
+<ul>
+<li>L（55M）avg 67.7，M（34M）avg 67.5，S（5M）avg 65.9。</li>
+<li>L 和 M 非常接近，差距仅 0.2 分——说明<strong>共享 A/B 输出头（M 架构）几乎没有性能损失</strong>，但参数减少了 38%。</li>
+<li>S 架构差距较大（-1.8 分），但考虑到它只有 5M 参数（L 的 1/11），这个性能仍然可观。</li>
+</ul>
+
+<h3>9.4 文本任务描述 vs One-hot</h3>
+<p>在 reconstruction 实验中，one-hot 和自然语言任务嵌入的性能几乎相同（avg 73.4 vs 73.3）。但 one-hot 无法零样本泛化——它只能表示训练集中的任务。自然语言嵌入的价值不在于重建性能，而在于<strong>为未见任务提供有意义的输入表示</strong>。</p>
+
+<h3>9.5 LoRA 聚类可视化</h3>
+<p>论文在 Section 5.5 中可视化了 T2L 生成的 LoRA 在降维空间中的分布，发现了<strong>语义上有意义的聚类</strong>——相似任务的 LoRA 在空间中聚集在一起。这进一步验证了 T2L 学到的是任务语义到 LoRA 功能的映射，而不是任意的权重生成。</p>
+</section>
+
+<!-- CH10 -->
+<section class="chapter" id="ch10">
+<div class="ch-tag">Chapter 10 · 批判与未来</div>
+<h2>局限、批判与未来方向</h2>
+
+<h3>已证实的局限</h3>
+
+<h4>1. 零样本泛化限于训练分布内</h4>
+<p>T2L 在与训练任务（SNI，主要是多选 QA）相近的任务上表现好，但在代码生成（HumanEval/MBPP）和数学推理（GSM8K）上差距明显。这说明 T2L 的零样本能力是<strong>基于任务分布内的插值</strong>，不是真正的分布外泛化。如果用户需要的任务与训练分布差异大，T2L 可能无法生成有效的 LoRA。</p>
+
+<h4>2. Reconstruction 训练无法泛化</h4>
+<p>Reconstruction 训练的 T2L 虽然能完美重建训练任务的 LoRA，但完全无法零样本泛化。这意味着如果用户只有预训练 LoRA 库而没有对应的微调数据集，就无法获得泛化能力——必须用 SFT 重新训练。</p>
+
+<h4>3. SFT 训练成本高</h4>
+<p>SFT 训练 T2L 需要在每次迭代中做完整的 LLM 前向+反向，计算成本不低。在 479 任务上训练 Mistral-7B 规模的模型需要可观的 GPU 资源。这限制了 T2L 的可扩展性——如果要训练数千或数万个任务，计算成本会非常高。</p>
+
+<h4>4. 仅支持 Q/V 投影</h4>
+<p>论文的所有实验只对注意力的 query 和 value 投影做 LoRA（3.4M 参数）。没有探索对 MLP、output projection 等更多模块的适配。更多模块可能带来更好的性能，但也会增加 T2L 的输出维度和训练难度。</p>
+
+<h4>5. 任务描述的敏感性</h4>
+<p>T2L 的输入是自然语言任务描述，生成的 LoRA 质量可能受描述方式影响。论文用了 128 个描述/任务并平均了 3 个描述的结果，但没有系统研究描述质量/风格对生成 LoRA 性能的影响。用户可能需要"正确"的描述方式才能获得好结果。</p>
+
+<div class="critique-box">
+<span class="tag">批判</span>
+<h4>与 SHINE 的本质区别</h4>
+<p>T2L 和 SHINE（上一篇）都属于"context→LoRA"方向，但有本质区别：</p>
+<p><strong>T2L</strong>：输入是<strong>任务描述</strong>（"解决数学题"），生成的是<strong>任务级</strong> LoRA——适配模型的行为模式，不包含具体知识。训练用 SNI 的 479 个任务数据集。</p>
+<p><strong>SHINE</strong>：输入是<strong>具体 context</strong>（一篇文章、一段对话），生成的是<strong>知识级</strong> LoRA——把 context 的具体内容编码进参数。训练用 6B token 的重建/补全 + QA 微调。</p>
+<p>两者是互补的：T2L 解决"模型应该做什么"（能力适配），SHINE 解决"模型应该知道什么"（知识注入）。一个有趣的未来方向是<strong>结合两者</strong>——先用 T2L 生成任务能力 LoRA，再用 SHINE 生成知识 LoRA，然后组合使用。</p>
+</div>
+
+<h3>未来方向</h3>
+
+<div class="insight-box">
+<span class="tag">深度洞察</span>
+<h4>值得探索的研究方向</h4>
+<ol>
+<li><strong>更大规模的 T2L</strong>：增加训练任务数到数千/数万，扩大 hypernetwork 容量，探索 T2L 的 scaling law。能否像 LLM 一样，通过规模扩展获得涌现能力？</li>
+<li><strong>多模态任务描述</strong>：扩展 T2L 处理图像/音频任务描述，生成多模态 LoRA。</li>
+<li><strong>动态 LoRA 生成</strong>：T2L 目前生成静态 LoRA，能否在推理时根据输入动态调整 LoRA（per-instance adaptation）？</li>
+<li><strong>LoRA 组合性</strong>：T2L 生成的多个任务 LoRA 能否安全组合（加权求和、张量积）？组合后的性能是否可预测？</li>
+<li><strong>Reconstruction + SFT 混合训练</strong>：能否先用 reconstruction 预训练 T2L（低成本），再用 SFT 微调（高成本但少量），兼得两者优势？</li>
+</ol>
+</div>
+
+<div class="rq-box">
+<h4>自主科研问题</h4>
+<ol>
+<li><strong>LoRA 功能等价类的几何结构是什么？</strong>论文证明同一任务存在多个功能等价的 LoRA 解，但这些解在权重空间中形成的流形的维度、曲率、连通性是什么？能否用信息几何工具刻画？这直接影响 hypernetwork 的泛化能力。</li>
+<li><strong>T2L 的零样本泛化是否存在"任务嵌入空间的流形假设"？</strong>T2L 能泛化可能是因为未见任务的嵌入落在训练任务嵌入的凸包内。如果是这样，泛化边界就是训练任务嵌入的凸包——能否通过实验验证这个假设，并找到凸包外的任务来测试真正的分布外泛化？</li>
+<li><strong>任务描述到 LoRA 的映射是否是 Lipschitz 连续的？</strong>如果是，相似描述应生成相似 LoRA（论文的聚类可视化支持这一点）。Lipschitz 常数是多少？能否通过正则化控制这个常数来改善泛化？</li>
+<li><strong>T2L 生成的 LoRA 与直接微调的 LoRA 在功能上有何本质差异？</strong>T2L 在 PIQA 上超过 oracle，暗示生成的 LoRA 可能有不同的归纳偏置。能否通过探针（probing）或因果中介分析（causal mediation）揭示 T2L LoRA 与微调 LoRA 在模型内部表示上的差异？</li>
+<li><strong>能否用 T2L 做 LoRA 的"语言界面"？</strong>用户用自然语言描述"我想要一个更保守的回答风格"，T2L 生成对应的 LoRA。这需要 T2L 理解抽象的风格/行为描述，而不仅是任务类型描述。能否通过对比学习（contrastive learning）训练 T2L 理解这种抽象描述？</li>
+</ol>
+</div>
+
+<h3>总结</h3>
+<p>Text-to-LoRA 是 Sakana AI 在 ICML 2025 上提出的一种<strong>语言驱动的即时适配</strong>方法。它用一个 hypernetwork 把自然语言任务描述映射为 LoRA 权重，单次前向完成，无需数据集、无需微调、无需超参数。核心贡献包括：</p>
+<ol>
+<li><strong>架构设计</strong>：任务描述嵌入 + 模块/层嵌入 + MLP hypernetwork，三种输出头（L/M/S）探索复杂度-性能权衡。</li>
+<li><strong>两种训练范式</strong>：Reconstruction（蒸馏预训练 LoRA，完美重建但不泛化）和 SFT（端到端多任务监督，可零样本泛化）。</li>
+<li><strong>核心发现</strong>：Reconstruction 训练无法泛化（因为 LoRA 的功能等价类问题），SFT 训练可以泛化（因为直接优化下游性能）。</li>
+<li><strong>实验验证</strong>：479 任务训练后，零样本在 10 基准上 avg 67.7，超过 Multi-task LoRA、ICL、Arrow Routing，接近 oracle。</li>
+<li><strong>压缩能力</strong>：55M 参数压缩数百个 LoRA，即使 512 倍压缩比仍维持 85% 性能。</li>
+</ol>
+<p>T2L 的意义不仅在于一个新的适配方法，更在于它提出了一个愿景：<strong>让 LoRA 适配器有一个自然语言界面</strong>——用户不再需要管理数百个 LoRA 文件，只需用一句话描述想要的能力，系统即时生成对应的适配器。这是迈向"模型能力的语言化操作"的重要一步。</p>
+</section>
+
+</div>
+
+<footer>
+<p>Text-to-LoRA: Instant Transformer Adaption</p>
+<p>Rujikorn Charakorn, Edoardo Cetin, Yujin Tang, Robert T. Lange · Sakana AI · ICML 2025 · PMLR 267</p>
+<p>Code: <a href="https://github.com/SakanaAI/text-to-lora">github.com/SakanaAI/text-to-lora</a></p>
+<p style="margin-top:12px;font-size:12px;opacity:0.6">博客解读 · Venus 浮世绘蓝调配色 · 理论聚焦论文原创架构 · 所有公式与数据均来自原文</p>
+</footer>
+
+</body>
+</html>
