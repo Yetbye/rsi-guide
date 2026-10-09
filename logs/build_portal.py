@@ -44,7 +44,7 @@ PAPERS = [
     # --- container G: parameter generation -----------------------------------
     dict(slug="genadapter", roman="II", group="G",
          cn="Generative Adapter 深度解读", en="Generative Adapter: Contextualizing Language Models in Parameters with a Single Forward Pass",
-         venue="arXiv 2411.05877 · 2024",
+         venue="arXiv 2411.05877 · 2024", pdfname="generative-adapter",
          desc="单次前向把上下文写进冻结 LM 的参数：context → 条件化 LoRA，元学习覆盖 500+ 任务的分布。",
          meta="13 章 · 4 图 · MathJax",
          sw=["#16A34A", "#4ADE80", "#F97316"], cover="blogs/genadapter/assets/hero_cover.jpg", monogram="GA"),
@@ -62,7 +62,7 @@ PAPERS = [
          sw=["#7C3AED", "#A78BFA", "#F97316"], cover="blogs/dyprag/assets/hero_cover.jpg", monogram="DyP"),
     dict(slug="text2lora", roman="V", group="G",
          cn="Text-to-LoRA 深度解读", en="Text-to-LoRA: Instant Transformer Adaption",
-         venue="ICML 2025 · Sakana AI",
+         venue="ICML 2025 · Sakana AI", pdfname="text-to-lora",
          desc="一句话生成 LoRA：超网络单次前向完成即时任务适配，把逐任务微调折叠成一次前向。",
          meta="11 章 · 2 图",
          sw=["#1B4B6F", "#5A8F7B", "#E85D4E"], cover="blogs/text2lora/assets/cover.jpg", monogram="T2L"),
@@ -80,7 +80,7 @@ PAPERS = [
          sw=["#6B1D2A", "#8B3040", "#C9A227"], cover="blogs/shine/assets/cover.jpg", monogram="SHN"),
     dict(slug="d2l", roman="VIII", group="G",
          cn="Doc-to-LoRA 深度解读", en="Doc-to-LoRA: Learning to Instantly Internalize Contexts",
-         venue="arXiv 2602.15902 · 2026 · Sakana AI",
+         venue="arXiv 2602.15902 · 2026 · Sakana AI", pdfname="doc-to-lora",
          desc="把 context distillation 元学习进 309M Perceiver 超网络：读一篇 32K 文档 0.2 秒产出 LoRA，此后免上下文。",
          meta="15 章 · 5 图 · 9 法证批判 · 5 科研问题",
          sw=["#2D2D2D", "#3C5A4A", "#C44D3F"], cover=None, monogram="D2L"),
@@ -207,7 +207,7 @@ def build():
           <p class="card-desc">{esc(p["desc"])}</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/{p["slug"]}/index.html">读深读</a>
-            <a class="btn btn-ghost" href="papers/pdf/{p["slug"]}.pdf">论文 PDF</a>
+            <a class="btn btn-ghost" href="papers/pdf/{p.get("pdfname", p["slug"])}.pdf">论文 PDF</a>
             <a class="btn btn-ghost" href="papers/text/{p["slug"]}.txt">全文提取</a>
           </div>
         </div>
