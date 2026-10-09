@@ -196,16 +196,6 @@ nav{
 .lab-note{margin-top:26px;font-size:13px;color:var(--text-muted)}
 .lab-note a{border-bottom:1px dotted var(--accent-gold)}
 
-/* ---------- codex / repo map ---------- */
-.codex-grid{display:grid;grid-template-columns:1.1fr 0.9fr;gap:40px;align-items:start}
-.tree{background:#2E2820;color:#E8DFCB;border-radius:var(--radius-lg);padding:26px 26px;font-family:var(--font-mono);font-size:13px;line-height:2;overflow-x:auto;box-shadow:var(--shadow-md);white-space:pre}
-.tree .dim{color:#9C8F76} .tree .gold{color:#D8B96C} .tree .terra{color:#E0996F}
-.codex-list{list-style:none;display:grid;gap:16px}
-.codex-list li{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start}
-.codex-list .k{font-family:var(--font-display);font-size:15px;color:var(--accent-gold);letter-spacing:1px;padding-top:2px;white-space:nowrap}
-.codex-list p{font-size:14px;color:var(--text-secondary)}
-.codex-list b{color:var(--color-primary)}
-
 /* ---------- footer ---------- */
 footer{position:relative;background:linear-gradient(180deg,var(--bg-secondary),#EDE4D2);border-top:1px solid var(--line);padding:70px 24px 44px;text-align:center;overflow:hidden}
 .foot-frieze{position:absolute;top:0;left:0;right:0;height:16px;background-image:var(--meander);background-size:14px 14px;opacity:0.4}
@@ -229,7 +219,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
 
 /* ---------- responsive ---------- */
 @media (max-width:1080px){
-  .lab-grid,.codex-grid{grid-template-columns:1fr}
+  .lab-grid{grid-template-columns:1fr}
   .hero-col{display:none}
   .lab-amphora{display:none}
 }
@@ -258,7 +248,6 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
     <a class="nav-link" href="#scrolls">卷二 · 十二卷</a>
     <a class="nav-link" href="#constellation">卷三 · 谱系星图</a>
     <a class="nav-link" href="#lab">卷四 · 问题从哪来</a>
-    <a class="nav-link" href="#codex">卷五 · 仓库地图</a>
   </div>
 </nav>
 
@@ -355,7 +344,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
       <div class="art reveal">
         <span class="gr">ΠΡΑΞΙΣ</span>
         <h3>复现入口</h3>
-        <p>代码块按可信度如实标注（可运行 / 示意），给出最小复刻路线与对照实验设计；论文原图精准裁剪、全文提取一并留档。</p>
+        <p>代码块按可信度如实标注（可运行 / 示意），给出最小复刻路线与对照实验设计；关键图表均取自论文原图，标注 Figure 编号。</p>
       </div>
     </div>
     <div class="paths">
@@ -402,20 +391,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
       <div class="card-grid with-aside">
       <article class="card" id="paper-mend">
         <a class="plate" href="blogs/mend/index.html" aria-label="进入 MEND 深度解读">
-          <svg class="plate-emblem" viewBox="0 0 360 190" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-  <defs>
-    <pattern id="mk-mend" width="14" height="14" patternUnits="userSpaceOnUse">
-      <path d="M6 12 H12 V0 H0 V10 H10 V2 H2 V8 H8 V4 H4 V6 H6" fill="none" stroke="#C09A54" stroke-width="1.1" opacity="0.55"/>
-    </pattern>
-  </defs>
-  <rect width="360" height="190" fill="#F3ECDC"/>
-  <rect y="0" width="360" height="14" fill="url(#mk-mend)"/>
-  <rect y="176" width="360" height="14" fill="url(#mk-mend)"/>
-  <circle cx="180" cy="95" r="52" fill="none" stroke="#4A3A28" stroke-width="1.4"/>
-  <circle cx="180" cy="95" r="45" fill="none" stroke="#C09A54" stroke-width="1"/>
-  <text x="180" y="109" text-anchor="middle" font-size="34" fill="#4A3A28"
-        font-family="Palatino Linotype, Georgia, serif" letter-spacing="1">MEND</text>
-</svg>
+          <img class="plate-img" src="blogs/mend/assets/hero_cover.jpg" alt="MEND 深度解读 封面" loading="lazy">
           <span class="plate-veil"></span>
           <span class="plate-num">I</span>
           <span class="venue">ICLR 2022 · arXiv 2110.11309</span>
@@ -430,8 +406,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">把单样本微调的 rank-1 梯度改造成可靠、局部、泛化的参数更新——编辑网络让 10B+ 模型秒级完成精准手术。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/mend/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/mend.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/mend.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/mend.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -469,8 +444,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">单次前向把上下文写进冻结 LM 的参数：context → 条件化 LoRA，元学习覆盖 500+ 任务的分布。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/genadapter/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/generative-adapter.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/genadapter.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/generative-adapter.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -491,8 +465,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">让循环扩散从零生成两亿参数的网络权重——参数生成（parameter generation）的第一性形式。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/rpg/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/rpg.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/rpg.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/rpg.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -513,8 +486,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">用一个小翻译器把检索文档蒸馏成 LoRA 参数——参数化 RAG 的实用主义路线，测试时知识增强。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/dyprag/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/dyprag.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/dyprag.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/dyprag.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -535,27 +507,13 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">一句话生成 LoRA：超网络单次前向完成即时任务适配，把逐任务微调折叠成一次前向。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/text2lora/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/text-to-lora.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/text2lora.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/text-to-lora.pdf">论文原文</a>
           </div>
         </div>
       </article>
       <article class="card" id="paper-dnd">
         <a class="plate" href="blogs/dnd/index.html" aria-label="进入 DnD 深度解读">
-          <svg class="plate-emblem" viewBox="0 0 360 190" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-  <defs>
-    <pattern id="mk-dnd" width="14" height="14" patternUnits="userSpaceOnUse">
-      <path d="M6 12 H12 V0 H0 V10 H10 V2 H2 V8 H8 V4 H4 V6 H6" fill="none" stroke="#C09A54" stroke-width="1.1" opacity="0.55"/>
-    </pattern>
-  </defs>
-  <rect width="360" height="190" fill="#F3ECDC"/>
-  <rect y="0" width="360" height="14" fill="url(#mk-dnd)"/>
-  <rect y="176" width="360" height="14" fill="url(#mk-dnd)"/>
-  <circle cx="180" cy="95" r="52" fill="none" stroke="#4A3A28" stroke-width="1.4"/>
-  <circle cx="180" cy="95" r="45" fill="none" stroke="#C09A54" stroke-width="1"/>
-  <text x="180" y="109" text-anchor="middle" font-size="34" fill="#4A3A28"
-        font-family="Palatino Linotype, Georgia, serif" letter-spacing="1">DnD</text>
-</svg>
+          <img class="plate-img" src="blogs/dnd/assets/hero_cover.jpg" alt="DnD 深度解读 封面" loading="lazy">
           <span class="plate-veil"></span>
           <span class="plate-num">VI</span>
           <span class="venue">arXiv 2506.16406 · 2025</span>
@@ -570,8 +528,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">拖拽即用：prompt→权重超生成器 0.11 秒生成 0.5B 全套 LoRA，含 10 条法证批判与三假说检验。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/dnd/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/dnd.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/dnd.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/dnd.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -592,27 +549,13 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">冻结 LLM 全层 memory states + 行列交替双向注意力，单次前向生成全层 LoRA——参数生成路线的最新一站。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/shine/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/shine.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/shine.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/shine.pdf">论文原文</a>
           </div>
         </div>
       </article>
       <article class="card" id="paper-d2l">
         <a class="plate" href="blogs/d2l/index.html" aria-label="进入 Doc-to-LoRA 深度解读">
-          <svg class="plate-emblem" viewBox="0 0 360 190" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-  <defs>
-    <pattern id="mk-d2l" width="14" height="14" patternUnits="userSpaceOnUse">
-      <path d="M6 12 H12 V0 H0 V10 H10 V2 H2 V8 H8 V4 H4 V6 H6" fill="none" stroke="#C09A54" stroke-width="1.1" opacity="0.55"/>
-    </pattern>
-  </defs>
-  <rect width="360" height="190" fill="#F3ECDC"/>
-  <rect y="0" width="360" height="14" fill="url(#mk-d2l)"/>
-  <rect y="176" width="360" height="14" fill="url(#mk-d2l)"/>
-  <circle cx="180" cy="95" r="52" fill="none" stroke="#4A3A28" stroke-width="1.4"/>
-  <circle cx="180" cy="95" r="45" fill="none" stroke="#C09A54" stroke-width="1"/>
-  <text x="180" y="109" text-anchor="middle" font-size="34" fill="#4A3A28"
-        font-family="Palatino Linotype, Georgia, serif" letter-spacing="1">D2L</text>
-</svg>
+          <img class="plate-img" src="blogs/d2l/assets/hero_cover.jpg" alt="Doc-to-LoRA 深度解读 封面" loading="lazy">
           <span class="plate-veil"></span>
           <span class="plate-num">VIII</span>
           <span class="venue">arXiv 2602.15902 · 2026 · Sakana AI</span>
@@ -627,8 +570,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">把 context distillation 元学习进 309M Perceiver 超网络：读一篇 32K 文档 0.2 秒产出 LoRA，此后免上下文。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/d2l/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/doc-to-lora.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/d2l.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/doc-to-lora.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -662,8 +604,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">冻结骨干 + 8×8 在线联想记忆状态（gated delta rule）+ 低秩读出修正注意力：0.12% 参数撬动长历史。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/delmem/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/delmem.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/delmem.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/delmem.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -684,8 +625,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">互补式情景-参数记忆：边界无关任务流上自主分配参数记忆块，CLS 理论启发的记忆扩展。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/unimem/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/unimem.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/unimem.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/unimem.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -708,20 +648,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
       <div class="card-grid with-aside">
       <article class="card" id="paper-ttt-e2e">
         <a class="plate" href="blogs/ttt-e2e/index.html" aria-label="进入 TTT-E2E 深度解读">
-          <svg class="plate-emblem" viewBox="0 0 360 190" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-  <defs>
-    <pattern id="mk-ttte2e" width="14" height="14" patternUnits="userSpaceOnUse">
-      <path d="M6 12 H12 V0 H0 V10 H10 V2 H2 V8 H8 V4 H4 V6 H6" fill="none" stroke="#C09A54" stroke-width="1.1" opacity="0.55"/>
-    </pattern>
-  </defs>
-  <rect width="360" height="190" fill="#F3ECDC"/>
-  <rect y="0" width="360" height="14" fill="url(#mk-ttte2e)"/>
-  <rect y="176" width="360" height="14" fill="url(#mk-ttte2e)"/>
-  <circle cx="180" cy="95" r="52" fill="none" stroke="#4A3A28" stroke-width="1.4"/>
-  <circle cx="180" cy="95" r="45" fill="none" stroke="#C09A54" stroke-width="1"/>
-  <text x="180" y="109" text-anchor="middle" font-size="34" fill="#4A3A28"
-        font-family="Palatino Linotype, Georgia, serif" letter-spacing="1">TTT</text>
-</svg>
+          <img class="plate-img" src="blogs/ttt-e2e/assets/hero_cover.jpg" alt="TTT-E2E 深度解读 封面" loading="lazy">
           <span class="plate-veil"></span>
           <span class="plate-num">XI</span>
           <span class="venue">arXiv 2512.23675 · 2025</span>
@@ -736,27 +663,13 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">长上下文即持续学习：测试时 NTP 内环 + grad-of-grad 外环；损失 scaling 与全注意力同轨、prefill 恒定快 2.7×。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/ttt-e2e/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/ttt-e2e.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/ttt-e2e.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/ttt-e2e.pdf">论文原文</a>
           </div>
         </div>
       </article>
       <article class="card" id="paper-inplace-ttt">
         <a class="plate" href="blogs/inplace-ttt/index.html" aria-label="进入 In-Place TTT 深度解读">
-          <svg class="plate-emblem" viewBox="0 0 360 190" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-  <defs>
-    <pattern id="mk-inplacettt" width="14" height="14" patternUnits="userSpaceOnUse">
-      <path d="M6 12 H12 V0 H0 V10 H10 V2 H2 V8 H8 V4 H4 V6 H6" fill="none" stroke="#C09A54" stroke-width="1.1" opacity="0.55"/>
-    </pattern>
-  </defs>
-  <rect width="360" height="190" fill="#F3ECDC"/>
-  <rect y="0" width="360" height="14" fill="url(#mk-inplacettt)"/>
-  <rect y="176" width="360" height="14" fill="url(#mk-inplacettt)"/>
-  <circle cx="180" cy="95" r="52" fill="none" stroke="#4A3A28" stroke-width="1.4"/>
-  <circle cx="180" cy="95" r="45" fill="none" stroke="#C09A54" stroke-width="1"/>
-  <text x="180" y="109" text-anchor="middle" font-size="34" fill="#4A3A28"
-        font-family="Palatino Linotype, Georgia, serif" letter-spacing="1">IPT</text>
-</svg>
+          <img class="plate-img" src="blogs/inplace-ttt/assets/hero_cover.jpg" alt="In-Place TTT 深度解读 封面" loading="lazy">
           <span class="plate-veil"></span>
           <span class="plate-num">XII</span>
           <span class="venue">arXiv 2604.06169 · 2026 · ByteDance Seed × PKU</span>
@@ -771,8 +684,7 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
           <p class="card-desc">把 gated MLP 的 W_down 就地当快权重：chunk-wise 闭式更新 + 显式 NTP 对齐，CP 原生的测试时训练。</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/inplace-ttt/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/inplace-ttt.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/inplace-ttt.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/inplace-ttt.pdf">论文原文</a>
           </div>
         </div>
       </article>
@@ -987,60 +899,20 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
             <li><b>上下文有硬上限</b>：终身经验的保守估计也超出当前百万 token 前沿数个数量级。</li>
             <li><b>长度 scaling 有三重障碍</b>：计算、数据与架构层面的根本性困难。</li>
             <li><b>参数学习抬高能力天花板</b>：把新知识固化进权重——累积增长、更好泛化、推理开销更低。</li>
-            <li><b>ICL 与 IPL 互补而非竞争</b>：这本指南的十二篇，就是沿这个框架对「参数更新容器」做的一次全景测绘。</li>
+            <li><b>ICL 与 IPL 互补而非竞争</b>：这套笔记的十二篇，就是沿这个框架对「参数更新容器」做的一次全景测绘。</li>
           </ul>
         </div>
         <div>
-          <span class="section-tag">相关仓库 · GITHUB / MULABPKU</span>
+          <span class="section-tag">直接相关的两篇 · FROM MULABPKU</span>
           <div class="repo-list" style="margin-top:14px">
-        <a class="repo-row mark-guide" href="https://github.com/MuLabPKU/In-Parameter-Learning" target="_blank" rel="noopener"><span class="repo-mark">纲领</span><span class="repo-name">In-Parameter-Learning</span><span class="repo-desc">纲领 · 立场论文：In-Parameter Learning（为什么终身 AI 需要的不止更长上下文）</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-collection" href="https://github.com/MuLabPKU/SHINE" target="_blank" rel="noopener"><span class="repo-mark">本笔记</span><span class="repo-name">SHINE</span><span class="repo-desc">可扩展 in-context hypernetwork —— 本指南卷 Ⅶ</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/PaST" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">PaST</span><span class="repo-desc">ACL 2026 Oral · Knowledge is Not Enough: Injecting RL Skills for Continual Adaptation</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/PiSSA" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">PiSSA</span><span class="repo-desc">NeurIPS 2024 Spotlight · 主奇异向量的 LoRA 初始化（431★）</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/TransArch" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">TransArch</span><span class="repo-desc">硬件友好的架构设计与 LLM 迁移（512★）</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/LIFT" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">LIFT</span><span class="repo-desc">Long Input Fine-Tuning · 长上下文理解框架</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/LooGLE-v2" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">LooGLE-v2</span><span class="repo-desc">NeurIPS DB Track 2025 · 真实世界长依赖评测</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/Meta-RFFT" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">Meta-RFFT</span><span class="repo-desc">NeurIPS 2025 · 多任务长度泛化</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/RDBPFN" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">RDBPFN</span><span class="repo-desc">关系型 in-context learning 与结构先验预训练</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
-        <a class="repo-row mark-repo" href="https://github.com/MuLabPKU/SESA" target="_blank" rel="noopener"><span class="repo-mark">仓库</span><span class="repo-name">SESA</span><span class="repo-desc">序列采样增强 LLM 探索（The Road Less Traveled）</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
+        <a class="repo-row mark-guide" href="https://github.com/MuLabPKU/In-Parameter-Learning" target="_blank" rel="noopener"><span class="repo-mark">纲领</span><span class="repo-name">In-Parameter-Learning</span><span class="repo-desc">立场论文《为什么终身 AI 需要的不止是更长的上下文》——我这套笔记的问题线索</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
+        <a class="repo-row mark-collection" href="https://github.com/MuLabPKU/SHINE" target="_blank" rel="noopener"><span class="repo-mark">原作</span><span class="repo-name">SHINE</span><span class="repo-desc">卷 Ⅶ 的原作：可扩展 in-context hypernetwork（ICML 2026）</span><span class="repo-arrow" aria-hidden="true">↗</span></a>
           </div>
-          <p class="lab-note">这套笔记里有两篇直接相关：卷 Ⅶ <b>SHINE</b> 出自 Mu Lab（ICML 2026 · PMLR 306），
-          卷 Ⅻ <b>In-Place TTT</b> 是 ByteDance Seed × PKU 的合作工作。想追去源头，看
+          <p class="lab-note">另外，卷 Ⅻ <b>In-Place TTT</b> 是 ByteDance Seed × PKU 的合作工作。
+          想继续往下读，Mu Lab 的其他公开工作在
           <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a></p>
         </div>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- ================= 05 CODEX ================= -->
-<section class="section" id="codex">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-tag">Volume V · ΧΑΡΤΗΣ</span>
-      <h2 class="section-title">仓库地图</h2>
-      <p class="section-sub">一个自包含的静态站点：无构建步骤，克隆后直接打开 index.html。</p>
-      <div class="classical-line" aria-hidden="true"></div>
-    </div>
-    <div class="codex-grid">
-      <div class="tree reveal" aria-label="仓库目录结构">
-<span class="gold">RSI/</span>                        <span class="dim"># MHML · RSI 深读指南</span>
-├── <span class="gold">index.html</span>            <span class="dim"># 本门户（Venus 希腊暖金）</span>
-├── <span class="gold">blogs/</span>                <span class="dim"># 12 篇深读 · 自包含单文件 HTML</span>
-│   ├── <span class="terra">mend/</span>  <span class="terra">rpg/</span>  <span class="terra">genadapter/</span>  <span class="terra">dyprag/</span>
-│   ├── <span class="terra">text2lora/</span>  <span class="terra">dnd/</span>  <span class="terra">shine/</span>  <span class="terra">d2l/</span>
-│   └── <span class="terra">delmem/</span>  <span class="terra">unimem/</span>  <span class="terra">ttt-e2e/</span>  <span class="terra">inplace-ttt/</span>
-├── <span class="gold">papers/</span>
-│   ├── pdf/              <span class="dim"># 12 篇论文原文</span>
-│   └── text/             <span class="dim"># 12 份全文提取（公式核对依据）</span>
-└── <span class="gold">logs/</span>                 <span class="dim"># 构建日志 · 偏好档案 · 门户脚本</span>
-      </div>
-      <ul class="codex-list reveal">
-        <li><span class="k">离线友好</span><p>每篇深读为<b>单文件 HTML</b>，封面与图表随目录存放；公式由 MathJax 渲染（首次需联网，之后浏览器缓存）。</p></li>
-        <li><span class="k">证据链</span><p><b>papers/text/</b> 保留 PDF 全文提取，博客中每个公式与数字都可在其中核对原文出处。</p></li>
-        <li><span class="k">复现实验</span><p>各卷附最小复刻路线与对照实验设计；配置好百炼 key 后可按 <b>_genimg.py</b> 管线重生成插图。</p></li>
-        <li><span class="k">扩展一卷</span><p>新增论文时：在 <b>blogs/</b> 放深读、在 <b>papers/</b> 放原文与提取，然后重跑 <b>logs/build_portal.py</b> 更新本门户目录表。</p></li>
-      </ul>
     </div>
   </div>
 </section>
@@ -1064,11 +936,11 @@ html.no-js .reveal, body.anim-off .reveal{opacity:1;transform:none}
   <p class="foot-sub">MHML · RSI 深读指南 · Yetbye 的阅读笔记 · 2026</p>
   <div class="foot-links">
     <a href="#guide">深读四艺</a><a href="#scrolls">十二卷</a><a href="#constellation">谱系星图</a>
-    <a href="#lab">参照坐标</a><a href="#codex">仓库地图</a>
+    <a href="#lab">参照坐标</a>
     <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a>
   </div>
   <p class="foot-note">论文版权归原作者所有；各篇解读是我自己的深读笔记，其中的观点与批判不代表论文作者立场。
-  封面与插图部分由 AI 生成或基于论文原图裁剪，仅作学习用途。敬告读者：一切引用请回到 <b>papers/</b> 原文核对。</p>
+  封面与插图部分由 AI 生成或基于论文原图裁剪，仅作学习用途；正文引用请以论文原文为准。</p>
 </footer>
 
 <script>

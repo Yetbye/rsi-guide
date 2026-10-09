@@ -40,7 +40,7 @@ PAPERS = [
          venue="ICLR 2022 · arXiv 2110.11309",
          desc="把单样本微调的 rank-1 梯度改造成可靠、局部、泛化的参数更新——编辑网络让 10B+ 模型秒级完成精准手术。",
          meta="13 章 · 3 图 · 8 法证批判 · 5 科研问题",
-         sw=["#8B4570", "#5A7B6B", "#E86B8A"], cover=None, monogram="MEND"),
+         sw=["#8B4570", "#5A7B6B", "#E86B8A"], cover="blogs/mend/assets/hero_cover.jpg", monogram="MEND"),
     # --- container G: parameter generation -----------------------------------
     dict(slug="genadapter", roman="II", group="G",
          cn="Generative Adapter 深度解读", en="Generative Adapter: Contextualizing Language Models in Parameters with a Single Forward Pass",
@@ -71,7 +71,7 @@ PAPERS = [
          venue="arXiv 2506.16406 · 2025",
          desc="拖拽即用：prompt→权重超生成器 0.11 秒生成 0.5B 全套 LoRA，含 10 条法证批判与三假说检验。",
          meta="18 章 · 7 图 · 10 法证批判 · 5 科研问题",
-         sw=["#1B4B6F", "#5A8F7B", "#E85D4E"], cover=None, monogram="DnD"),
+         sw=["#1B4B6F", "#5A8F7B", "#E85D4E"], cover="blogs/dnd/assets/hero_cover.jpg", monogram="DnD"),
     dict(slug="shine", roman="VII", group="G",
          cn="SHINE 深度解读", en="SHINE: A Scalable In-Context Hypernetwork for Mapping Context to LoRA",
          venue="ICML 2026 · PMLR 306 · 北大 Mu Lab",
@@ -83,7 +83,7 @@ PAPERS = [
          venue="arXiv 2602.15902 · 2026 · Sakana AI", pdfname="doc-to-lora",
          desc="把 context distillation 元学习进 309M Perceiver 超网络：读一篇 32K 文档 0.2 秒产出 LoRA，此后免上下文。",
          meta="15 章 · 5 图 · 9 法证批判 · 5 科研问题",
-         sw=["#2D2D2D", "#3C5A4A", "#C44D3F"], cover=None, monogram="D2L"),
+         sw=["#2D2D2D", "#3C5A4A", "#C44D3F"], cover="blogs/d2l/assets/hero_cover.jpg", monogram="D2L"),
     # --- container D: online state -------------------------------------------
     dict(slug="delmem", roman="IX", group="D",
          cn="δ-mem 深度解读", en="δ-mem: Efficient Online Memory for Large Language Models",
@@ -103,13 +103,13 @@ PAPERS = [
          venue="arXiv 2512.23675 · 2025",
          desc="长上下文即持续学习：测试时 NTP 内环 + grad-of-grad 外环；损失 scaling 与全注意力同轨、prefill 恒定快 2.7×。",
          meta="10 章 · 5 图 · 8 法证批判 · 5 科研问题",
-         sw=["#0D9488", "#14B8A6", "#FBBF24"], cover=None, monogram="TTT"),
+         sw=["#0D9488", "#14B8A6", "#FBBF24"], cover="blogs/ttt-e2e/assets/hero_cover.jpg", monogram="TTT"),
     dict(slug="inplace-ttt", roman="XII", group="E",
          cn="In-Place TTT 深度解读", en="In-Place Test-Time Training",
          venue="arXiv 2604.06169 · 2026 · ByteDance Seed × PKU",
          desc="把 gated MLP 的 W_down 就地当快权重：chunk-wise 闭式更新 + 显式 NTP 对齐，CP 原生的测试时训练。",
          meta="10 章 · 4 图 · 9 法证批判 · 5 科研问题",
-         sw=["#4F46E5", "#34D399", "#F97316"], cover=None, monogram="IPT"),
+         sw=["#4F46E5", "#34D399", "#F97316"], cover="blogs/inplace-ttt/assets/hero_cover.jpg", monogram="IPT"),
 ]
 
 GROUPS = [
@@ -136,16 +136,8 @@ GROUPS = [
 ]
 
 MU_REPOS = [
-    ("In-Parameter-Learning", "纲领 · 立场论文：In-Parameter Learning（为什么终身 AI 需要的不止更长上下文）", "guide"),
-    ("SHINE", "可扩展 in-context hypernetwork —— 本指南卷 Ⅶ", "collection"),
-    ("PaST", "ACL 2026 Oral · Knowledge is Not Enough: Injecting RL Skills for Continual Adaptation", "repo"),
-    ("PiSSA", "NeurIPS 2024 Spotlight · 主奇异向量的 LoRA 初始化（431★）", "repo"),
-    ("TransArch", "硬件友好的架构设计与 LLM 迁移（512★）", "repo"),
-    ("LIFT", "Long Input Fine-Tuning · 长上下文理解框架", "repo"),
-    ("LooGLE-v2", "NeurIPS DB Track 2025 · 真实世界长依赖评测", "repo"),
-    ("Meta-RFFT", "NeurIPS 2025 · 多任务长度泛化", "repo"),
-    ("RDBPFN", "关系型 in-context learning 与结构先验预训练", "repo"),
-    ("SESA", "序列采样增强 LLM 探索（The Road Less Traveled）", "repo"),
+    ("In-Parameter-Learning", "立场论文《为什么终身 AI 需要的不止是更长的上下文》——我这套笔记的问题线索", "guide"),
+    ("SHINE", "卷 Ⅶ 的原作：可扩展 in-context hypernetwork（ICML 2026）", "collection"),
 ]
 
 
@@ -207,8 +199,7 @@ def build():
           <p class="card-desc">{esc(p["desc"])}</p>
           <div class="card-links">
             <a class="btn btn-primary" href="blogs/{p["slug"]}/index.html">开始阅读</a>
-            <a class="btn btn-ghost" href="papers/pdf/{p.get("pdfname", p["slug"])}.pdf">论文 PDF</a>
-            <a class="btn btn-ghost" href="papers/text/{p["slug"]}.txt">全文提取</a>
+            <a class="btn btn-ghost" href="papers/pdf/{p.get("pdfname", p["slug"])}.pdf">论文原文</a>
           </div>
         </div>
       </article>''')
@@ -305,7 +296,7 @@ def build():
     # ------------------------------------------------------------- mu repos
     repo_rows = []
     for name, desc, kind in MU_REPOS:
-        badge = {"guide": "纲领", "collection": "本笔记", "repo": "仓库"}[kind]
+        badge = {"guide": "纲领", "collection": "原作", "repo": "仓库"}[kind]
         cls = {"guide": "mark-guide", "collection": "mark-collection", "repo": "mark-repo"}[kind]
         repo_rows.append(
             f'<a class="repo-row {cls}" href="https://github.com/MuLabPKU/{name}" target="_blank" rel="noopener">'
@@ -514,16 +505,6 @@ nav{{
 .lab-note{{margin-top:26px;font-size:13px;color:var(--text-muted)}}
 .lab-note a{{border-bottom:1px dotted var(--accent-gold)}}
 
-/* ---------- codex / repo map ---------- */
-.codex-grid{{display:grid;grid-template-columns:1.1fr 0.9fr;gap:40px;align-items:start}}
-.tree{{background:#2E2820;color:#E8DFCB;border-radius:var(--radius-lg);padding:26px 26px;font-family:var(--font-mono);font-size:13px;line-height:2;overflow-x:auto;box-shadow:var(--shadow-md);white-space:pre}}
-.tree .dim{{color:#9C8F76}} .tree .gold{{color:#D8B96C}} .tree .terra{{color:#E0996F}}
-.codex-list{{list-style:none;display:grid;gap:16px}}
-.codex-list li{{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start}}
-.codex-list .k{{font-family:var(--font-display);font-size:15px;color:var(--accent-gold);letter-spacing:1px;padding-top:2px;white-space:nowrap}}
-.codex-list p{{font-size:14px;color:var(--text-secondary)}}
-.codex-list b{{color:var(--color-primary)}}
-
 /* ---------- footer ---------- */
 footer{{position:relative;background:linear-gradient(180deg,var(--bg-secondary),#EDE4D2);border-top:1px solid var(--line);padding:70px 24px 44px;text-align:center;overflow:hidden}}
 .foot-frieze{{position:absolute;top:0;left:0;right:0;height:16px;background-image:var(--meander);background-size:14px 14px;opacity:0.4}}
@@ -547,7 +528,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
 
 /* ---------- responsive ---------- */
 @media (max-width:1080px){{
-  .lab-grid,.codex-grid{{grid-template-columns:1fr}}
+  .lab-grid{{grid-template-columns:1fr}}
   .hero-col{{display:none}}
   .lab-amphora{{display:none}}
 }}
@@ -576,7 +557,6 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <a class="nav-link" href="#scrolls">卷二 · 十二卷</a>
     <a class="nav-link" href="#constellation">卷三 · 谱系星图</a>
     <a class="nav-link" href="#lab">卷四 · 问题从哪来</a>
-    <a class="nav-link" href="#codex">卷五 · 仓库地图</a>
   </div>
 </nav>
 
@@ -673,7 +653,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
       <div class="art reveal">
         <span class="gr">ΠΡΑΞΙΣ</span>
         <h3>复现入口</h3>
-        <p>代码块按可信度如实标注（可运行 / 示意），给出最小复刻路线与对照实验设计；论文原图精准裁剪、全文提取一并留档。</p>
+        <p>代码块按可信度如实标注（可运行 / 示意），给出最小复刻路线与对照实验设计；关键图表均取自论文原图，标注 Figure 编号。</p>
       </div>
     </div>
     <div class="paths">
@@ -773,51 +753,19 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
             <li><b>上下文有硬上限</b>：终身经验的保守估计也超出当前百万 token 前沿数个数量级。</li>
             <li><b>长度 scaling 有三重障碍</b>：计算、数据与架构层面的根本性困难。</li>
             <li><b>参数学习抬高能力天花板</b>：把新知识固化进权重——累积增长、更好泛化、推理开销更低。</li>
-            <li><b>ICL 与 IPL 互补而非竞争</b>：这本指南的十二篇，就是沿这个框架对「参数更新容器」做的一次全景测绘。</li>
+            <li><b>ICL 与 IPL 互补而非竞争</b>：这套笔记的十二篇，就是沿这个框架对「参数更新容器」做的一次全景测绘。</li>
           </ul>
         </div>
         <div>
-          <span class="section-tag">相关仓库 · GITHUB / MULABPKU</span>
+          <span class="section-tag">直接相关的两篇 · FROM MULABPKU</span>
           <div class="repo-list" style="margin-top:14px">
         {repos_block}
           </div>
-          <p class="lab-note">这套笔记里有两篇直接相关：卷 Ⅶ <b>SHINE</b> 出自 Mu Lab（ICML 2026 · PMLR 306），
-          卷 Ⅻ <b>In-Place TTT</b> 是 ByteDance Seed × PKU 的合作工作。想追去源头，看
+          <p class="lab-note">另外，卷 Ⅻ <b>In-Place TTT</b> 是 ByteDance Seed × PKU 的合作工作。
+          想继续往下读，Mu Lab 的其他公开工作在
           <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a></p>
         </div>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- ================= 05 CODEX ================= -->
-<section class="section" id="codex">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-tag">Volume V · ΧΑΡΤΗΣ</span>
-      <h2 class="section-title">仓库地图</h2>
-      <p class="section-sub">一个自包含的静态站点：无构建步骤，克隆后直接打开 index.html。</p>
-      <div class="classical-line" aria-hidden="true"></div>
-    </div>
-    <div class="codex-grid">
-      <div class="tree reveal" aria-label="仓库目录结构">
-<span class="gold">RSI/</span>                        <span class="dim"># MHML · RSI 深读指南</span>
-├── <span class="gold">index.html</span>            <span class="dim"># 本门户（Venus 希腊暖金）</span>
-├── <span class="gold">blogs/</span>                <span class="dim"># 12 篇深读 · 自包含单文件 HTML</span>
-│   ├── <span class="terra">mend/</span>  <span class="terra">rpg/</span>  <span class="terra">genadapter/</span>  <span class="terra">dyprag/</span>
-│   ├── <span class="terra">text2lora/</span>  <span class="terra">dnd/</span>  <span class="terra">shine/</span>  <span class="terra">d2l/</span>
-│   └── <span class="terra">delmem/</span>  <span class="terra">unimem/</span>  <span class="terra">ttt-e2e/</span>  <span class="terra">inplace-ttt/</span>
-├── <span class="gold">papers/</span>
-│   ├── pdf/              <span class="dim"># 12 篇论文原文</span>
-│   └── text/             <span class="dim"># 12 份全文提取（公式核对依据）</span>
-└── <span class="gold">logs/</span>                 <span class="dim"># 构建日志 · 偏好档案 · 门户脚本</span>
-      </div>
-      <ul class="codex-list reveal">
-        <li><span class="k">离线友好</span><p>每篇深读为<b>单文件 HTML</b>，封面与图表随目录存放；公式由 MathJax 渲染（首次需联网，之后浏览器缓存）。</p></li>
-        <li><span class="k">证据链</span><p><b>papers/text/</b> 保留 PDF 全文提取，博客中每个公式与数字都可在其中核对原文出处。</p></li>
-        <li><span class="k">复现实验</span><p>各卷附最小复刻路线与对照实验设计；配置好百炼 key 后可按 <b>_genimg.py</b> 管线重生成插图。</p></li>
-        <li><span class="k">扩展一卷</span><p>新增论文时：在 <b>blogs/</b> 放深读、在 <b>papers/</b> 放原文与提取，然后重跑 <b>logs/build_portal.py</b> 更新本门户目录表。</p></li>
-      </ul>
     </div>
   </div>
 </section>
@@ -841,11 +789,11 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
   <p class="foot-sub">MHML · RSI 深读指南 · Yetbye 的阅读笔记 · 2026</p>
   <div class="foot-links">
     <a href="#guide">深读四艺</a><a href="#scrolls">十二卷</a><a href="#constellation">谱系星图</a>
-    <a href="#lab">参照坐标</a><a href="#codex">仓库地图</a>
+    <a href="#lab">参照坐标</a>
     <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a>
   </div>
   <p class="foot-note">论文版权归原作者所有；各篇解读是我自己的深读笔记，其中的观点与批判不代表论文作者立场。
-  封面与插图部分由 AI 生成或基于论文原图裁剪，仅作学习用途。敬告读者：一切引用请回到 <b>papers/</b> 原文核对。</p>
+  封面与插图部分由 AI 生成或基于论文原图裁剪，仅作学习用途；正文引用请以论文原文为准。</p>
 </footer>
 
 <script>

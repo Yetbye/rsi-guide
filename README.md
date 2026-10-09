@@ -33,60 +33,20 @@
 | Εʹ 测试时梯度 | XI | [TTT-E2E](blogs/ttt-e2e/) | arXiv 2512.23675 |
 | Εʹ 测试时梯度 | XII | [In-Place TTT](blogs/inplace-ttt/) | arXiv 2604.06169 · ByteDance × PKU |
 
-## 仓库结构
+## 怎么读
 
-```
-RSI/
-├── index.html            # 门户（Venus 希腊暖金 · 古希腊风格）
-├── blogs/                # 12 篇深读 · 自包含单文件 HTML
-│   └── <slug>/
-│       ├── index.html            # 深读正文（MathJax + 内联 SVG）
-│       ├── BLOG_PLAN.md          # 写作计划与取证清单
-│       ├── ACCEPTANCE_*.md       # 验收记录
-│       ├── FINAL_*.md            # 交付说明与复现入口
-│       ├── assets/               # 封面等位图
-│       └── figures/              # 论文原图精准裁剪
-├── papers/
-│   ├── pdf/              # 12 篇论文原文
-│   └── text/             # 12 份 PDF 全文提取（公式核对依据）
-└── logs/                 # 构建日志 · 偏好档案 · 门户脚本
-```
+每篇都是一份自包含的网页，点开就能读（公式由 MathJax 渲染，首次打开需联网）。
 
-## 门户设计（Venus 协议）
+- **没有时间** → δ-mem → DnD → TTT-E2E：先把「记忆住在哪」的总问题、生成参数的全景、测试时训练的前沿各读一篇。
+- **跟生成参数这条线** → RPG → Text-to-LoRA → GenAdapter → DyPRAG → DnD → SHINE → Doc-to-LoRA。
+- **只看自改进的两端** → MEND（2022 的权重手术刀）→ In-Place TTT（2026 的就地快权重）。
 
-| 层 | 内容 |
-|----|------|
-| **Base** | Venus 常量：流体字号、8px 间距、`cubic-bezier(0.16,1,0.3,1)` 缓动、`prefers-reduced-motion` |
-| **Palette** | 配方 C「希腊暖金」：羊皮纸底 `#FBF8F1` / 青铜墨 `#2B2419` / 陶土红 `#B85C38` / 金 `#C09A54` |
-| **Decorations** | 回纹饰带（meander）、多立克柱、日晷星盘、桂冠、双耳瓶、神庙山花、菱形古典线 |
+每篇末尾都有：论文原文链接（自行核对）、研究问题卡（可以动手的方向）、以及我读完之后留下的疑问。
 
-希腊回纹由内联 SVG data-URI 平铺（非位图），任意分辨率不失真；门户其余图形全部程序化 SVG。
+## 延伸阅读：我参照的源头（Mu Lab）
 
-## 阅读路径
-
-- **时间有限** → δ-mem → DnD → TTT-E2E（在线记忆总览 · 生成参数全景 · 测试时训练前沿）
-- **生成参数主线** → RPG → Text-to-LoRA → GenAdapter → DyPRAG → DnD → SHINE → D2L
-- **自改进两端** → MEND（2022 权重手术刀）→ In-Place TTT（2026 就地快权重）
-
-## 本地使用
-
-```bash
-# 直接打开即可（无构建步骤）
-start index.html            # Windows
-# 或起一个静态服务
-python -m http.server 8080  # 然后访问 http://127.0.0.1:8080
-```
-
-门户目录表由脚本生成，新增一卷后重跑：
-
-```bash
-python logs/build_portal.py
-```
-
-## 我在读谁的工作（Mu Lab 相关仓库）
-
-- [In-Parameter-Learning](https://github.com/MuLabPKU/In-Parameter-Learning) — 纲领 · 立场论文《为什么终身 AI 系统需要的不止是更长的上下文》
-- [SHINE](https://github.com/MuLabPKU/SHINE) — 本指南卷 Ⅶ
+- [In-Parameter-Learning](https://github.com/MuLabPKU/In-Parameter-Learning) — 立场论文《为什么终身 AI 系统需要的不止是更长的上下文》，我这套笔记的问题线索来自这里
+- [SHINE](https://github.com/MuLabPKU/SHINE) — 卷 Ⅶ 的原作
 - [PiSSA](https://github.com/MuLabPKU/PiSSA) · [TransArch](https://github.com/MuLabPKU/TransArch) · [PaST](https://github.com/MuLabPKU/PaST) · [LIFT](https://github.com/MuLabPKU/LIFT) · [LooGLE-v2](https://github.com/MuLabPKU/LooGLE-v2) 等
 
 ## 说明
