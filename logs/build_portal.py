@@ -625,7 +625,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <span class="hero-tag">RECURSIVE SELF-IMPROVEMENT · A READING GUIDE</span>
     <h1><span class="hl">RSI</span> 深读指南</h1>
     <p class="hero-sub2">自改进之径 · 十二篇论文 · 五个容器</p>
-    <p class="hero-desc">跟随北大 Mu Lab 的 <b>In-Parameter Learning</b> 纲领：新知识应该住在哪里——上下文、权重、生成器、在线状态，还是测试时的梯度？十二篇深度解读，一条从<b>模型编辑</b>到<b>测试时训练</b>的自改进之路。</p>
+    <p class="hero-desc">沿 <b>In-Parameter Learning</b> 纲领的问题线索（Mu Lab 立场论文）：新知识应该住在哪里——上下文、权重、生成器、在线状态，还是测试时的梯度？十二篇深度解读，一条从<b>模型编辑</b>到<b>测试时训练</b>的自改进之路。</p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="#scrolls">开启十二卷</a>
       <a class="btn btn-outline" href="#lab">Mu Lab 灯塔</a>
@@ -736,8 +736,8 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
   <div class="container">
     <div class="section-head reveal">
       <span class="section-tag">Volume IV · ΦΑΡΟΣ</span>
-      <h2 class="section-title">灯塔 · 北大 Mu Lab</h2>
-      <p class="section-sub">本指南的坐标系，来自北京大学 Mu Lab 的 In-Parameter Learning 纲领。</p>
+      <h2 class="section-title">参照坐标 · In-Parameter Learning</h2>
+      <p class="section-sub">谱系线索参考 Mu Lab 的立场论文《In-Parameter Learning》。本仓库由 Yetbye 独立整理，与 Mu Lab 无隶属关系。</p>
       <div class="classical-line" aria-hidden="true"></div>
     </div>
     <div class="lab-wrap reveal">
@@ -768,7 +768,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
           <h3 style="font-size:clamp(1.3rem,2.6vw,1.8rem);color:var(--color-primary);margin:10px 0 4px">In-Parameter Learning</h3>
           <p style="font-family:var(--font-mono);font-size:11.5px;letter-spacing:1.5px;color:var(--text-muted)">WHY LIFELONG AI SYSTEMS NEED MORE THAN LONGER CONTEXT</p>
           <blockquote class="lab-quote">「现有 in-context 机制不足以支撑终身 AI；未来的终身系统应建立在混合范式之上——ICL 负责即时的、临时的、可逆的信息，In-Parameter Learning 负责持久的、累积的、可泛化的成长。」
-            <small>—— 译自 Mu Lab 立场论文 · Norizon AI / PKU / MIT / Tencent Youtu</small></blockquote>
+            <small>—— 译自 Mu Lab 立场论文（Norizon AI / PKU / MIT / Tencent Youtu）· 引用不构成隶属</small></blockquote>
           <ul class="lab-args">
             <li><b>上下文有硬上限</b>：终身经验的保守估计也超出当前百万 token 前沿数个数量级。</li>
             <li><b>长度 scaling 有三重障碍</b>：计算、数据与架构层面的根本性困难。</li>
@@ -777,12 +777,12 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
           </ul>
         </div>
         <div>
-          <span class="section-tag">GITHUB · MULABPKU</span>
+          <span class="section-tag">相关仓库 · GITHUB / MULABPKU</span>
           <div class="repo-list" style="margin-top:14px">
         {repos_block}
           </div>
-          <p class="lab-note">本仓库与前两个仓库的渊源：卷 Ⅶ <b>SHINE</b> 即 Mu Lab 本家工作（ICML 2026 · PMLR 306）；
-          卷 Ⅻ <b>In-Place TTT</b> 为 ByteDance Seed × PKU 合作。指南跟随其 IPL 纲领组织谱系。详见
+          <p class="lab-note">两条与本指南直接相关的线索：卷 Ⅶ <b>SHINE</b> 出自 Mu Lab（ICML 2026 · PMLR 306）；
+          卷 Ⅻ <b>In-Place TTT</b> 为 ByteDance Seed × PKU 合作。本指南沿 IPL 的问题线索独立组织谱系（非官方）。参考
           <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a></p>
         </div>
       </div>
@@ -838,7 +838,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     </g>
   </svg>
   <p class="foot-motto">ΓΝΩΘΙ ΣΑΥΤΟΝ</p>
-  <p class="foot-sub">MHML · RSI 深读指南 —— 跟随北大 Mu Lab 的 In-Parameter Learning 纲领</p>
+  <p class="foot-sub">MHML · RSI 深读指南 —— Yetbye 独立整理 · 谱系线索参考 In-Parameter Learning 纲领</p>
   <div class="foot-links">
     <a href="#guide">深读四艺</a><a href="#scrolls">十二卷</a><a href="#constellation">谱系星图</a>
     <a href="#lab">Mu Lab</a><a href="#codex">仓库地图</a>

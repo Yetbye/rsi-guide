@@ -2,9 +2,13 @@
 
 > 自改进之径 · 十二篇论文 · 五个容器
 >
-> 跟随北京大学 **Mu Lab** 的 *In-Parameter Learning* 纲领：新知识应该住在哪里——上下文、权重、生成器、在线状态，还是测试时的梯度？
+> 沿 **In-Parameter Learning** 纲领的问题线索（Mu Lab 立场论文）：新知识应该住在哪里——上下文、权重、生成器、在线状态，还是测试时的梯度？
 
+作者：**Yetbye** · 仓库：`Yetbye/rsi-guide`
 打开 **[`index.html`](index.html)** 进入门户（古希腊风格 · Venus「希腊暖金」配方）。
+
+> 声明：本仓库由 Yetbye 独立整理，与北京大学 Mu Lab 无隶属关系；卷四引用的
+> 《In-Parameter Learning》为 Mu Lab 公开立场论文，仅作谱系参照。
 
 ---
 
@@ -79,7 +83,7 @@ python -m http.server 8080  # 然后访问 http://127.0.0.1:8080
 python logs/build_portal.py
 ```
 
-## 图谱：Mu Lab 相关仓库
+## 图谱：相关上游仓库（Mu Lab）
 
 - [In-Parameter-Learning](https://github.com/MuLabPKU/In-Parameter-Learning) — 纲领 · 立场论文《为什么终身 AI 系统需要的不止是更长的上下文》
 - [SHINE](https://github.com/MuLabPKU/SHINE) — 本指南卷 Ⅶ
@@ -87,6 +91,7 @@ python logs/build_portal.py
 
 ## 说明
 
+- 本仓库为个人独立整理（作者 Yetbye），与 Mu Lab 及所涉论文作者无隶属或合作关系。
 - 论文版权归原作者所有；各卷解读为本仓库原创深读文本，批判观点不代表论文作者立场。
 - 封面与插图部分由 AI 生成（阿里云百炼 qwen-image）或基于论文原图裁剪，仅作学习用途。
 - 生成脚本 `blogs/*/_genimg.py` 通过环境变量 `DASHSCOPE_API_KEY` 读取密钥，仓库内不含任何 API key。
