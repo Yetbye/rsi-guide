@@ -164,7 +164,7 @@ tr:hover td{background:rgba(124,58,237,0.09)}
     <p class="hero-desc">普通 RAG 把检索到的文档拼进上下文：推理成本随文档数线性涨，且当模型内部知识与外部文档冲突时会犯"<em>RAG 幻觉</em>"——明明给了正确文档，模型还是按自己记错的参数知识回答。Parametric RAG（PRAG）换了个思路：离线为每篇文档微调一个 LoRA，在线时直接把文档"换"成可加载的参数，推理零上下文开销。但它的代价是<em>每篇文档都要单独训练、单独存储</em>——300 个测试文档就要 672MB，换到真实系统的上万篇文档就是 18.66GB。DyPRAG 的洞察只有一句：PRAG 本质上在学一个映射函数 $F$（文档→参数），那为什么不<em>直接</em>学一个通用的小函数 $F'$？论文用一个 ~4M 参数的 MLP hypernetwork（parameter translator），先让 PRAG 为 4800 篇文档训出 LoRA 当"老师"，再教这个 translator 模仿老师的映射；训完之后，任何新文档——哪怕训练时没见过——都能在几毫秒内被翻译成一个 LoRA，即插即用。本文只讲这篇论文自身的原创构造：蒸馏视角为什么成立、三重损失为什么缺一不可、以及它与刚做过的 Generative Adapter 到底差在哪。</p>
     <div class="hero-art">
       <img src="assets/hero_cover.jpg" alt="DyPRAG封面：展开古卷文字飘散成萤火，结晶为紫金晶体矩阵" class="hero-img">
-      <p class="hero-caption">写意之美：左一卷半透明古卷，文字如萤火升腾为发光尘埃；尘埃在右下方被无形的手编织、沉降，结晶成一簇悬浮的紫金色几何矩阵——这就是 parameter translator 做的事：把粗糙的文本蒸馏成精炼的参数晶体</p>
+      <p class="hero-caption">封面（AI 绘制 · 水彩写意）：左一卷半透明古卷，文字如萤火升腾为发光尘埃；尘埃在右下方被无形的手编织、沉降，结晶成一簇悬浮的紫金色几何矩阵——这就是 parameter translator 做的事：把粗糙的文本蒸馏成精炼的参数晶体</p>
     </div>
     <div class="hero-stats">
       <div class="hero-stat"><div class="hero-stat-num">0.04%</div><div class="hero-stat-label">存储仅为 PRAG</div></div>

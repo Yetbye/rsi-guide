@@ -1,20 +1,20 @@
 # MHML · RSI 深读指南
 
 > 自改进之径 · 十二篇论文 · 五个容器
->
-> 沿 **In-Parameter Learning** 纲领的问题线索（Mu Lab 立场论文）：新知识应该住在哪里——上下文、权重、生成器、在线状态，还是测试时的梯度？
 
-作者：**Yetbye** · 仓库：`Yetbye/rsi-guide`
+这是我读 RSI（递归自改进）方向的深度笔记：**新知识该住在哪里**——上下文、权重、生成器、在线状态，还是测试时的梯度？
+十二篇论文，一条从模型编辑走到测试时训练的路。每篇都拆公式、逐表读数，把我读到的矛盾和还想追的问题一并写下来。
+
 打开 **[`index.html`](index.html)** 进入门户（古希腊风格 · Venus「希腊暖金」配方）。
 
-> 声明：本仓库由 Yetbye 独立整理，与北京大学 Mu Lab 无隶属关系；卷四引用的
-> 《In-Parameter Learning》为 Mu Lab 公开立场论文，仅作谱系参照。
+> 问题线索来自 Mu Lab 的立场论文《In-Parameter Learning》，它把「新知识该住在哪里」问得最清楚。
+> 这套笔记是我沿这个问题往下读的结果；除引用其公开论文外，与 Mu Lab 无其他关联。
 
 ---
 
 ## 这是什么
 
-一份 **Recursive Self-Improvement（RSI）方向的深度阅读指南**。每篇博客不是论文摘要，而是陪读者走完全程：从零建立坐标系 → 数学谱系 → 实验逐表精读 → 法证式批判 → 开放研究问题与复现入口。目标：**读完一篇 ≈ 该方向入门到能独立提出科研问题**。
+一份 **Recursive Self-Improvement（RSI）方向的深度阅读笔记**。每篇都不是论文摘要，而是陪你走完全程：从零建立坐标系 → 数学谱系 → 实验逐表精读 → 法证式批判 → 开放研究问题与复现入口。目标只有一个：**读完一篇 ≈ 该方向入门到能独立提出科研问题**。
 
 ## 十二卷 · 五容器谱系
 
@@ -83,7 +83,7 @@ python -m http.server 8080  # 然后访问 http://127.0.0.1:8080
 python logs/build_portal.py
 ```
 
-## 图谱：相关上游仓库（Mu Lab）
+## 我在读谁的工作（Mu Lab 相关仓库）
 
 - [In-Parameter-Learning](https://github.com/MuLabPKU/In-Parameter-Learning) — 纲领 · 立场论文《为什么终身 AI 系统需要的不止是更长的上下文》
 - [SHINE](https://github.com/MuLabPKU/SHINE) — 本指南卷 Ⅶ
@@ -91,8 +91,7 @@ python logs/build_portal.py
 
 ## 说明
 
-- 本仓库为个人独立整理（作者 Yetbye），与 Mu Lab 及所涉论文作者无隶属或合作关系。
-- 论文版权归原作者所有；各卷解读为本仓库原创深读文本，批判观点不代表论文作者立场。
+- 论文版权归原作者所有；各篇解读是我自己的深读笔记，其中的批判观点不代表论文作者立场。
 - 封面与插图部分由 AI 生成（阿里云百炼 qwen-image）或基于论文原图裁剪，仅作学习用途。
 - 生成脚本 `blogs/*/_genimg.py` 通过环境变量 `DASHSCOPE_API_KEY` 读取密钥，仓库内不含任何 API key。
 - 一切引用请回到 `papers/` 原文核对。

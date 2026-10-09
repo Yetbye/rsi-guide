@@ -164,7 +164,7 @@ tr:hover td{background:rgba(22,163,74,0.09)}
     <p class="hero-desc">大模型适配新上下文，长期只有两条路：<strong>prompting</strong>把信息留在输入里，推理时每次都要重新 attend 整段上下文，K-V 缓存随长度线性膨胀；<strong>fine-tuning / continual pretraining</strong>把信息写进参数，推理零开销，但要付出多步反向传播的训练成本、且数据低效。本文提出第三条路：冻结底座 $\Theta_{base}$ 完全不动，另训一个轻量"adapter 生成器" $G$，新上下文一来，$G$ 一次前向就吐出一组加性低秩权重 $\Delta$，于是 $\Theta_{new}=\Theta_{base}+\Delta$。灵感来自 1992 年 Schmidhuber 的 fast weights——但本文把 slow network 与 fast network 合并成同一个网络：<em>底座自己编码上下文、再用编码结果更新自己</em>。这是"自编程（self-programming）"范式。本文只讲这篇论文自身的原创构造：外积二阶统计如何摆脱上下文长度依赖、$S_t$ 递推为何像 RNN 记忆、SVD 谱归一化为何既治数值爆炸又顺手长出 LoRA，以及 reconstruction+completion 双任务为何缺一不可。</p>
     <div class="hero-art">
       <img src="assets/hero_cover.jpg" alt="Generative Adapter封面：流动文本流经单次前向光点，凝固为规整权重矩阵" class="hero-img">
-      <p class="hero-caption">写意之美：左侧蜿蜒的松绿与赤陶墨色文本流，经中央一道金色前向光点轨迹，向右结晶成行列整齐的权重矩阵——上下文没有留在 K-V 缓存里，而是被压进了 $\Delta$ 这个低秩网格</p>
+      <p class="hero-caption">封面（AI 绘制 · 水彩写意）：左侧蜿蜒的松绿与赤陶墨色文本流，经中央一道金色前向光点轨迹，向右结晶成行列整齐的权重矩阵——上下文没有留在 K-V 缓存里，而是被压进了 $\Delta$ 这个低秩网格</p>
     </div>
     <div class="hero-stats">
       <div class="hero-stat"><div class="hero-stat-num">+63.5%</div><div class="hero-stat-label">StreamingQA 32K F1 vs SFT</div></div>

@@ -37,6 +37,9 @@ h1,h2,h3,h4{font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:
 .hero-tagline{font-family:'Noto Serif SC',serif;font-size:clamp(1rem,2.6vw,1.2rem);color:var(--ink-soft);font-weight:700;margin-bottom:8px}
 .hero-desc{font-size:14px;color:var(--ink-muted);max-width:660px;margin:0 auto 26px}
 .hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:26px}
+.hero-art{margin:20px auto 8px;max-width:760px;width:100%}
+.hero-img{width:100%;height:auto;border-radius:24px;box-shadow:0 24px 70px -24px rgba(15,23,42,0.18);border:1px solid rgba(20,184,166,0.12)}
+.hero-caption{font-family:'Noto Sans SC',sans-serif;font-size:11px;color:var(--ink-muted);margin-top:10px;font-style:italic;line-height:1.6}
 .hstat{background:rgba(255,255,255,0.65);backdrop-filter:blur(8px);border:1px solid rgba(99,102,241,0.18);border-radius:16px;padding:14px 8px}
 .hstat b{display:block;font-family:'Noto Serif SC',serif;font-size:1.5rem;color:var(--indigo-700)}
 .hstat span{font-size:11px;color:var(--ink-muted)}
@@ -94,7 +97,10 @@ footer h3{color:#fff;font-size:1.2rem;margin-bottom:14px}
 footer ol{margin-left:20px;font-size:13px;line-height:1.8}
 footer a{color:var(--orange-300);text-decoration:none}
 footer .fin{margin-top:26px;font-size:12px;color:#64748b;border-top:1px solid #1e293b;padding-top:18px}
-@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}
+.hero-art{margin:20px auto 8px;max-width:760px;width:100%}
+.hero-img{width:100%;height:auto;border-radius:24px;box-shadow:0 24px 70px -24px rgba(15,23,42,0.18);border:1px solid rgba(20,184,166,0.12)}
+.hero-caption{font-family:'Noto Sans SC',sans-serif;font-size:11px;color:var(--ink-muted);margin-top:10px;font-style:italic;line-height:1.6}.nav-links{display:none}}
 </style>
 </head>
 <body>
@@ -115,6 +121,11 @@ footer .fin{margin-top:26px;font-size:12px;color:#64748b;border-top:1px solid #1
     <h1>In-Place TTT：把 MLP 投影矩阵变成测试时记忆</h1>
     <p class="hero-tagline">零架构改动 × Drop-in 替换 × LM-Aligned 目标 × 上下文并行</p>
     <p class="hero-desc">之前的 TTT 方法需要引入新层、从头预训练、用通用重建目标——这让 TTT 难以进入 LLM 主流生态。这篇论文提出 In-Place TTT：直接把 MLP block 的最终投影矩阵 $W_{down}$ 当作 fast weights，不需要改架构，不需要从头训练，用与 next-token prediction 对齐的目标做测试时更新。本篇从 TTT 底层逻辑讲起，逐步拆解方法、理论证明与实验。</p>
+    
+    <div class="hero-art">
+      <img src="assets/hero_cover.jpg" alt="水彩写意：矩阵在神经网络中原地更新" class="hero-img">
+      <p class="hero-caption">封面（AI 绘制）：嵌入神经网络中的矩阵网格，一行正在原地发光更新，橙绿光芒沿行扩散——In-Place TTT 的核心隐喻：不引入新层，直接把 MLP 的 W_down 变成动态记忆。</p>
+    </div>
     <div class="hero-stats">
       <div class="hstat"><b>4B</b><span>Qwen3 模型</span></div>
       <div class="hstat"><b>128K</b><span>上下文长度</span></div>

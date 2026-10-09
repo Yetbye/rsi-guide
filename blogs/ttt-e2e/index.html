@@ -37,6 +37,9 @@ h1,h2,h3,h4{font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:
 .hero-tagline{font-family:'Noto Serif SC',serif;font-size:clamp(1rem,2.6vw,1.25rem);color:var(--ink-soft);font-weight:700;margin-bottom:8px}
 .hero-desc{font-size:14px;color:var(--ink-muted);max-width:660px;margin:0 auto 26px}
 .hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:26px}
+.hero-art{margin:20px auto 8px;max-width:760px;width:100%}
+.hero-img{width:100%;height:auto;border-radius:24px;box-shadow:0 24px 70px -24px rgba(15,23,42,0.18);border:1px solid rgba(20,184,166,0.12)}
+.hero-caption{font-family:'Noto Sans SC',sans-serif;font-size:11px;color:var(--ink-muted);margin-top:10px;font-style:italic;line-height:1.6}
 .hstat{background:rgba(255,255,255,0.65);backdrop-filter:blur(8px);border:1px solid rgba(20,184,166,0.18);border-radius:16px;padding:14px 8px}
 .hstat b{display:block;font-family:'Noto Serif SC',serif;font-size:1.5rem;color:var(--teal-700)}
 .hstat span{font-size:11px;color:var(--ink-muted)}
@@ -92,7 +95,10 @@ footer h3{color:#fff;font-size:1.2rem;margin-bottom:14px}
 footer ol{margin-left:20px;font-size:13px;line-height:1.8}
 footer a{color:var(--amber-300);text-decoration:none}
 footer .fin{margin-top:26px;font-size:12px;color:#64748b;border-top:1px solid #1e293b;padding-top:18px}
-@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}
+.hero-art{margin:20px auto 8px;max-width:760px;width:100%}
+.hero-img{width:100%;height:auto;border-radius:24px;box-shadow:0 24px 70px -24px rgba(15,23,42,0.18);border:1px solid rgba(20,184,166,0.12)}
+.hero-caption{font-family:'Noto Sans SC',sans-serif;font-size:11px;color:var(--ink-muted);margin-top:10px;font-style:italic;line-height:1.6}.nav-links{display:none}}
 </style>
 </head>
 <body>
@@ -113,6 +119,11 @@ footer .fin{margin-top:26px;font-size:12px;color:#64748b;border-top:1px solid #1
     <h1>E2E TTT：让模型在推理时继续学习</h1>
     <p class="hero-tagline">测试时训练 × 端到端 next-token 预测 × 元学习初始化</p>
     <p class="hero-desc">不换架构、不扩上下文——只用滑动窗口注意力 + 测试时梯度下降，让 3B 模型在 128K 上下文上达到全注意力级别的 loss，同时推理延迟保持常数。本篇从 TTT 的底层逻辑讲起，逐步拆解这篇论文的全部方法与实验。</p>
+    
+    <div class="hero-art">
+      <img src="assets/hero_cover.jpg" alt="水彩写意：大脑神经网络在阅读 token 流时主动学习" class="hero-img">
+      <p class="hero-caption">封面（AI 绘制）：左侧流动的 token 溪流汇入右侧发光的大脑神经网络，梯度箭头携信息涌入节点——E2E TTT 的核心隐喻：模型在推理时持续学习，上下文被压缩进参数。</p>
+    </div>
     <div class="hero-stats">
       <div class="hstat"><b>3B</b><span>模型参数</span></div>
       <div class="hstat"><b>164B</b><span>训练 token</span></div>

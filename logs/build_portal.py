@@ -75,7 +75,7 @@ PAPERS = [
     dict(slug="shine", roman="VII", group="G",
          cn="SHINE 深度解读", en="SHINE: A Scalable In-Context Hypernetwork for Mapping Context to LoRA",
          venue="ICML 2026 · PMLR 306 · 北大 Mu Lab",
-         desc="Mu Lab 本家：冻结 LLM 全层 memory states + 行列交替双向注意力，单次前向生成全层 LoRA。",
+         desc="冻结 LLM 全层 memory states + 行列交替双向注意力，单次前向生成全层 LoRA——参数生成路线的最新一站。",
          meta="13 章 · 3 图",
          sw=["#6B1D2A", "#8B3040", "#C9A227"], cover="blogs/shine/assets/cover.jpg", monogram="SHN"),
     dict(slug="d2l", roman="VIII", group="G",
@@ -206,7 +206,7 @@ def build():
           <p class="card-en">{esc(p["en"])}</p>
           <p class="card-desc">{esc(p["desc"])}</p>
           <div class="card-links">
-            <a class="btn btn-primary" href="blogs/{p["slug"]}/index.html">读深读</a>
+            <a class="btn btn-primary" href="blogs/{p["slug"]}/index.html">开始阅读</a>
             <a class="btn btn-ghost" href="papers/pdf/{p.get("pdfname", p["slug"])}.pdf">论文 PDF</a>
             <a class="btn btn-ghost" href="papers/text/{p["slug"]}.txt">全文提取</a>
           </div>
@@ -305,7 +305,7 @@ def build():
     # ------------------------------------------------------------- mu repos
     repo_rows = []
     for name, desc, kind in MU_REPOS:
-        badge = {"guide": "纲领", "collection": "本指南", "repo": "仓库"}[kind]
+        badge = {"guide": "纲领", "collection": "本笔记", "repo": "仓库"}[kind]
         cls = {"guide": "mark-guide", "collection": "mark-collection", "repo": "mark-repo"}[kind]
         repo_rows.append(
             f'<a class="repo-row {cls}" href="https://github.com/MuLabPKU/{name}" target="_blank" rel="noopener">'
@@ -322,7 +322,7 @@ def build():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MHML · RSI 深读指南 | 自改进之路 · Twelve Tomes</title>
-<meta name="description" content="跟随北大 Mu Lab 的 In-Parameter Learning 纲领：12 篇 RSI 论文深度解读——模型编辑、参数生成、在线记忆、测试时训练。">
+<meta name="description" content="Yetbye 的 RSI 论文深读笔记：12 篇从模型编辑、参数生成、在线记忆到测试时训练的深度解读，沿 In-Parameter Learning 的问题线索展开。">
 <style>
 /* ============================================================
    VENUS / Palette C — Hellenic Gold（希腊暖金）
@@ -575,7 +575,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <a class="nav-link" href="#guide">卷一 · 深读四艺</a>
     <a class="nav-link" href="#scrolls">卷二 · 十二卷</a>
     <a class="nav-link" href="#constellation">卷三 · 谱系星图</a>
-    <a class="nav-link" href="#lab">卷四 · 参照坐标</a>
+    <a class="nav-link" href="#lab">卷四 · 问题从哪来</a>
     <a class="nav-link" href="#codex">卷五 · 仓库地图</a>
   </div>
 </nav>
@@ -625,10 +625,10 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <span class="hero-tag">RECURSIVE SELF-IMPROVEMENT · A READING GUIDE</span>
     <h1><span class="hl">RSI</span> 深读指南</h1>
     <p class="hero-sub2">自改进之径 · 十二篇论文 · 五个容器</p>
-    <p class="hero-desc">沿 <b>In-Parameter Learning</b> 纲领的问题线索（Mu Lab 立场论文）：新知识应该住在哪里——上下文、权重、生成器、在线状态，还是测试时的梯度？十二篇深度解读，一条从<b>模型编辑</b>到<b>测试时训练</b>的自改进之路。</p>
+    <p class="hero-desc">这是我读 RSI（递归自改进）方向的深度笔记：<b>新知识该住在哪里</b>——上下文、权重、生成器、在线状态，还是测试时的梯度？十二篇论文，一条从<b>模型编辑</b>走到<b>测试时训练</b>的路。每篇都拆公式、逐表读数，把我读到的矛盾、和我还想追的问题，一并写下来。</p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="#scrolls">开启十二卷</a>
-      <a class="btn btn-outline" href="#lab">纲领参照</a>
+      <a class="btn btn-outline" href="#lab">问题从哪来</a>
     </div>
     <p class="motto">ΓΝΩΘΙ ΣΑΥΤΟΝ<small>「认识你自己」——自改进研究的起点</small></p>
     <div class="stats" role="list">
@@ -649,31 +649,31 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <div class="section-head reveal">
       <span class="section-tag">Volume I · ΤΕΧΝΗ</span>
       <h2 class="section-title">深读四艺</h2>
-      <p class="section-sub">每篇博客遵循同一套工艺：从零建立坐标系 → 数学谱系 → 实验逐表精读 → 法证批判 → 开放问题与复现入口。</p>
+      <p class="section-sub">每篇都遵循同一套工艺：从零建立坐标系 → 数学谱系 → 实验逐表精读 → 法证批判 → 开放问题与复现入口。</p>
       <div class="classical-line" aria-hidden="true"></div>
     </div>
-    <p class="guide-lead reveal">不是论文摘要，而是<b>陪读者走完全程</b>：每篇 10–18 章、含公式变量表与反事实分析、逐条取证论文内部矛盾、
+    <p class="guide-lead reveal">我不写论文摘要，而是<b>陪你走完全程</b>：每篇 10–18 章，含公式变量表与反事实分析、逐条取证论文内部矛盾，
     并给出可动手的研究问题卡。目标只有一个：<b>读完一篇 ≈ 该方向入门到能独立提出科研问题</b>。</p>
     <div class="arts">
       <div class="art reveal">
         <span class="gr">ΜΑΘΗΜΑ</span>
         <h3>数学推导</h3>
-        <p>每个公式配变量表、直觉与反事实分析——去掉这一项会发生什么；关键推导链逐步复算，公式全部经 PDF 全文提取核对。</p>
+        <p>每个公式都配变量表、直觉与反事实分析——去掉这一项会发生什么；关键推导链逐步复算，公式逐条对照 PDF 全文核对。</p>
       </div>
       <div class="art reveal">
         <span class="gr">ΚΡΙΣΙΣ</span>
         <h3>法证批判</h3>
-        <p>每条批判遵循「证据 → 推理 → 影响 → 补救」四段式，含论文内部矛盾与数据异常的逐条取证，不放过一句自相矛盾的表述。</p>
+        <p>每条批判都按「证据 → 推理 → 影响 → 补救」四段式写，论文内部矛盾与数据异常逐条取证——对不上的地方，我不会放过。</p>
       </div>
       <div class="art reveal">
         <span class="gr">ΖΗΤΗΣΙΣ</span>
         <h3>研究问题</h3>
-        <p>每篇 5 张科研问题卡，从零成本可验证的小实验到理论方向分级排列——把读者从"看懂"推向"能提问题"。</p>
+        <p>每篇 5 张科研问题卡，从零成本可验证的小实验到理论方向分级排列——读完不该只停留在"看懂"，而是能提出问题。</p>
       </div>
       <div class="art reveal">
         <span class="gr">ΠΡΑΞΙΣ</span>
         <h3>复现入口</h3>
-        <p>代码块按可信度标注（可运行 / 示意），给出最小复刻路线与对照实验设计；论文原图精准裁剪、全文提取留档备查。</p>
+        <p>代码块按可信度如实标注（可运行 / 示意），给出最小复刻路线与对照实验设计；论文原图精准裁剪、全文提取一并留档。</p>
       </div>
     </div>
     <div class="paths">
@@ -705,7 +705,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <div class="section-head reveal">
       <span class="section-tag">Volume II · ΙΒ ΤΟΜΟΙ</span>
       <h2 class="section-title">十二卷</h2>
-      <p class="section-sub">按五容器谱系分组：静态参数 → 生成参数 → 在线状态 → 测试时梯度。每卷均可独立成篇，也可沿谱系连读。</p>
+      <p class="section-sub">按五容器谱系分组：静态参数 → 生成参数 → 在线状态 → 测试时梯度。每篇都能独立读，也可以顺着谱系一路读下去。</p>
       <div class="classical-line" aria-hidden="true"></div>
     </div>
 {cards_block}
@@ -727,7 +727,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <p class="const-note reveal">从 <b>ICL</b>（全上下文）出发，参数化的路径逐渐分叉：<b>静态参数</b>在被冻结的权重上做手术；
     <b>生成参数</b>用超网络一次前向造出增量权重；<b>在线状态</b>在权重之外维护一块持续读写的记忆；
     <b>测试时梯度</b>干脆在推理期跑内环学习。它们不是替代关系，而是一组可组合的容器——
-    这也是 Mu Lab 纲领中「ICL 与 In-Parameter Learning 互补」的工程学注脚。</p>
+    这是我读 In-Parameter Learning 那篇纲领时最有共鸣的一点。</p>
   </div>
 </section>
 
@@ -735,9 +735,9 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
 <section class="section alt" id="lab">
   <div class="container">
     <div class="section-head reveal">
-      <span class="section-tag">Volume IV · ΦΑΡΟΣ</span>
-      <h2 class="section-title">参照坐标 · In-Parameter Learning</h2>
-      <p class="section-sub">谱系线索参考 Mu Lab 的立场论文《In-Parameter Learning》。本仓库由 Yetbye 独立整理，与 Mu Lab 无隶属关系。</p>
+      <span class="section-tag">Volume IV · ΠΗΓΗ</span>
+      <h2 class="section-title">问题从哪来</h2>
+      <p class="section-sub">我读 RSI 的问题线索，来自 Mu Lab 的立场论文《In-Parameter Learning》。它把「新知识该住在哪里」这个问题问得最清楚——这套笔记就是沿着它往下读的结果。</p>
       <div class="classical-line" aria-hidden="true"></div>
     </div>
     <div class="lab-wrap reveal">
@@ -768,12 +768,12 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
           <h3 style="font-size:clamp(1.3rem,2.6vw,1.8rem);color:var(--color-primary);margin:10px 0 4px">In-Parameter Learning</h3>
           <p style="font-family:var(--font-mono);font-size:11.5px;letter-spacing:1.5px;color:var(--text-muted)">WHY LIFELONG AI SYSTEMS NEED MORE THAN LONGER CONTEXT</p>
           <blockquote class="lab-quote">「现有 in-context 机制不足以支撑终身 AI；未来的终身系统应建立在混合范式之上——ICL 负责即时的、临时的、可逆的信息，In-Parameter Learning 负责持久的、累积的、可泛化的成长。」
-            <small>—— 译自 Mu Lab 立场论文（Norizon AI / PKU / MIT / Tencent Youtu）· 引用不构成隶属</small></blockquote>
+            <small>—— 译自 Mu Lab 立场论文《In-Parameter Learning》· Norizon AI / PKU / MIT / Tencent Youtu</small></blockquote>
           <ul class="lab-args">
             <li><b>上下文有硬上限</b>：终身经验的保守估计也超出当前百万 token 前沿数个数量级。</li>
             <li><b>长度 scaling 有三重障碍</b>：计算、数据与架构层面的根本性困难。</li>
             <li><b>参数学习抬高能力天花板</b>：把新知识固化进权重——累积增长、更好泛化、推理开销更低。</li>
-            <li><b>ICL 与 IPL 互补而非竞争</b>：本指南的十二卷，正是 IPL 纲领下「参数更新容器」的全景测绘。</li>
+            <li><b>ICL 与 IPL 互补而非竞争</b>：这本指南的十二篇，就是沿这个框架对「参数更新容器」做的一次全景测绘。</li>
           </ul>
         </div>
         <div>
@@ -781,8 +781,8 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
           <div class="repo-list" style="margin-top:14px">
         {repos_block}
           </div>
-          <p class="lab-note">两条与本指南直接相关的线索：卷 Ⅶ <b>SHINE</b> 出自 Mu Lab（ICML 2026 · PMLR 306）；
-          卷 Ⅻ <b>In-Place TTT</b> 为 ByteDance Seed × PKU 合作。本指南沿 IPL 的问题线索独立组织谱系（非官方）。参考
+          <p class="lab-note">这套笔记里有两篇直接相关：卷 Ⅶ <b>SHINE</b> 出自 Mu Lab（ICML 2026 · PMLR 306），
+          卷 Ⅻ <b>In-Place TTT</b> 是 ByteDance Seed × PKU 的合作工作。想追去源头，看
           <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a></p>
         </div>
       </div>
@@ -838,13 +838,13 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     </g>
   </svg>
   <p class="foot-motto">ΓΝΩΘΙ ΣΑΥΤΟΝ</p>
-  <p class="foot-sub">MHML · RSI 深读指南 —— Yetbye 独立整理 · 谱系线索参考 In-Parameter Learning 纲领</p>
+  <p class="foot-sub">MHML · RSI 深读指南 · Yetbye 的阅读笔记 · 2026</p>
   <div class="foot-links">
     <a href="#guide">深读四艺</a><a href="#scrolls">十二卷</a><a href="#constellation">谱系星图</a>
     <a href="#lab">参照坐标</a><a href="#codex">仓库地图</a>
     <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a>
   </div>
-  <p class="foot-note">论文版权归原作者所有；各卷解读为本仓库原创深读文本，观点与批判不代表论文作者立场。
+  <p class="foot-note">论文版权归原作者所有；各篇解读是我自己的深读笔记，其中的观点与批判不代表论文作者立场。
   封面与插图部分由 AI 生成或基于论文原图裁剪，仅作学习用途。敬告读者：一切引用请回到 <b>papers/</b> 原文核对。</p>
 </footer>
 

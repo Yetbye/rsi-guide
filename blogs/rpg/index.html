@@ -164,7 +164,7 @@ tr:hover td{background:rgba(8,145,178,0.09)}
     <p class="hero-desc">参数生成（parameter generation）这个领域已经落后主流模型十年了。当 LLaMA3 有 70B 参数、ConvNeXt-L 有 200M 参数时，最强的参数生成器 SANE 也只能生成 85M 以下的小模型——中间差了至少三个数量级。RPG（Recurrent diffusion for large-scale Parameter Generation）是 NUS Yang You 组 2025 年的工作，第一次在单张消费级 GPU 上完整生成了 ConvNeXt-L（197.8M 参数）和 LLaMA-7B 的 DoRA 权重，生成模型在 ImageNet 上达到与原训练模型几乎一致的精度。它的核心想法不是"把参数当图片去噪"，而是把整个网络的权重切成 8192 个 token，先用一个 Mamba 循环模型把 token 之间的全局关系压缩成"原型"（prototype），再让 1D 卷积扩散模型以这些原型为条件、从噪声里逐个去噪出 token。循环负责"全局一致性"，扩散负责"局部精度"——这是它能 scale 到两亿参数的关键解耦。本文只讲论文自身的原创构造：为什么必须循环、为什么 tokenization 要按层归一、permutation state 怎么治神经对称、以及它为什么能泛化到训练时没见过的任务。</p>
     <div class="hero-art">
       <img src="assets/hero_cover.jpg" alt="RPG封面：噪声沿逆时针盘旋光轨凝聚成发光神经网络" class="hero-img">
-      <p class="hero-caption">写意之美：左上一团混沌的电子噪声，沿逆时针盘旋的光轨一圈圈净化、去噪，每盘旋一轮轮廓更清晰一分，最终在右下方结晶成一个完整发光的神经网络——这就是 RPG 的循环扩散：recurrent 负责把全局关系压进原型，diffusion 负责把原型去噪成具体权重</p>
+      <p class="hero-caption">封面（AI 绘制 · 水彩写意）：左上一团混沌的电子噪声，沿逆时针盘旋的光轨一圈圈净化、去噪，每盘旋一轮轮廓更清晰一分，最终在右下方结晶成一个完整发光的神经网络——这就是 RPG 的循环扩散：recurrent 负责把全局关系压进原型，diffusion 负责把原型去噪成具体权重</p>
     </div>
     <div class="hero-stats">
       <div class="hero-stat"><div class="hero-stat-num">197.8M</div><div class="hero-stat-label">生成最大参数（ConvNeXt-L）</div></div>
