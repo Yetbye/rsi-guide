@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BaryBind 深度解读 | 用 Wasserstein 重心绑定多模态：理论、对偶与体积几何</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+
+:root{
+  /* === Venus · 配方 暖白陶土 (Warm Terracotta) === */
+  --bg-primary:#FBF7F0; --bg-secondary:#F5EDE0; --bg-tertiary:#E9DCC8;
+  --text-primary:#33241A; --text-secondary:#5F4B3B; --text-muted:#8C7663;
+  --color-primary:#7A3B2E; --color-secondary:#2F6E75; --color-tertiary:#4A2E22;
+  --accent-warm:#C15B36; --accent-gold:#B5893F; --accent-soft:#E4C79B;
+  --ink-line:rgba(51,36,26,.12);
+  --font-display:'Noto Serif SC','Source Han Serif SC','Playfair Display',Georgia,serif;
+  --font-body:'Noto Sans SC','PingFang SC','Microsoft YaHei',-apple-system,sans-serif;
+  --font-hand:'Ma Shan Zheng','Zhi Mang Xing',cursive;
+  --font-mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+  --ease-out:cubic-bezier(0.16,1,0.3,1); --duration:.4s;
+  --radius-lg:16px;
+  --shadow-sm:0 2px 8px rgba(51,36,26,.08); --shadow-md:0 4px 16px rgba(51,36,26,.12); --shadow-lg:0 8px 32px rgba(51,36,26,.17);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);color:var(--text-primary);background:var(--bg-primary);line-height:1.9;font-size:16.5px;
+  background-image:repeating-linear-gradient(0deg,rgba(51,36,26,.018) 0 1px,transparent 1px 32px),repeating-linear-gradient(90deg,rgba(51,36,26,.018) 0 1px,transparent 1px 32px)}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:900;letter-spacing:-.015em;color:var(--color-primary)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(248,246,240,.88);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--bg-tertiary);padding:0 24px}
+.nav-inner{max-width:1140px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:54px}
+.nav-logo{font-family:var(--font-display);font-weight:900;font-size:15px;color:var(--color-primary)}
+.nav-logo em{font-style:normal;color:var(--accent-warm)}
+.nav-links{display:flex;gap:11px;flex-wrap:wrap}
+.nav-links a{font-size:11px;color:var(--text-muted);text-decoration:none;letter-spacing:.5px;position:relative;padding:3px 0}
+.nav-links a::after{content:'';position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--accent-warm);transform:scaleX(0);transform-origin:left;transition:transform var(--duration) var(--ease-out)}
+.nav-links a:hover{color:var(--color-primary)}.nav-links a:hover::after{transform:scaleX(1)}
+.hero{position:relative;min-height:94vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:110px 24px 70px;
+  background:linear-gradient(178deg,#F3EADB 0%,#FBF7F0 42%,#F6EDDD 100%)}
+.hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 620px 300px at 14% 12%,rgba(26,26,26,.06),transparent 62%),
+             radial-gradient(ellipse 480px 300px at 86% 84%,rgba(60,90,74,.09),transparent 62%),
+             radial-gradient(ellipse 400px 240px at 80% 10%,rgba(196,77,63,.07),transparent 60%)}
+.hero-wrap{position:relative;z-index:2;width:100%;max-width:860px;text-align:center}
+.hero-badge{display:inline-flex;background:rgba(255,255,255,.7);backdrop-filter:blur(10px);border:1px solid rgba(26,26,26,.22);color:var(--color-primary);padding:7px 20px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:3px;margin-bottom:18px}
+.hero h1{font-size:clamp(2.3rem,6.6vw,4.2rem);line-height:1.16;margin:10px 0 12px}
+.hero h1 .mark{background:var(--color-primary);color:#F8F6F0;padding:.05em .28em;border-radius:.16em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.hero-tagline{font-family:var(--font-display);font-size:clamp(1rem,2.4vw,1.26rem);color:var(--color-secondary);font-weight:800;margin-bottom:8px}
+.hero-desc{font-size:14.5px;color:var(--text-secondary);max-width:680px;margin:0 auto 24px}
+.hero-art{margin:6px auto 4px;max-width:820px;width:100%;border-radius:24px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid rgba(26,26,26,.12);background:#f4f1e8}
+.hero-art svg{display:block;width:100%;height:auto}
+.hero-img{display:block;width:100%;height:auto}
+.hero-caption{font-size:11.5px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:26px;border-radius:var(--radius-lg);overflow:hidden;border:2px solid var(--color-primary);position:relative}
+.hero-stats::before{content:'';position:absolute;inset:6px;border:1px solid rgba(196,77,63,.45);pointer-events:none;border-radius:10px}
+.hstat{background:linear-gradient(180deg,#FBF7F0,#F3EADB);padding:15px 8px;border-left:1px solid var(--bg-tertiary)}
+.hstat:first-child{border-left:none}
+.hstat b{display:block;font-family:var(--font-display);font-size:1.5rem;color:var(--color-primary)}
+.hstat span{font-size:11px;color:var(--text-secondary)}
+.scroll-hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-size:10.5px;letter-spacing:3px;color:var(--text-muted);z-index:2;text-align:center}
+.scroll-hint span{display:block;animation:bob 1.7s infinite;font-size:14px}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+main{max-width:880px;margin:0 auto;padding:60px 24px 30px}
+section{margin-bottom:72px;position:relative}
+.kicker{font-size:11px;letter-spacing:4px;color:var(--accent-warm);font-weight:800;margin-bottom:8px;font-family:var(--font-mono)}
+h2{font-size:clamp(1.5rem,3.6vw,2rem);margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--bg-tertiary);position:relative}
+h2::after{content:'';position:absolute;left:0;bottom:-2px;width:64px;height:2px;background:var(--accent-warm)}
+h3{font-size:1.14rem;margin:26px 0 10px;color:var(--color-tertiary)}
+p{margin-bottom:13px;color:var(--text-secondary)}
+p strong,li strong{color:var(--text-primary)}
+ul,ol{margin:0 0 13px 22px;color:var(--text-secondary)}
+li{margin-bottom:6px}
+figure{margin:24px 0;text-align:center}
+figure img{max-width:100%;height:auto;border-radius:14px;border:1px solid var(--bg-tertiary);box-shadow:var(--shadow-md);background:#fff}
+figcaption{font-size:12.5px;color:var(--text-muted);margin-top:9px;line-height:1.75;text-align:left}
+figcaption b{color:var(--color-tertiary)}
+.svgbox{background:#fff;border:1px solid var(--bg-tertiary);border-radius:var(--radius-lg);padding:16px 10px;margin:24px 0;box-shadow:var(--shadow-sm)}
+.svgbox svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.insight-box{background:linear-gradient(135deg,#EAF0EC,#D6E4DA);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--color-secondary);box-shadow:var(--shadow-sm)}
+.insight-box .tag{background:var(--color-secondary);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.insight-box h4{margin:10px 0 6px;color:#26402f;font-size:1.03rem}
+.insight-box p{color:#33503f;margin-bottom:5px}
+.critique-box{background:linear-gradient(135deg,#FBEAE2,#F3DBCE);border-radius:var(--radius-lg);padding:20px 22px;margin:22px 0;border-left:4px solid var(--accent-warm);box-shadow:var(--shadow-sm)}
+.critique-box .tag{background:var(--accent-warm);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.critique-box h4{margin:10px 0 6px;color:#7d2c21;font-size:1rem}
+.critique-box p{color:#8f4335;margin-bottom:5px;font-size:14.5px}
+.research-question{background:#fff;border:1px solid rgba(184,149,106,.45);border-radius:var(--radius-lg);padding:20px 22px;margin:20px 0;box-shadow:var(--shadow-sm);transition:transform var(--duration) var(--ease-out),box-shadow var(--duration)}
+.research-question:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
+.research-question .tag{background:var(--accent-gold);color:#fff;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:800}
+.research-question h4{margin:10px 0 6px;color:#6b4c3b}
+.research-question p{color:#6e5a44;margin-bottom:7px;font-size:14.5px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow-sm)}
+th{background:linear-gradient(135deg,#2d2d2d,#4a4a4a);color:#f8f6f0;padding:9px 8px;font-weight:700;font-size:12.5px}
+td{padding:8px;border-bottom:1px solid var(--bg-secondary);text-align:center;color:var(--text-secondary)}
+tr:last-child td{border-bottom:none}
+td.hl{background:#efece2;font-weight:700;color:var(--color-primary)}
+td.best{background:#e2ebe2;font-weight:800;color:#26402f}
+td.bad{background:#f6e3df;color:#7d2c21}
+.mathcard{background:#fff;border:1px solid var(--bg-tertiary);border-left:4px solid var(--color-primary);border-radius:14px;padding:18px 22px;margin:20px 0;overflow-x:auto;box-shadow:var(--shadow-sm)}
+.mathcard h4{font-size:1rem;color:var(--color-primary);margin-bottom:7px}
+.mathcard .note{font-size:13.5px;color:var(--text-muted)}
+.mathcard .cf{font-size:13.5px;color:#7d2c21;background:#f9ede9;border-radius:8px;padding:8px 12px;margin-top:10px}
+.code-head{display:flex;gap:10px;align-items:center;margin:24px 0 8px;flex-wrap:wrap}
+.code-head .cred{font-size:11px;font-weight:700;padding:3px 12px;border-radius:10px;color:#fff}
+.cred.run{background:var(--color-secondary)}.cred.ill{background:var(--accent-gold)}
+.code-note{background:#efece2;border:1px dashed var(--bg-tertiary);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--color-tertiary);margin-bottom:8px}
+pre.code-block{background:#23231f;color:#ece9df;border-radius:14px;padding:18px 20px;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);margin-bottom:8px}
+pre.code-block .kw{color:#b8cfae;font-weight:700}
+pre.code-block .fn{color:#e8cf9e}
+pre.code-block .cm{color:#8a887c;font-style:italic}
+pre.code-block .num{color:#e2a69a}
+.roadmap{counter-reset:step}
+.step{position:relative;padding:0 0 24px 46px;counter-increment:step}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#2d2d2d,var(--accent-gold));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step::after{content:'';position:absolute;left:15px;top:36px;bottom:0;width:2px;background:var(--bg-tertiary)}
+.step:last-child::after{display:none}
+.step h4{font-size:1rem;margin-bottom:5px}
+.step p{font-size:14.5px}
+footer{background:#23231f;color:#cfcabb;padding:50px 24px 58px;margin-top:30px}
+footer .inner{max-width:880px;margin:0 auto}
+footer h3{color:#f8f6f0;font-size:1.2rem;margin-bottom:14px}
+footer ol{margin-left:20px;font-size:13px;line-height:1.85}
+footer a{color:var(--accent-soft);text-decoration:none}
+footer .fin{margin-top:24px;font-size:12px;color:#8a887c;border-top:1px solid #45443c;padding-top:16px}
+@media(max-width:720px){.hero-stats{grid-template-columns:repeat(2,1fr)}.nav-links{display:none}}
+
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <div class="nav-logo">BaryBind <em>&middot;</em> 深度解读</div>
+  <div class="nav-links">
+    <a href="#s2">n&#8805;3 困境</a><a href="#s3">OT 谱系</a><a href="#s4">重心</a><a href="#s5">对偶</a>
+    <a href="#s6">全景</a><a href="#s7">Prop 3.1</a><a href="#s9">Thm 3.2</a><a href="#s11">体积</a>
+    <a href="#s13">BVC</a><a href="#s15">实验</a><a href="#s18">批判</a><a href="#s19">问题</a>
+    <a href="#s20">路线图</a>
+  </div>
+</div></nav>
+
+<header class="hero">
+  <div class="hero-wrap">
+    <div class="hero-badge">NeurIPS 2026 Oral &middot; arXiv:2609.33800 &middot; 2026</div>
+    <h1>BaryBind：<span class="mark">用 Wasserstein 重心</span><br>取代模态老大，绑定多模态</h1>
+    <p class="hero-tagline">最优传输对偶 &middot; 重心单纯形体积 &middot; 高阶几何对齐 &middot; 模态偏差的消除</p>
+    <p class="hero-desc">CLIP 之后，把三个以上模态对齐到一个空间，主流做法是指定一个「老大」（图文或语言），
+      再让其他模态两两往它靠。BaryBind 反其道而行：先用最优传输求出所有模态分布的
+      <b>Wasserstein 重心</b>作为几何共识中心，再让每个模态对齐到它，并用一个以重心为顶点的
+      <b>单纯形体积</b>作为全局对齐度量。这一篇把它的两块理论核心——<b>对偶问题</b>与
+      <b>误差界</b>——逐步拆开、拆到底，再发散到传输对偶、曲率几何与高阶矩。</p>
+    <div class="hero-art">
+      <img src="assets/hero_cover.svg" alt="水彩写意：多模态特征经最优传输汇聚为 Wasserstein 重心，张成重心单纯形" class="hero-img">
+      <p class="hero-caption">封面（自绘 SVG）：左侧是各模态特征 $\mathbf{m}_k$ 与传输线，汇聚到右侧的 Wasserstein 重心 $\mathbf{b}$；
+      以 $\mathbf{b}$ 为顶点、各间隙向量 $\mathbf{r}_k$ 张成的<b>重心单纯形</b>体积越小，表示全局对齐越好。</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><b>55.6%</b><span>VGGSound V+A Acc@1<br>（VAST 48.1）</span></div>
+      <div class="hstat"><b>-3.1%</b><span>T2V/V2T 检索差<br>（相对 VAST）</span></div>
+      <div class="hstat"><b>1B</b><span>参数量<br>（VAST 骨干）</span></div>
+      <div class="hstat"><b>2</b><span>理论主线<br>对偶 + 误差界</span></div>
+    </div>
+    <div class="scroll-hint"><span>&darr;</span>SCROLL TO READ</div>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ 1 ============ -->
+<section id="s1">
+<div class="kicker">CHAPTER 01 &middot; 症状</div>
+<h2>为什么「绑定三个模态」不能靠指定一个老大</h2>
+<p>先把问题摆清楚。多模态学习的本质假设是：不同传感器（图像、文本、音频、深度）捕捉的是
+<b>同一个底层现实</b>，因此它们的表示应当落在一个共享语义空间里。CLIP 用对比学习把图像-文本对齐到了这个空间，
+但它的损失是<b>成对</b>（pairwise）的：InfoNCE 与 BYOL 都是在 $n=2$ 的设定下写的。一旦要同时绑定
+$n\geq 3$ 个模态，成对损失就不够用了——你不可能只靠两两对齐就保证三者同时聚在一起。</p>
+
+<p>于是「模态老大」（modality anchor）的思路出现了。ImageBind 的做法很直接：以图像为枢纽，
+让音频、视频、深度、文本各自与图像做两两对齐。之后 LanguageBind、UniBind、GRAM、Triangle、OmniBind
+又把枢纽换成语言或别的模态，或者用平行六面体/三角形的体积来做全局损失。VAST 进一步把模态融合进共享空间，
+但监督仍以文本为中心。</p>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>锚点（anchor）本质上是把「分布的共识」误当成了「某一个模态的分布」</h4>
+<p>把某个模态指定为锚点，等于假设：这个模态的分布已经等于所有模态的语义共识中心。但事实未必如此——
+每个模态都是共识的一种<b>特定变换</b>，没有任何一个模态天然就是中心。强行以它为中心，会引入
+<b>模态偏差</b>（modality bias）：表示空间向这个模态倾斜，其他模态被迫屈从它，最终形成不平衡的空间。</p>
+<p>论文用一个可观测的症状来刻画这种不平衡：VAST 在文本→视频（T2V）与视频→文本（V2T）检索上的
+Recall@1 差距很大。如果两个模态真的对称地绑定在共享空间里，这两个方向的检索成绩应当接近；
+差距大，说明空间偏向了某一边。</p></div>
+
+<p>那么有没有一个<b>不偏向任何模态</b>的中心？BaryBind 的回答是：有，它就是所有模态分布的
+Wasserstein 重心（Wasserstein barycenter, WB）。它是「离所有模态分布的 Wasserstein 距离加权平均最小」的那个分布，
+是真正的几何共识。这一篇要做的，就是把这个想法背后的一整套理论——从最优传输的对偶，到重心的存在性，
+再到体积度量的几何含义——彻底拆开。</p>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="s2">
+<div class="kicker">CHAPTER 02 &middot; n&#8805;3 困境</div>
+<h2>从成对对比到超边：为什么简单加损失行不通</h2>
+<div class="mathcard"><h4>式 (0)：成对对比损失的原型（InfoNCE）</h4>
+$$\mathcal{L}_{\mathrm{NCE}}=-\mathbb{E}\Big[\log\frac{\exp(\langle \mathbf{v}_i,\mathbf{t}_i\rangle/\tau)}{\sum_{j}\exp(\langle \mathbf{v}_i,\mathbf{t}_j\rangle/\tau)}\Big]$$
+<p class="note">$\mathbf{v}_i$：图像嵌入；$\mathbf{t}_i$：文本嵌入；$\tau$：温度。这一对 $(\mathbf{v}_i,\mathbf{t}_i)$ 是一条
+<b>边</b>，把两个模态往一起拉。</p>
+<div class="cf">反事实：若把 $n$ 个模态两两全连，得到的是 $\binom{n}{2}$ 条边；每条边都独立最小化，但没有任何一项
+<b>直接约束三者的全局几何关系</b>。三模态可能两两都近，但整体仍偏离共享中心——这正是「三角不稳」。</div></div>
+
+<p>把 $n$ 个模态两两做对比，看似解决，实则留下一个空洞：成对相似度是<b>二阶</b>信息（只看两两夹角），
+它无法刻画「三个向量是否同时聚向同一点」这种<b>高阶</b>关系。GRAM 与 Triangle 的贡献正在这里——它们用
+<b>体积</b>（平行六面体或三角形的体积）作为全局度量，把 $n$ 个模态的几何关系压进一个标量。但它们的几何中心
+仍取在原点，且锚点仍是特定模态。</p>
+
+<p>BaryBind 的两条改动路线，恰好对上这两个空洞：</p>
+<div class="svgbox">
+<svg viewBox="0 0 940 300" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+<defs><marker id="a1" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="#7A3B2E"/></marker></defs>
+<rect x="30" y="40" width="380" height="200" rx="12" fill="#F5EDE0" stroke="#C15B36" stroke-width="2"/>
+<text x="220" y="72" text-anchor="middle" font-size="15" font-weight="700" fill="#7A3B2E">空洞 1：中心是谁</text>
+<circle cx="120" cy="170" r="14" fill="#2F6E75"/><text x="120" y="175" text-anchor="middle" font-size="11" fill="#fff">T</text>
+<circle cx="220" cy="140" r="14" fill="#C15B36"/><text x="220" y="145" text-anchor="middle" font-size="11" fill="#fff">锚</text>
+<circle cx="320" cy="175" r="14" fill="#B5893F"/><text x="320" y="180" text-anchor="middle" font-size="11" fill="#fff">A</text>
+<circle cx="175" cy="215" r="14" fill="#7A3B2E"/><text x="175" y="220" text-anchor="middle" font-size="11" fill="#fff">V</text>
+<text x="220" y="255" text-anchor="middle" font-size="12.5" fill="#5F4B3B">两两往「锚」靠 = 模态偏差</text>
+<line x1="415" y1="140" x2="500" y2="140" stroke="#7A3B2E" stroke-width="2.5" marker-end="url(#a1)"/>
+<rect x="530" y="40" width="380" height="200" rx="12" fill="#F5EDE0" stroke="#2F6E75" stroke-width="2"/>
+<text x="720" y="72" text-anchor="middle" font-size="15" font-weight="700" fill="#2F6E75">空洞 2：度量是几阶</text>
+<circle cx="640" cy="165" r="13" fill="#2F6E75"/><circle cx="700" cy="135" r="13" fill="#C15B36"/><circle cx="800" cy="150" r="13" fill="#B5893F"/>
+<line x1="640" y1="165" x2="700" y2="135" stroke="#7A3B2E" stroke-width="1.6" stroke-dasharray="4 3"/>
+<line x1="700" y1="135" x2="800" y2="150" stroke="#7A3B2E" stroke-width="1.6" stroke-dasharray="4 3"/>
+<line x1="640" y1="165" x2="800" y2="150" stroke="#7A3B2E" stroke-width="1.6" stroke-dasharray="4 3"/>
+<text x="720" y="205" text-anchor="middle" font-size="12.5" fill="#5F4B3B">成对相似度 = 二阶，看不到全局</text>
+<text x="720" y="255" text-anchor="middle" font-size="12.5" fill="#5F4B3B">→ 需要高阶（体积）度量</text>
+</svg>
+<p style="font-size:12.5px;color:#8C7663;margin-top:8px;text-align:center">图 0（自绘）：锚点对齐的两个结构性空洞——中心选择的偏差、度量阶数的不足。</p>
+</div>
+
+<p>把这两件事合起来，就能预读 BaryBind 的骨架：先用最优传输求出<b>几何共识中心</b>（WB），
+再用一个以 WB 为顶点的<b>单纯形体积</b>作为全局对齐度量。接下来四章，先把这两件事的数学地基一砖一瓦铺起来。</p>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="s3">
+<div class="kicker">CHAPTER 03 &middot; OT 谱系</div>
+<h2>数学地基 I：最优传输，从 Monge 到 Kantorovich 对偶</h2>
+<p>Wasserstein 距离与重心都建立在<b>最优传输</b>（optimal transport, OT）之上。要读懂 BaryBind 的对偶
+（Prop 3.1），必须先把 OT 的对偶语言说清楚。先给记号。</p>
+
+<div class="mathcard"><h4>记号（论文 3.1 节）</h4>
+<p class="note">$\bar{K}=\{1,\dots,K\}$；序列 $e_{0},\dots,e_{K}$ 记作 $e_{1:K}$。$\mathcal{X}\subset\mathbb{R}^d$、
+$\mathcal{Y}\subset\mathbb{R}^{d'}$、$\mathcal{X}_k\subset\mathbb{R}^{d_k}$ 为紧子集。
+$\mathcal{C}(\mathcal{X})$ 是连续实值函数空间，$\mathcal{P}(\mathcal{X})$ 是支撑在 $\mathcal{X}$ 上的概率测度集。
+$\Pi(\mathbb{P},\mathbb{Q})$ 是边缘分布为 $\mathbb{P},\mathbb{Q}$ 的联合分布（传输方案）集。
+$\langle\cdot,\cdot\rangle$ 表示特征余弦相似度。</p></div>
+
+<h3>Monge 问题：搬运质量的最小成本</h3>
+<p>给定 $\mathbb{P}\in\mathcal{P}(\mathcal{X})$、$\mathbb{Q}\in\mathcal{P}(\mathcal{Y})$ 与成本函数
+$c:\mathcal{X}\times\mathcal{Y}\to\mathbb{R}_+$，经典 OT 问题找一个联合分布 $\pi\in\Pi(\mathbb{P},\mathbb{Q})$
+最小化期望搬运成本：</p>
+<div class="mathcard"><h4>式 (1)：最优传输问题</h4>
+$$\mathrm{OT}_c(\mathbb{P},\mathbb{Q})\triangleq\inf_{\pi\in\Pi(\mathbb{P},\mathbb{Q})}\ \mathbb{E}_{(x,y)\sim\pi}\big[c(x,y)\big]$$
+<p class="note">取 $c(x,y)=\|x-y\|$ 得到 $W(\mathbb{P},\mathbb{Q})=\inf_{\pi}\mathbb{E}_{\pi}\|x-y\|$，
+即 Earth-Mover / Wasserstein 距离。注意 $\pi$ 是<b>联合分布</b>（transport plan），
+允许把一个 $x$ 拆开送到多个 $y$——这比 Monge 的确定性映射 $y=T(x)$ 更一般。</p>
+<div class="cf">反事实：若强行限制为确定性映射 $T$（Monge 形式），当 $\mathbb{P}$ 有原子而 $\mathbb{Q}$ 没有时
+可能根本不存在可行解（质量无法拆分）。Kantorovich 放宽到联合分布，正是为了保证存在性——这也是 BaryBind
+后面要用 Monge 形式 $\widehat{T}_{\#}\mathbb{P}_0=\mathbb{Q}^*$ 时必须额外假设的原因（第 9 章会回到这一点）。</div></div>
+
+<h3>Kantorovich 对偶与 c-transform</h3>
+<p>式 (1) 的原始问题（对 $\pi$ 取 inf）通过<b>线性规划对偶</b>转成对<b>势函数</b> $f,g$ 的 sup 问题。
+对偶里的关键算子是 $c$-transform：</p>
+<div class="mathcard"><h4>式 (2)：$c$-transform</h4>
+$$f_k^{C_k}(\mathbf{m}_k)=\inf_{\mathbf{b}\in\mathcal{M}_B}\big[C_k(\mathbf{m}_k,\mathbf{b})-f_k(\mathbf{b})\big]$$
+<p class="note">它把定义在「目标空间」的势 $f_k$，变成定义在「源空间」的 $f_k^{C_k}$。
+直觉：$f_k^{C_k}(\mathbf{m})$ 是从 $\mathbf{m}$ 出发、扣掉势能 $f_k$ 之后能拿到的最小成本，
+它是一个「下包络」。$c$-transform 对 $f_k$ 是<b>凹</b>的——这个凹性是后面交换 inf/sup 的前提。</p>
+<div class="cf">反事实：若 $C_k$ 不是下半连续、$f_k$ 不连续，$c$-transform 的凹性与紧性论证会失效，
+Sion 极小极大就用不了，对偶等号可能只有一边（$\le$ 或 $\ge$），Prop 3.1 的等式就不成立。</div></div>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>对偶的本质：把「搬运方案」换成「势函数」</h4>
+<p>原始问题是<b>组合</b>的（找一个联合分布 $\pi$），对偶问题是<b>函数</b>的（找 $K$ 个势函数 $f_k$）。
+这个转换的价值是：在神经网络里，我们没法直接参数化「联合分布」，但可以轻松参数化「函数」
+（一个 MLP 就是一个势函数）。BaryBind 正是把 $f_k$ 参数化成 MLP $g_{\omega_k}$，把「找联合分布」
+转成「找网络」，这才让重心可以被神经网络学习出来。</p></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="s4">
+<div class="kicker">CHAPTER 04 &middot; 重心直觉</div>
+<h2>数学地基 II：Wasserstein 重心，为什么它是「几何共识」</h2>
+<p>有了 Wasserstein 距离，就能定义「平均」。但这里的平均不是分布的算术平均，而是
+<b>在 Wasserstein 空间里的 Fréchet 均值</b>。先看定义。</p>
+
+<div class="mathcard"><h4>式 (3)：Wasserstein 重心（WB）问题</h4>
+$$\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{Y})}\ \sum_{k=1}^{K}\lambda_k\, W(\mathbb{P}_k,\mathbb{Q}),\qquad \lambda_k\ge 0,\ \sum_k\lambda_k=1$$
+<p class="note">给定分布 $\mathbb{P}_{1:K}$ 与权重 $\lambda$，找一个 $\mathbb{Q}$ 使得到各分布的
+Wasserstein 距离加权和最小。这个 $\mathbb{Q}$ 就是重心。它被应用到多模态隐空间 $\mathcal{M}$ 上：
+第 $k$ 个模态的编码特征服从分布 $\mathbb{P}_k$，重心 $\mathbb{Q}$ 的支撑 $\mathcal{M}_B$ 含重心特征 $\mathbf{b}$。</p></div>
+
+<h3>Fréchet 均值的 OT 版</h3>
+<p>在欧氏空间里，一组点 $x_1,\dots,x_K$ 的均值是 $\arg\min_y\sum_k\lambda_k\|x_k-y\|^2$，
+也即 Fréchet 均值。把「点的平方距离」换成「分布的 Wasserstein 距离」，就得到式 (3)。
+所以 <b>WB 是欧氏均值在测度空间里的对应物</b>。发散一点：黎曼流形上 Fréchet 均值叫 Karcher mean，
+在正曲率流形（如球面、Wasserstein 空间本身）上，均值的<b>唯一性</b>需要额外条件
+（例如点都落在一个凸测地球内）。这解释了为什么 WB 一般存在但未必唯一——Wasserstein 空间
+$\mathcal{P}_2(\mathbb{R}^d)$ 在 $W_2$ 下是一个非负 Alexandrov 曲率空间，均值可能不唯一
+（Agueh–Carlier 2011 给出高斯情形的闭式）。</p>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>为什么重心能代表「语义共识」，而单个模态不能</h4>
+<p>多模态数据是同一底层现实的异质观测，因此各模态表示可以看成「共享语义表示」的模态特定变换。
+重心的定义（离所有模态分布的平均距离最小）恰好刻画了「共同部分」：任何偏向某模态的点，都会因为离
+其他模态更远而增大加权距离。所以 <b>WB 是唯一不偏向任何模态的中心</b>——这就是 BaryBind 用来
+消除 modality bias 的原理。</p>
+<p>反事实读法：若用某模态 $\mathbb{P}_1$ 本身当锚点，加权距离 $\sum_k\lambda_k W(\mathbb{P}_k,\mathbb{P}_1)$
+里有一项 $W(\mathbb{P}_1,\mathbb{P}_1)=0$，等于给 $\mathbb{P}_1$ 免费加了权重——这就是「锚点免罪券」，
+也是模态偏差的代数来源。</p></div>
+
+<div class="cf">反事实：如果 $\lambda_k$ 不均匀（比如给某模态 $\lambda$ 特别大），重心会朝该模态偏移——
+退化成「软锚点」。BaryBind 实践里取 $\lambda_k=1/K$ 均匀，正是为了彻底去中心化。</div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="s5">
+<div class="kicker">CHAPTER 05 &middot; 对偶与 Sion</div>
+<h2>数学地基 III：什么时候可以交换 inf 和 sup</h2>
+<p>Prop 3.1 要把式 (3) 的 inf 问题改写成 sup-inf 对偶。这一步能不能成立，取决于<b>极小极大定理</b>
+（minimax theorem）。论文用的是 Sion 极小极大定理，所以这里必须把它的前提条件说清楚。</p>
+
+<div class="mathcard"><h4>式 (4)：Sion 极小极大定理（所用形式）</h4>
+$$\inf_{x\in X}\sup_{y\in Y} F(x,y)=\sup_{y\in Y}\inf_{x\in X} F(x,y)$$
+<p class="note">成立条件：$X$ 紧、凸；$Y$ 凸；$F(\cdot,y)$ 对每个 $y$ 下半连续且<b>凸</b>；
+$F(x,\cdot)$ 对每个 $x$ 上半连续且<b>凹</b>。条件缺一不可——尤其凸/凹性，交换后两式只有一边不等。</p></div>
+
+<h3>回到我们的场景：为什么三条都满足</h3>
+<p>论文对式 (13) 的处理给出三条：</p>
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>三条前提逐条核对</h4>
+<p><b>① 紧性</b>：$\mathcal{M}_B$ 紧 $\Rightarrow$ $\mathcal{P}(\mathcal{M}_B)$ 在弱拓扑下紧。
+概率测度空间在弱拓扑下，紧支撑集上的测度集是紧的（Prokhorov）。所以「对 $\mathbb{Q}$ 取 inf」的域是紧的。</p>
+<p><b>② 对 $\mathbb{Q}$ 线性/凸/连续</b>：固定势 $f_{1:K}$，泛函 $\widetilde{\mathcal{F}}(\cdot,f_{1:K})$
+对 $\mathbb{Q}$ 是<b>线性</b>的（因为是积分），线性蕴含凸且连续。</p>
+<p><b>③ 对 $f$ 凹</b>：固定 $\mathbb{Q}$，$\widetilde{\mathcal{F}}(\mathbb{Q},\cdot)$ 对 $f$ 凹，
+因为 $c$-transform $f_k^{C_k}$ 对 $f_k$ 是凹的（下包络的凹性）。</p>
+<p>三条齐备 $\Rightarrow$ Sion 允许交换 $\sup$ 与 $\inf$，这就是 Prop 3.1 第一步的合法性来源。</p></div>
+
+<p>但还有一个必须处理的<b>一致性条件</b>（congruence）$\sum_k\lambda_k f_k=0$。对偶问题的 supremum
+要限制在满足这个条件的势函数上。为什么？以及怎么在参数化里保证它？这正是下一章 Prop 3.1 的核心，
+也是论文里最容易被跳过、却最值得抠的部分。</p>
+</section>
+
+
+<!-- ============ 6 ============ -->
+<section id="s6">
+<div class="kicker">CHAPTER 06 &middot; 全景</div>
+<h2>BaryBind 两阶段：先把老大送去重心，再做体积对齐</h2>
+<p>论文 Fig 3 的结构可以直接翻译成两步：</p>
+<div class="svgbox">
+<svg viewBox="0 0 940 340" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+<defs><marker id="a2" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="#7A3B2E"/></marker>
+<marker id="a3" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="#2F6E75"/></marker></defs>
+<text x="235" y="34" text-anchor="middle" font-size="15" font-weight="700" fill="#7A3B2E">阶段一：WB 优化</text>
+<rect x="60" y="52" width="350" height="120" rx="12" fill="#F5EDE0" stroke="#C15B36" stroke-width="2"/>
+<circle cx="130" cy="112" r="18" fill="#B5893F"/><text x="130" y="117" text-anchor="middle" font-size="12" fill="#fff">m₀</text>
+<text x="130" y="152" text-anchor="middle" font-size="11.5" fill="#5F4B3B">初始化器</text>
+<line x1="152" y1="112" x2="255" y2="112" stroke="#7A3B2E" stroke-width="2.5" marker-end="url(#a2)"/>
+<text x="203" y="102" text-anchor="middle" font-size="11" fill="#7A3B2E">T&#952;</text>
+<circle cx="290" cy="112" r="20" fill="#7A3B2E"/><text x="290" y="117" text-anchor="middle" font-size="12" fill="#fff">b</text>
+<text x="290" y="152" text-anchor="middle" font-size="11.5" fill="#5F4B3B">WB 锚点</text>
+<circle cx="365" cy="82" r="11" fill="#2F6E75"/><circle cx="365" cy="112" r="11" fill="#C15B36"/><circle cx="365" cy="142" r="11" fill="#B5893F"/>
+<text x="365" y="172" text-anchor="middle" font-size="11" fill="#5F4B3B">&#123;&#8493;&#8474;&#125; 联合拉</text>
+<line x1="420" y1="112" x2="505" y2="112" stroke="#2F6E75" stroke-width="2.5" marker-end="url(#a3)"/>
+<text x="705" y="34" text-anchor="middle" font-size="15" font-weight="700" fill="#2F6E75">阶段二：体积对齐</text>
+<rect x="535" y="52" width="350" height="240" rx="12" fill="#F5EDE0" stroke="#2F6E75" stroke-width="2"/>
+<line x1="620" y1="220" x2="720" y2="110" stroke="#7A3B2E" stroke-width="2.2"/>
+<circle cx="720" cy="110" r="11" fill="#7A3B2E"/><text x="732" y="102" font-size="11" fill="#7A3B2E">b</text>
+<line x1="620" y1="220" x2="660" y2="120" stroke="#2F6E75" stroke-width="1.8"/><circle cx="660" cy="120" r="8" fill="#2F6E75"/>
+<line x1="620" y1="220" x2="700" y2="165" stroke="#C15B36" stroke-width="1.8"/><circle cx="700" cy="165" r="8" fill="#C15B36"/>
+<line x1="620" y1="220" x2="760" y2="170" stroke="#B5893F" stroke-width="1.8"/><circle cx="760" cy="170" r="8" fill="#B5893F"/>
+<polygon points="720,110 660,120 700,165" fill="#2F6E75" opacity="0.18"/>
+<polygon points="720,110 700,165 760,170" fill="#C15B36" opacity="0.18"/>
+<circle cx="620" cy="220" r="5" fill="#33241A"/><text x="608" y="238" font-size="11" fill="#33241A">原点</text>
+<text x="715" y="255" text-anchor="middle" font-size="12.5" fill="#5F4B3B">barycenter simplex：顶点 b</text>
+<text x="715" y="275" text-anchor="middle" font-size="12.5" fill="#5F4B3B">体积小 = 对齐好</text>
+<text x="470" y="200" text-anchor="middle" font-size="12" fill="#2F6E75">对比</text>
+</svg>
+<p style="font-size:12.5px;color:#8C7663;margin-top:8px;text-align:center">图 1（自绘）：BaryBind 两阶段——WB 优化把初始化器映射成重心锚点；体积对齐用重心单纯形把各模态聚到锚点。</p>
+</div>
+
+<div class="mathcard"><h4>式 (5)：多模态 WB 问题（3）的可学习形式</h4>
+$$\mathcal{L}_{\mathrm{MWB}}^{*}=\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_B)}\sum_{k=1}^{K}\lambda_k\, W(\mathbb{P}_k,\mathbb{Q})$$
+<p class="note">$\mathbb{P}_k$：第 $k$ 个模态编码特征 $\mathbf{m}_k\in\mathcal{M}_k\subset\mathcal{M}\subset\mathbb{R}^D$
+的分布；$\mathbf{m}_0$ 是锚模态特征，也是 WB 初始化器（实践中取所有可用模态特征的算术均值）。
+直接优化式 (5) 不可行——$\mathbb{Q}$ 是无穷维测度，$W$ 本身还要解一个 OT。所以必须走向对偶。</p></div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="s7">
+<div class="kicker">CHAPTER 07 &middot; Prop 3.1</div>
+<h2>Prop 3.1 逐步复推：从 inf 问题到 sup-inf 对偶</h2>
+<p>这是全篇第一个理论核心。<b>命题</b>：多模态 WB 问题 (3) 的下确界值可写成</p>
+<div class="mathcard"><h4>式 (6)：Prop 3.1（对偶形式）</h4>
+$$\mathcal{L}^{*}_{\mathrm{MWB}}=\sup_{\sum_k\lambda_k f_k=0}\ \inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_B)}\sum_{k=1}^{K}\lambda_k\ \mathbb{E}_{\mathbf{m}_k\sim\mathbb{P}_k,\ \mathbf{b}\sim\mathbb{Q}}\big[\|\mathbf{m}_k-\mathbf{b}\|-f_k(\mathbf{b})\big]$$
+<p class="note">supremum 遍历势函数 $f_k:\mathcal{M}_B\to\mathbb{R}$，但受约束 $\sum_k\lambda_k f_k=0$（一致性条件）。
+对偶的意义：把「找无穷维分布 $\mathbb{Q}$」换成「找 $K$ 个标量函数 $f_k$」——后者可以用 MLP 参数化。</p></div>
+
+<h3>Step 1：写出 inf-sup 形式与 $c$-transform</h3>
+<div class="mathcard"><h4>式 (7)：对偶展开（附录 A.1 式 13）</h4>
+$$\mathcal{L}^{*}=\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_B)}\sup_{f_{0},\dots,f_{K}}\underbrace{\sum_{k=1}^{K}\lambda_k\Big\{\int_{\mathcal{M}_k}f_k^{C_k}(\mathbf{m}_k)\mathrm{d}\mathbb{P}_k+\int_{\mathcal{M}_B}f_k(\mathbf{b})\mathrm{d}\mathbb{Q}(\mathbf{b})\Big\}}_{\triangleq\widetilde{\mathcal{F}}(\mathbb{Q},f_{1:K})}$$
+<p class="note">$f_k^{C_k}$ 是式 (2) 的 $c$-transform。第一项是「源侧」期望（只依赖 $\mathbb{P}_k$），
+第二项是「目标侧」期望（依赖 $\mathbb{Q}$）。这一式是 Kantorovich 对偶在 barycenter 问题上的直接套用。</p></div>
+
+<h3>Step 2：用 Sion 交换 inf/sup</h3>
+<p>由第 5 章三条前提（$\mathbb{Q}$ 域紧凸、$\widetilde{\mathcal{F}}$ 对 $\mathbb{Q}$ 线性、对 $f$ 凹），
+Sion 允许交换，得到 sup-inf 形式。交换后把 $\inf_{\mathbb{Q}}$ 收拢进一个「inf over b」：</p>
+<div class="mathcard"><h4>式 (8)：交换后（附录 A.1 式 16）</h4>
+$$\mathcal{L}^{*}=\sup_{f_{1:K}}\Big\{\sum_{k=1}^{K}\lambda_k\int_{\mathcal{M}_k}f_k^{C_k}(\mathbf{m}_k)\mathrm{d}\mathbb{P}_k+\inf_{\mathbf{b}\in\mathcal{M}_B}\bar{f}(\mathbf{b})\Big\},\qquad \bar{f}:=\sum_k\lambda_k f_k$$
+<p class="note">关键化简：$\inf_{\mathbb{Q}}\int\bar f\,\mathrm{d}\mathbb{Q}=\inf_{\mathbf{b}}\bar f(\mathbf{b})$
+——因为 $\mathbb{Q}$ 上的积分下确界由 Dirac 质点 $\delta_{\mathbf{b}}$ 达到（测度的下确界在退化分布上取到）。</p>
+<div class="cf">反事实：若不把 $\inf_{\mathbb{Q}}$ 收成 $\inf_{\mathbf{b}}$，就得同时优化一个测度与 $K$ 个函数，
+计算上无法用梯度下降做。收成点值，才让「每个 batch 采样一个 $\mathbf{b}$」成为合法的蒙特卡洛估计。</div></div>
+
+<h3>Step 3：一致性条件 $\sum_k\lambda_k f_k=0$ 从哪来</h3>
+<p>这是最容易被跳过的一步。论文要证明：supremum 可以限制在满足 $\sum_k\lambda_k f_k=0$ 的势函数上。
+做法是构造一个「一致化」的势：</p>
+<div class="mathcard"><h4>式 (9)：一致化构造（附录 A.1 式 17）</h4>
+$$(\tilde f_0,\dots,\tilde f_K)=\Big(f_0,\dots,f_{K-1},\ f_K-\frac{\bar f}{\lambda_K}\Big)$$
+<p class="note">把最后一个势减去 $\bar f/\lambda_K$，则新的加权和
+$\sum_k\lambda_k\tilde f_k=\bar f-\bar f=0$，正好满足一致性。论文进一步证 $\widetilde{\mathcal{L}}(\tilde f)\ge\widetilde{\mathcal{L}}(f)$
+（用 $c$-transform 的单调性 + $\bar f\ge M:=\inf_{\mathbf{b}}\bar f$），所以限制到一致势函数不损失最优值。</p>
+<div class="cf">反事实：若不做一致化，$\inf_{\mathbf{b}}\bar f(\mathbf{b})$ 项会在 sup 里被 $\bar f\to-\infty$
+驱动，导致对偶值发散（下界消失）。一致化正是把这个「自由平移」方向锁死，让 supremum 有限。</div></div>
+
+<h3>Step 4：得到最终 sup-inf</h3>
+<div class="mathcard"><h4>式 (10)：由 $c$-transform 回代（附录 A.1 式 19-20）</h4>
+$$\mathcal{L}^{*}=\sup_{\sum_k\lambda_k f_k=0}\sum_{k=1}^{K}\lambda_k\inf_{\mathbf{b}\in\mathcal{M}_B}\int_{\mathcal{M}_k}\big[C_k(\mathbf{m}_k,\mathbf{b})-f_k(\mathbf{b})\big]\mathrm{d}\mathbb{P}_k(\mathbf{m}_k)$$
+$$\Downarrow\ \text{（取 } C_k=\|\mathbf{m}_k-\mathbf{b}\|,\ \text{交换 }\sum\text{ 与 }\inf,\ \text{用 }\mathbb{Q}\text{ 采样}\mathbf{b}）$$
+$$=\sup_{\sum_k\lambda_k f_k=0}\ \inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_B)}\sum_{k=1}^{K}\lambda_k\ \mathbb{E}_{\mathbf{m}_k\sim\mathbb{P}_k,\ \mathbf{b}\sim\mathbb{Q}}\big[\|\mathbf{m}_k-\mathbf{b}\|-f_k(\mathbf{b})\big]\quad\blacksquare$$
+<p class="note">三处工程化：① 积分换成经验期望（mini-batch）；② 成本取 $C_k=\|\mathbf{m}_k-\mathbf{b}\|$（欧氏，
+对应 Wasserstein 距离）；③ 交换 $\sum$ 与 $\inf$——合法，因为 $\mathbf{b}$ 被所有项共享且目标对 $\mathbf{b}$ 线性。</p></div>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>对偶「换来」了什么，「代价」是什么</h4>
+<p><b>换来</b>：无穷维测度 $\mathbb{Q}$ 变成 $K$ 个函数 $f_k$；梯度下降可做；每 batch 只需采样 $\mathbf{b}$。
+<b>代价</b>：sup-inf 是<b>极大极小</b>问题，不是单边凸优化——$f_k$ 要往上推（对抗），
+$T_\theta$ 要往下压。这正是第 8 章的交替优化，也是整个方法最不稳定的来源。
+换句话说，对偶把「难算」换成了「难训」——这是所有神经 OT 方法（包括本文引用的神经 OT 重心估计
+[47][50][53]）共同的债务。</p></div>
+</section>
+
+<!-- ============ 8 ============ -->
+<section id="s8">
+<div class="kicker">CHAPTER 08 &middot; MWB loss</div>
+<h2>把对偶变成网络：$T_\theta$、$f_\omega$ 与交替优化</h2>
+<p>有了式 (10)，就能参数化了。BaryBind 用一个可训练的<b>重心映射</b>
+$T_\theta:\mathcal{M}_0\to\mathcal{M}_B$ 来采样重心特征 $\mathbf{b}=T_\theta(\mathbf{m}_0)$，
+用 $K$ 个 MLP $g_{\omega_k}:\mathbb{R}^D\to\mathbb{R}$ 参数化势函数。</p>
+
+<div class="mathcard"><h4>式 (11)：MWB loss（式 5，max-min）</h4>
+$$\max_{\omega_{1:K}}\min_{\theta}\ \mathcal{L}_{\mathrm{MWB}}(\omega_{1:K},\theta)\triangleq\sum_{k=1}^{K}\lambda_k\ \mathbb{E}_{\mathbf{m}_k\sim\mathbb{P}_k}\big[\|\mathbf{m}_k-T_\theta(\mathbf{m}_0)\|-f_{\omega_k}(T_\theta(\mathbf{m}_0))\big]$$
+<p class="note"><b>势函数的一致性参数化</b>（常见技巧，见 [26][23][24]）：
+$f_{\omega_k}=g_{\omega_k}-\sum_{i=1}^{K}\lambda_i g_{\omega_i}$，这样 $\sum_k\lambda_k f_{\omega_k}=0$
+<b>自动成立</b>——不需要在损失里显式加约束，一致化被「焊」进了参数化。这是实践中保证 Prop 3.1 前提的最关键一步。</p></div>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>初始化器 $\mathbf{m}_0$ 是「热启动」，不是「中心」</h4>
+<p>$T_\theta$ 取 $\mathbf{m}_0$ 为输入，但它吃的是<b>所有 $K$ 个模态</b>给的梯度（因为损失里是对
+$\mathbf{m}_k$ 求期望、$k=1..K$ 全都参与）。所以尽管起点可能是文本或视频的特征，优化方向会
+<b>把输出拽离任何单一模态的流形</b>、朝几何中心走。这正是论文附录 B.7 强调的鲁棒性来源：
+换成视频初始化、文本初始化、或 T+V+A 算术融合初始化，加了 WB 优化后都能涨点
+（VGGSound V+A：55.2/55.6/55.8），说明贡献在 <b>WB 公式本身</b>，不在初始化选择。</p></div>
+
+<h3>交替优化与梯度的方向</h3>
+<p>训练是两塔交替：$\omega_{1:K}$ 做 <b>最大化</b>（对偶势，对抗地压低可实现的传输成本），
+$\theta$ 与其他网络做 <b>最小化</b>。梯度写开是：</p>
+<div class="mathcard"><h4>式 (12)：$T_\theta$ 的梯度（直觉形式）</h4>
+$$\nabla_\theta\mathcal{L}_{\mathrm{MWB}}=\sum_{k=1}^{K}\lambda_k\ \mathbb{E}_{\mathbf{m}_k}\Big[\frac{T_\theta(\mathbf{m}_0)-\mathbf{m}_k}{\|\mathbf{m}_k-T_\theta(\mathbf{m}_0)\|}-\nabla_\theta f_{\omega_k}(T_\theta(\mathbf{m}_0))\Big]\cdot\frac{\partial T_\theta(\mathbf{m}_0)}{\partial\theta}$$
+<p class="note">第一项把 $\mathbf{b}$ 拉向所有 $\mathbf{m}_k$ 的加权平均方向（数据项，如同质心力）；
+第二项由对抗势 $f_{\omega_k}$ 给出（对抗项，防止 $\mathbf{b}$ 塌到任一模态）。
+两者平衡的结果，就是「不偏向任何模态的中心」。</p>
+<div class="cf">反事实：若去掉势项 $f$（只留 $\sum\lambda_k\|\mathbf{m}_k-\mathbf{b}\|$），
+$\mathbf{b}$ 会塌向 $\mathbf{m}_k$ 的欧氏质心，退化成「特征平均」——没有分布层面的结构，
+也无法对应 Wasserstein 重心。消融（第 16 章 Table 5）显示去掉 MWB 后各项普遍掉点，印证了势项的必要性。</div></div>
+</section>
+
+<!-- ============ 9 ============ -->
+<section id="s9">
+<div class="kicker">CHAPTER 09 &middot; Thm 3.2</div>
+<h2>Thm 3.2 逐步复推：两个对偶 gap 与 $W^2$ 误差界</h2>
+<p>第二个理论核心是<b>误差分析</b>：学到的分布 $\widehat{T}_{\#}\mathbb{P}_0$ 离真重心 $\mathbb{Q}^*$ 有多远？
+定理用两个「对偶 gap」来界定。</p>
+
+<div class="mathcard"><h4>式 (13)：简记（式 6）</h4>
+$$\mathcal{F}(f_{1:K},T):=\mathcal{L}_{\mathrm{MWB}}(f_{1:K},T),\quad \mathcal{L}(f_{1:K}):=\inf_{T}\mathcal{F}(f_{1:K},T),\quad \mathcal{L}^{*}:=\mathcal{L}_{\mathrm{MWB}}^{*}$$
+<p class="note">$\mathcal{F}$ 是「给定势与映射」的总成本；$\mathcal{L}(f)$ 是「固定势、对映射取 inf」；
+$\mathcal{L}^*$ 是真正的最优值（双取 inf）。</p></div>
+
+<div class="mathcard"><h4>式 (14)：定理 3.2（误差界）</h4>
+<p class="note">设成本 $C_k$ 任意，假设映射 $\mathbf{b}\mapsto C_k(\mathbf{m}_k,\mathbf{b})-\widehat f_k(\mathbf{b})$
+对 $\mathbf{m}_k\in\mathcal{M}_k$ 是 <b>$\beta$-强凸</b>的。定义两个对偶 gap：</p>
+$$\mathcal{E}_1(\widehat f,\widehat T)=\mathcal{F}(\widehat f,\widehat T)-\mathcal{L}(\widehat f),\qquad \mathcal{E}_2(\widehat f)=\mathcal{L}^{*}-\mathcal{L}(\widehat f)$$
+$$\Longrightarrow\quad W^{2}\big(\widehat T_{\#}\mathbb{P}_0,\ \mathbb{Q}^{*}\big)\ \le\ \frac{4}{\beta}\big(\mathcal{E}_1+\mathcal{E}_2\big)$$</div>
+
+<h3>两个 gap 的含义</h3>
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>$\mathcal{E}_1$ 是「优化 gap」，$\mathcal{E}_2$ 是「表达 gap」</h4>
+<p>$\mathcal{E}_1=\mathcal{F}(\widehat f,\widehat T)-\inf_T\mathcal{F}(\widehat f,T)$：给定你选的势 $\widehat f$，
+你的映射 $\widehat T$ 比「最优映射」差多少——这是<b>训练没训好</b>（映射优化不足）。
+$\mathcal{E}_2=\mathcal{L}^*-\mathcal{L}(\widehat f)=\mathcal{F}(\widehat f,T^*)-\mathcal{F}(\widehat f,T^{f})$：
+你的势 $\widehat f$ 本身离最优势多远——这是<b>势函数表达不足</b>（网络容量/对偶没解够）。
+两个 gap 加起来，就是「我们离真重心的全部距离」。</p>
+<p>这与 PAC 学习的「近似误差 + 估计误差」分解、以及统计学习的 bias-variance 分解是同构的：
+$\mathcal{E}_2$ ≈ bias（表达力），$\mathcal{E}_1$ ≈ variance/优化误差。不同处在于这里是确定性的
+对偶 gap，不是概率的。</p></div>
+
+<h3>Step-by-step：常数 $4/\beta$ 从哪来</h3>
+<div class="mathcard"><h4>式 (15)：强凸 $\Rightarrow$ 二次下界（附录 A.2）</h4>
+<p class="note">记 $g_k(\mathbf{m}_k,\mathbf{b}):=C_k(\mathbf{m}_k,\mathbf{b})-\widehat f_k(\mathbf{b})$，
+由假设对 $\mathbf{b}$ 是 $\beta$-强凸的。强凸函数满足二次下界：
+$g_k(\mathbf{b}')\ge g_k(\mathbf{b})+\langle\nabla g_k(\mathbf{b}),\mathbf{b}'-\mathbf{b}\rangle+\frac{\beta}{2}\|\mathbf{b}'-\mathbf{b}\|^2$。</p>
+$$\mathcal{E}_1\ge\frac{\beta}{2}\,\mathbb{E}_{\mathbf{m}_0}\big\|\widehat T(\mathbf{m}_0)-T^{f}(\mathbf{m}_0)\big\|^{2},\qquad \mathcal{E}_2\ge\frac{\beta}{2}\,\mathbb{E}_{\mathbf{m}_0}\big\|T^{f}(\mathbf{m}_0)-T^{*}(\mathbf{m}_0)\big\|^{2}$$
+<p class="note">$T^f$ 是给定 $\widehat f$ 时的最优映射（一阶变分为 0，见式 31）；$T^*$ 是真 OT 映射。
+两式都是「gap $\ge \frac{\beta}{2}$ 乘以映射偏差的平方期望」——强凸把「目标差」转成「参数差的平方」。</p></div>
+
+<div class="mathcard"><h4>式 (16)：合并与 $W^2$ 桥（附录 A.2 式 34）</h4>
+$$\mathcal{E}_1+\mathcal{E}_2\ge\frac{\beta}{2}\mathbb{E}\|\widehat T-T^{f}\|^{2}+\frac{\beta}{2}\mathbb{E}\|T^{f}-T^{*}\|^{2}\ \ge\ \frac{\beta}{4}\mathbb{E}\|\widehat T-T^{*}\|^{2}$$
+$$\ge\frac{\beta}{4}W^{2}\big(\widehat T_{\#}\mathbb{P}_0,\ T^{*}_{\#}\mathbb{P}_0\big)=\frac{\beta}{4}W^{2}\big(\widehat T_{\#}\mathbb{P}_0,\ \mathbb{Q}^{*}\big)$$
+<p class="note"><b>常数推导</b>：第一步到第二步用了「$\|a\|^2+\|b\|^2\ge\frac12\|a+b\|^2$」（平行四边形/凸性），
+把两个平方期望合成一个 $\|\widehat T-T^*\|^2$，系数从 $\beta/2$ 变 $\beta/4$。最后一步用
+Wasserstein-2 距离的定义：$W^2(\widehat T_\#\mathbb{P}_0,\mathbb{Q}^*)\le\mathbb{E}\|\widehat T-T^*\|^2$
+（取传输方案为「$\mathbf{m}_0\mapsto(\widehat T(\mathbf{m}_0),T^*(\mathbf{m}_0))$」这个耦合）。
+整理即得 $W^2\le\frac{4}{\beta}(\mathcal{E}_1+\mathcal{E}_2)$。</p>
+<div class="cf">反事实：若不假设强凸（$\beta=0$），右侧发散，界无信息——强凸是把「对偶 gap」翻译成
+「Wasserstein 距离」的唯一桥梁。这也意味着：如果神经势 $f$ 太「曲折」（不平滑），$\beta$ 会很小，
+界会很松，学到的重心可能离真重心很远（见下一章的成色讨论）。</div></div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="s10">
+<div class="kicker">CHAPTER 10 &middot; 误差界成色</div>
+<h2>误差界的成色：$\beta$-强凸假设站得住吗</h2>
+<p>定理 3.2 干净，但它的<strong>前提</strong>值得较真：映射 $\mathbf{b}\mapsto C_k-\widehat f_k$ 是
+$\beta$-强凸的。这个假设在真实设定里成色如何？这一章把它拆开，并发散到 OT 的曲率视角。</p>
+
+<h3>$C_k$ 部分：欧氏范数的凸性</h3>
+<p>$C_k(\mathbf{m}_k,\mathbf{b})=\|\mathbf{m}_k-\mathbf{b}\|$ 对 $\mathbf{b}$ 是凸的，但<strong>不是强凸</strong>
+（欧氏范数在 $\mathbf{b}=\mathbf{m}_k$ 处不可导，Hessian 在射线方向为 0）。真正提供强凸的是
+$-\widehat f_k(\mathbf{b})$：如果神经势 $f_k$ 是<strong>强凹</strong>的，那么 $-f_k$ 强凸，两者相加强凸。</p>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>$\beta$ 来自势函数的曲率，不是来自成本</h4>
+<p>换句话说，误差界的松紧由<strong>学习到的势有多平滑</strong>决定。论文自己也点出：
+「在欧氏成本下，这个局部条件在神经势足够光滑时成立；实践里用正则（如 weight decay）提高平滑性」。
+这是诚实的——它承认强凸是<strong>一个需要满足的设计目标</strong>，不是自动成立的性质。
+一个诚实的读法是：Thm 3.2 给的是<strong>条件性保证</strong>（conditional guarantee），
+不是无条件的收敛定理。</p>
+<p>发散：这与最优传输里「熵正则」的思路同源——Sinkhorn 用熵项让传输问题强凸可解，
+代价是引入 bias。BaryBind 用 weight decay 让势平滑，也是在「可解性」与「保真」之间取平衡。
+两者都是<strong>正则化换凸性</strong>。</p></div>
+
+<h3>发散：Wasserstein-2 空间的正曲率与均值唯一性</h3>
+<p>为什么这里必须小心？因为 $\mathcal{P}_2(\mathbb{R}^d)$ 配 $W_2$ 是一个<strong>非负 Alexandrov 曲率</strong>
+空间。在正曲率空间里，Fréchet 均值（重心）一般<strong>存在但不唯一</strong>——多解对应多个局部谷。
+这就解释了两件事：</p>
+<div class="svgbox">
+<svg viewBox="0 0 940 260" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+<text x="235" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#7A3B2E">平坦空间：均值唯一</text>
+<circle cx="120" cy="120" r="10" fill="#2F6E75"/><circle cx="320" cy="120" r="10" fill="#C15B36"/><circle cx="220" cy="120" r="12" fill="#7A3B2E"/>
+<text x="220" y="160" text-anchor="middle" font-size="12" fill="#5F4B3B">算术均值 = 唯一 Fréchet 均值</text>
+<line x1="220" y1="120" x2="220" y2="200" stroke="#B5893F" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="705" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#2F6E75">正曲率空间：均值可能不唯一</text>
+<path d="M540,150 Q600,70 660,150" fill="none" stroke="#2F6E75" stroke-width="2.5"/>
+<circle cx="560" cy="118" r="10" fill="#C15B36"/><circle cx="740" cy="118" r="10" fill="#B5893F"/>
+<circle cx="620" cy="128" r="11" fill="#7A3B2E"/><circle cx="680" cy="128" r="11" fill="#7A3B2E"/>
+<text x="650" y="205" text-anchor="middle" font-size="12" fill="#5F4B3B">W₂ 空间正曲率 → 多个局部重心</text>
+<text x="650" y="228" text-anchor="middle" font-size="12" fill="#5F4B3B">（此处画出两个候选）</text>
+</svg>
+<p style="font-size:12.5px;color:#8C7663;margin-top:8px;text-align:center">图 2（自绘）：平坦空间均值唯一 vs 正曲率（Wasserstein-2）空间均值可能不唯一。</p>
+</div>
+
+<p>推论有两条：<strong>①</strong> WB 的唯一性需要额外条件（如各 $\mathbb{P}_k$ 落在一个凸测地球内），
+论文用「存在近似」而非「唯一」的语言是恰当的；<strong>②</strong> Thm 3.2 的界是相对
+<strong>某个</strong> $\mathbb{Q}^*$ 的，若真重心本身不唯一，界衡量的是「到最近/某个重心」的距离。</p>
+
+<div class="critique-box"><span class="tag">C1 · 取证</span>
+<h4>Thm 3.2 的 $\beta$-强凸是条件性假设，不是被验证的性质</h4>
+<p><strong>证据</strong>：定理陈述「Assume that the maps ... are $\beta$-strongly convex」，正文补充
+「欧氏成本下这个局部条件在神经势足够光滑时成立」，并建议用 weight decay。但论文<strong>没有</strong>给出
+学到的 $\widehat f_k$ 的实测曲率（Hessian 最小特征值），也没有消融「加/不加 weight decay」对
+$W^2(\widehat T_\#\mathbb{P}_0,\mathbb{Q}^*)$ 的影响。</p>
+<p><strong>影响</strong>：界是<b>条件性的</b>（若强凸则...），读者不能把它当成「BaryBind 必然收敛到真重心」。
+它是一张「如果条件满足就有保证」的路线图，不是安全气囊。</p>
+<p><strong>补救</strong>：补一组实验——记录训练过程中 $\widehat f_k$ 的 Hessian 最小特征值，
+或直接用 Sinkhorn 对小规模问题算出真 $\mathbb{Q}^*$，实测 $W^2(\widehat T_\#\mathbb{P}_0,\mathbb{Q}^*)$
+并对照 $\frac{4}{\beta}(\mathcal{E}_1+\mathcal{E}_2)$，看界是否紧（而不是只看检索指标涨了）。</p></div>
+</section>
+
+
+<!-- ============ 11 ============ -->
+<section id="s11">
+<div class="kicker">CHAPTER 11 &middot; 单纯形体积</div>
+<h2>Barycenter simplex：为什么体积是好度量</h2>
+<p>第二条理论主线是<b>体积</b>。BaryBind 定义了一个叫 <b>barycenter simplex</b> 的几何体：
+以 WB 嵌入 $\mathbf{b}$ 为顶点，由「原点到 $\mathbf{b}$ 的向量」与各模态到重心的<b>间隙向量</b>
+$\mathbf{r}_k=\mathbf{b}-\mathbf{m}_k$ 张成。它的体积同时量化两件事：对重心的全局对齐、以及模态间的差异。</p>
+
+<div class="mathcard"><h4>式 (17)：张成矩阵与体积平方（式 9，Gantmacher）</h4>
+$$\mathbf{R}=(\mathbf{b},\ \mathbf{r}_1,\ \cdots,\ \mathbf{r}_K),\qquad \mathrm{V}^2(\mathbf{b},\mathbf{r}_{1:K})=\det(\mathbf{R}^\top\mathbf{R})$$
+$$=\begin{vmatrix}\langle\mathbf{b},\mathbf{b}\rangle&\langle\mathbf{b},\mathbf{r}_1\rangle&\cdots&\langle\mathbf{b},\mathbf{r}_K\rangle\\ \langle\mathbf{r}_1,\mathbf{b}\rangle&\langle\mathbf{r}_1,\mathbf{r}_1\rangle&\cdots&\langle\mathbf{r}_1,\mathbf{r}_K\rangle\\ \vdots&\vdots&\ddots&\vdots\\ \langle\mathbf{r}_K,\mathbf{b}\rangle&\langle\mathbf{r}_K,\mathbf{r}_1\rangle&\cdots&\langle\mathbf{r}_K,\mathbf{r}_K\rangle\end{vmatrix}$$
+<p class="note">$K$ 个向量张成的平行多面体体积平方 = Gram 行列式 $\det(\mathbf{R}^\top\mathbf{R})$。
+这是线性代数的标准结果：$n$ 个向量的体积平方等于它们两两内积构成的 Gram 矩阵的行列式。
+发散：这正是 GRAM（Gramian Multimodal）名字的来源——Gram 行列式度量「向量组是否线性独立/张成大体积」，
+独立性越强体积越大，越共线体积越小。BaryBind 沿用同一工具，但把中心从原点换成了 WB 锚点。</p></div>
+
+<h3>$n=2$ 情形：体积 = $\sin\theta$</h3>
+<div class="mathcard"><h4>式 (18)：二模态的体积（附录 A.3）</h4>
+<p class="note">取归一化向量，$\langle\mathbf{b},\mathbf{b}\rangle=\langle\mathbf{r}_1,\mathbf{r}_1\rangle=1$，
+记 $\cos\theta=\langle\mathbf{b},\mathbf{r}_1\rangle$：</p>
+$$\mathrm{Vol}_{n=2}^2=\begin{vmatrix}1&\cos\theta\\ \cos\theta&1\end{vmatrix}=1-\cos^2\theta=\sin^2\theta\ \Longrightarrow\ \mathrm{Vol}_{n=2}=\sin\theta$$
+<p class="note">二模态时，体积退化成<b>两个方向夹角的正弦</b>——衡量「模态向量与重心方向的偏离」。
+$\theta$ 越小（越共线）体积越小，对齐越好；$\theta\to 90^\circ$ 体积最大。这是「体积=对齐度」最直观的特例。</p></div>
+
+<h3>$n=3$ 情形：三角展开与耦合项</h3>
+<div class="mathcard"><h4>式 (19)：三模态的体积（附录 A.3）</h4>
+<p class="note">记 $\cos\theta=\langle\mathbf{b},\mathbf{r}_1\rangle,\ \cos\beta=\langle\mathbf{b},\mathbf{r}_2\rangle,\ \cos\gamma=\langle\mathbf{r}_1,\mathbf{r}_2\rangle$：</p>
+$$\mathrm{Vol}_{n=3}^2=1-\cos^2\theta-\cos^2\beta-\cos^2\gamma+2\cos\theta\cos\beta\cos\gamma$$
+$$=\sin^2\theta+\sin^2\beta+\sin^2\gamma+2\cos\theta\cos\beta\cos\gamma-2$$
+<p class="note">$\sin^2$ 项是各方向的角偏差，$2\cos\theta\cos\beta\cos\gamma$ 是三个方向的<b>角耦合项</b>。
+$\gamma$ 是两个间隙向量 $\mathbf{r}_1,\mathbf{r}_2$ 的夹角，直接反映<b>非锚模态之间的结构差异</b>。
+三者角都小 $\Rightarrow$ 正弦 $\approx 0$、余弦 $\approx 1$ $\Rightarrow$ 体积小。</p></div>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>耦合项 $2\cos\theta\cos\beta\cos\gamma$ 是「高阶信息」的所在</h4>
+<p>如果只用两两余弦相似度，你能拿到 $\cos\theta,\cos\beta,\cos\gamma$ 三个二阶量，但它们是<b>独立</b>的三个数，
+没有刻画三者的<b>联合</b>几何。而体积把它们通过一个行列式耦合起来——尤其那个乘积项
+$\cos\theta\cos\beta\cos\gamma$，是三个方向<b>同时</b>共线性的度量。这就是为什么体积是「高阶」度量：
+它不是三个角的平均，而是它们的<b>协调一致程度</b>。</p>
+<p>发散：这与统计里「协方差矩阵的行列式」= 广义方差是同一回事。$\det(\mathbf{R}^\top\mathbf{R})$ 衡量
+向量组张成空间的「胖瘦」；把模态聚到重心方向，就是让这个行列式变小（向量组退化到低维子空间）。
+对比学习里用 trace 或成对内积，等于只用了「对角+两两」信息；体积用了<b>全部</b>特征值乘积。</p></div>
+
+<div class="cf">反事实：若改用「体积最大化」（让向量组尽量正交），就会把模态推开——方向反了。
+BaryBind 用的是<b>小体积是正样本</b>，即「聚到一起」，逻辑与「正交=独立」恰好相反，因为这里追求的是
+<b>共识</b>而非独立性。这个符号方向在实现里最容易写反，是 C5 取证点。</div>
+</section>
+
+<!-- ============ 12 ============ -->
+<section id="s12">
+<div class="kicker">CHAPTER 12 &middot; 体积 vs 余弦</div>
+<h2>高阶矩的优势：与 GRAM / Triangle 的几何谱系</h2>
+<p>把体积度量放进谱系里看，能更清楚它的位置。成对余弦（CLIP 系）是<b>二阶</b>；GRAM 用
+<b>平行六面体体积</b>（以原点为中心）；Triangle 用<b>三角形</b>（以原点为中心）；BaryBind 用
+<b>重心单纯形</b>（以 WB 为顶点）。差别在两处：几何体的形状、以及中心在哪。</p>
+
+<div class="svgbox">
+<svg viewBox="0 0 940 280" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans SC',sans-serif">
+<text x="160" y="32" text-anchor="middle" font-size="13.5" font-weight="700" fill="#5F4B3B">CLIP：成对余弦（二阶）</text>
+<circle cx="110" cy="120" r="12" fill="#2F6E75"/><circle cx="210" cy="120" r="12" fill="#C15B36"/>
+<line x1="110" y1="120" x2="210" y2="120" stroke="#7A3B2E" stroke-width="2.5"/>
+<text x="160" y="175" text-anchor="middle" font-size="11.5" fill="#5F4B3B">一对，一个内积</text>
+<text x="160" y="205" text-anchor="middle" font-size="11.5" fill="#8C7663">看不到第三方</text>
+<text x="470" y="32" text-anchor="middle" font-size="13.5" font-weight="700" fill="#5F4B3B">GRAM / Triangle：原点中心体积</text>
+<line x1="420" y1="140" x2="520" y2="95" stroke="#2F6E75" stroke-width="2"/><line x1="420" y1="140" x2="525" y2="130" stroke="#C15B36" stroke-width="2"/><line x1="420" y1="140" x2="515" y2="160" stroke="#B5893F" stroke-width="2"/>
+<polygon points="520,95 525,130 515,160" fill="#B5893F" opacity="0.2"/>
+<circle cx="420" cy="140" r="6" fill="#33241A"/><text x="410" y="160" font-size="11" fill="#33241A">原点</text>
+<text x="470" y="205" text-anchor="middle" font-size="11.5" fill="#5F4B3B">向量组从原点张成</text>
+<text x="470" y="225" text-anchor="middle" font-size="11.5" fill="#8C7663">中心=原点，非语义中心</text>
+<text x="790" y="32" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2F6E75">BaryBind：重心单纯形</text>
+<line x1="700" y1="150" x2="780" y2="95" stroke="#7A3B2E" stroke-width="2.4"/><circle cx="780" cy="95" r="10" fill="#7A3B2E"/>
+<line x1="700" y1="150" x2="745" y2="108" stroke="#2F6E75" stroke-width="1.8"/><circle cx="745" cy="108" r="7" fill="#2F6E75"/>
+<line x1="700" y1="150" x2="775" y2="132" stroke="#C15B36" stroke-width="1.8"/><circle cx="775" cy="132" r="7" fill="#C15B36"/>
+<circle cx="700" cy="150" r="5" fill="#33241A"/><text x="682" y="168" font-size="11" fill="#33241A">原点</text>
+<polygon points="780,95 745,108 775,132" fill="#2F6E75" opacity="0.18"/>
+<text x="790" y="205" text-anchor="middle" font-size="11.5" fill="#5F4B3B">顶点=WB 锚点 b</text>
+<text x="790" y="225" text-anchor="middle" font-size="11.5" fill="#2F6E75">中心=语义共识，非原点</text>
+</svg>
+<p style="font-size:12.5px;color:#8C7663;margin-top:8px;text-align:center">图 3（自绘）：三类几何度量的谱系——成对余弦、原点中心体积、重心单纯形。</p>
+</div>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>为什么「中心从原点换成 WB」是本质改进</h4>
+<p>GRAM/Triangle 的体积度量其实已经抓住了「高阶几何」，但它们把所有向量都看成从原点出发——
+这个原点是<b>任意的坐标原点</b>，不含语义。BaryBind 的改进是：先把中心换成<b>语义共识</b>（WB），
+再在「各模态相对共识中心的间隙」上度量体积。所以它度量的是「各模态偏离共识多少」，
+而不是「各模态在坐标系里有多分散」。前者是我们想要的对齐，后者会被坐标选择污染。</p>
+<p>论文附录 B.5 正是在强调这一点：与纯锚点方法（GRAM/Triangle）的本质区别，在于 WB 优化是
+<b>对齐之前的一个额外优化过程</b>——它先造出一个「优化过的几何参考」，再用它指导对齐。
+消融显示去掉 WB 就掉点，说明 WB 是主要贡献，而不只是换了个体积公式。</p></div>
+
+<div class="mathcard"><h4>式 (20)：体积度量与二阶度量的信息量对比</h4>
+<p class="note">$n$ 个模态，成对余弦给出 $\binom{n}{2}$ 个二阶量；体积给出 1 个标量，
+但它<b>编码了</b>全部 $\binom{n}{2}$ 个角 + 它们的耦合（行列式展开含所有混合乘积项）。
+所以体积是<b>压缩的高阶统计</b>——用 1 个数承载了整个 Gram 矩阵的谱信息
+（$\det=\prod\text{eigenvalues}$）。</p>
+<div class="cf">反事实：若只用体积这一个标量做损失，会不会信息太压缩、梯度信号太弱？实践里 BVC 用了
+两组负样本（第 13 章）+ DAM 二分类（第 14 章）来补信号，说明单一体积确实不足以单独支撑训练。</div></div>
+</section>
+
+<!-- ============ 13 ============ -->
+<section id="s13">
+<div class="kicker">CHAPTER 13 &middot; BVC</div>
+<h2>BVC loss：两组负样本与「小体积=正样本」</h2>
+<p>有了体积度量，就能量化「对齐好不好」，再用对比学习的方式把它变小。这就是
+<b>Barycenter-anchored Volumetric Contrastive（BVC）loss</b>。</p>
+
+<div class="mathcard"><h4>式 (21)：BVC loss（式 10）</h4>
+$$\mathcal{L}_{\mathrm{BVC}}=-\mathbb{E}_i\Big[\log\frac{\exp(-\mathrm{V}(\mathbf{b}^{(i)},\mathbf{r}_{1:K}^{(i)})/\tau)}{\sum_j\exp(-\mathrm{V}(\mathbf{b}^{(i)},\mathbf{r}_{1:K}^{(j)})/\tau)}+\log\frac{\exp(-\mathrm{V}(\mathbf{b}^{(i)},\mathbf{r}_{1:K}^{(i)})/\tau)}{\sum_j\exp(-\mathrm{V}(\mathbf{b}^{(j)},\mathbf{r}_{1:K}^{(i)})/\tau)}\Big]$$
+<p class="note">$\mathbf{b}^{(i)}=T_\theta(\mathbf{m}_0^{(i)})$ 是第 $i$ 个样本的 WB 锚点，
+$\mathbf{r}_{1:K}^{(i)}=\{\mathbf{b}^{(i)}-\mathbf{m}_k^{(i)}\}$ 是各模态到重心的间隙向量。
+<b>正样本</b>：$(\mathbf{b}^{(i)},\mathbf{r}_{1:K}^{(i)})$ 同一样本配对；<b>负样本</b>有两组——
+（i）固定 $\mathbf{b}^{(i)}$ 配 $\mathbf{r}_{1:K}^{(j)},j\ne i$；（ii）固定 $\mathbf{r}_{1:K}^{(i)}$ 配 $\mathbf{b}^{(j)},j\ne i$。
+小体积 → 概率大 → 拉近；大体积 → 概率小 → 推远。</p></div>
+
+<h3>为什么是「小体积 = 好」</h3>
+<p>由第 11 章，体积小意味着各模态向量都紧贴重心方向（$\theta,\beta$ 小）、且间隙向量彼此共线（$\gamma$ 小）
+——也就是<b>所有模态聚向同一共识中心</b>。这正是我们要的。所以对比式里用
+$\exp(-\mathrm{V}/\tau)$：体积越小，指数越大，softmax 里越占优。符号方向是「负体积」，
+容易写反（若写成 $\exp(+\mathrm{V}/\tau)$ 就变成把模态推开）。</p>
+
+<h3>两组负样本的作用</h3>
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>双向负样本防止「重心坍缩」与「间隙坍缩」</h4>
+<p>只用第一组（固定 $\mathbf{b}$、换 $\mathbf{r}$）：网络可以让所有 $\mathbf{b}^{(i)}$ 塌成同一个点
+（重心坍缩），这样第一项分母全相等、损失退化。加第二组（固定 $\mathbf{r}$、换 $\mathbf{b}$）逼迫
+不同样本的 $\mathbf{b}^{(i)}$ 互不相同，防坍缩。反过来也一样：两组一起，让<b>锚点</b>与<b>间隙</b>
+都保持区分度。这是 InfoNCE 里「对称正负」思想在体积上的推广。</p></div>
+
+<div class="cf">反事实：若只用一组负样本（比如固定 $\mathbf{b}$），训练会退化成「让所有样本共享同一重心」，
+而间隙向量各自乱飞——全局几何就散了。双向负样本是保证<b>样本级</b>区分与<b>模态级</b>对齐同时成立的关键。</div>
+
+<h3>温度 $\tau$ 与数值稳定</h3>
+<p>$\tau=0.07$（与 CLIP 一致）。发散：体积的量纲与余弦不同（余弦在 $[-1,1]$，体积是
+$\det$ 开根、可任意大），所以 $\tau$ 的选取对体积损失比对余弦损失更敏感。论文附录 B.8
+专门讨论了「多面体体积度量的归一化」——因为 $\mathrm{V}^2=\det(\mathbf{R}^\top\mathbf{R})$
+在向量范数大时会爆，必须做归一化（如把 $\mathbf{b},\mathbf{r}_k$ 单位化，见式 35-36 的假设
+$\langle\mathbf{b},\mathbf{b}\rangle=1$）。这也是实现里必须小心的点（C6 取证）。</p>
+</section>
+
+<!-- ============ 14 ============ -->
+<section id="s14">
+<div class="kicker">CHAPTER 14 &middot; 总目标</div>
+<h2>DAM loss 与三合一训练目标</h2>
+<p>第三个损失是 <b>data-anchor matching（DAM）</b>，一个二分类头，用来区分「匹配/不匹配」的
+数据-锚点对。加上 MWB 与 BVC，构成总目标。</p>
+
+<div class="mathcard"><h4>式 (22)：DAM loss（式 11）</h4>
+$$\mathcal{L}_{\mathrm{DAM}}=\mathbb{E}_{(\mathbf{b},\mathbf{m}_{1:K})}\big[y\log p_m(\mathbf{b},\mathbf{m}_{1:K})+(1-y)\log(1-p_m(\mathbf{b},\mathbf{m}_{1:K}))\big]$$
+<p class="note">$p_m$ 由二分类器产生：锚模态数据过锚编码器，与拼接的非锚特征 $\mathbf{m}_{1:K}$
+经 cross-attention 融合，再过两层 MLP 输出概率。$y=1$ 表示匹配对。这延续 VAST 的做法，提供
+「样本级」的判别信号，补充体积损失的「几何级」信号。</p></div>
+
+<div class="mathcard"><h4>式 (23)：总预训练目标（式 12）</h4>
+$$\mathcal{L}:=\mathcal{L}_{\mathrm{MWB}}+\alpha_1\mathcal{L}_{\mathrm{BVC}}+\alpha_2\mathcal{L}_{\mathrm{DAM}}$$
+<p class="note">实践中 $\tau=0.07,\ \alpha_1=1,\ \alpha_2=0.1$。$\mathcal{L}_{\mathrm{MWB}}$ 里的势
+$f_{\omega_{1:K}}$ 走最大化，其余网络走最小化，交替训练（Algorithm 1）。</p></div>
+
+<div class="insight-box"><span class="tag">深度洞察</span>
+<h4>三个损失各管一「阶」</h4>
+<p><b>MWB</b>：造中心（分布层面的最优传输对偶，管「中心在哪」）；
+<b>BVC</b>：管高阶几何（体积，管「全局聚得好不好」）；
+<b>DAM</b>：管样本判别（二分类，管「对不对得上号」）。
+三者分别对应<b>零阶</b>（分布/中心）、<b>高阶</b>（几何/体积）、<b>实例阶</b>（判别）。
+去掉任何一个都会让某一「阶」失去监督——消融（第 16 章 Table 5）正是这么设计的。</p></div>
+
+<div class="cf">反事实：若只留 MWB（造中心但不对齐），中心算出来了但模态没聚过去；若只留 BVC
+（对齐但中心是锚点），退回 GRAM/Triangle 的原点中心问题；若只留 DAM，退回成对判别、无全局几何。
+三者缺一不可，这正是消融要证的事。</div>
+</section>
+
+
+<!-- ============ 15 ============ -->
+<section id="s15">
+<div class="kicker">CHAPTER 15 &middot; 实验 I</div>
+<h2>零样本分类与检索：Table 1 / Table 2 逐表精读</h2>
+<p>BaryBind 以 VAST 为骨干（BERT-B 文本、BEATs 音频、EVA-CLIP-ViT-G 视觉，约 1B 参数），
+在 VAST150k 上继续预训练。基准覆盖三模态（DiDeMo/ActivityNet）、四模态（MSR-VTT/VATEX，
+额外引入 ChronoDepth 深度）与音频中心（VGGSound）。</p>
+
+<div class="mathcard"><h4>Table 1（VGGSound5K 零样本分类，Acc@1 / Acc@5）</h4>
+<p class="note">BaryBind 在所有模态配置上最优：V+A 双模态 <b>55.6 / 83.4</b>，显著超过 VAST（48.1 / 79.6）、
+OmniBind（46.2 / 76.2）、GRAM（42.3 / 74.5）、Triangle（44.8 / 80.0）。
+弱模态音频-only（A）从 VAST 的 40.3 提到 <b>45.7</b>（+5.4）。</p>
+<div class="cf">反事实：A 单模态涨幅（+5.4）大于 V 单模态（+2.0），说明 BaryBind 确实在<b>救弱模态</b>——
+锚点法里被压制的模态（音频）受益最大，正对应「模态偏差被消除」的主张。</div></div>
+
+<div class="mathcard"><h4>Table 2（零样本 T2V / V2T 检索，R@1）</h4>
+<p class="note">MSR-VTT 上 BaryBind T-V 双向 54.2 / 52.0，T-VA 三模态 56.1 / 53.6，T-VAS 57.1 / 53.8；
+对比 VAST（T-VA 49.3 / 43.7）。<b>关键</b>：T2V 与 V2T 的差距（modality bias 的症状）明显缩小——
+BaryBind 在多数基准上双向更对称。论文主结果称把 T2V/V2T 差距比 VAST 缩小 3.1%。</p>
+<div class="cf">反事实：若 BaryBind 只是「更强的骨干」而非「更平衡的空间」，双向应当同比例涨、差距不变。
+但差距缩小，说明改善来自<b>对称性</b>，支持「WB 消除 modality bias」的归因。</div></div>
+
+<p>注意一个诚实的细节：BaryBind 在 VATEX 的 V2T 上略低于 GRAM（84.3 vs 82.1 的 T-VAS 口径需仔细对齐），
+并非每个格子全胜——但整体平衡性与鲁棒性是它的卖点。第 18 章会把「全胜 vs 平衡」这条归因链拎出来核查。</p>
+</section>
+
+<!-- ============ 16 ============ -->
+<section id="s16">
+<div class="kicker">CHAPTER 16 &middot; 实验 II</div>
+<h2>模态缺失鲁棒性 + 消融 + 训练动态</h2>
+
+<h3>模态缺失（Table 4/6）</h3>
+<p>BaryBind 用「任意可用子集」算重心，所以缺模态时，可用模态的对齐表示能当代理特征。
+两个设定：① AudioCaps 上训练时缺音频的 T2A/A2T 检索；② VGGSound 上推理时缺视频的事件分类。
+两者都优于锚点法（VAST/GRAM）与专门的缺失模态法（SIML/ShaSpec），退化更平缓。</p>
+
+<div class="mathcard"><h4>Table 5（损失消融，VGGSound Acc@1 + MSR-VTT R@1）</h4>
+<p class="note">基线 TV+TA 余弦对比：分类 38.1/42.8/44.5，检索 46.8/40.1。逐个加损失：
+<b>+MWB</b> 单独就涨（分类 A +5.5、检索 V2T +7.2）；<b>+BVC</b> 单独也涨；
+<b>MWB+BVC（去掉 TV+TA）</b>最强：分类 45.2/47.8/54.7，检索 54.8/51.1；
+<b>MWB+BVC+DAM</b> 完整版 45.7/48.3/55.6，检索 56.1/53.6。</p>
+<div class="cf">反事实：去掉 MWB（只 BVC+DAM）各项普遍掉（分类 V+A 50.1 vs 55.6），印证 WB 是主要贡献；
+去掉 BVC（只 MWB+DAM）分类 V+A 49.8、检索 50.6/48.8，也掉——说明体积对齐不可省。
+两个都拿掉退回成对基线最差。这组消融是「WB 是主要贡献、BVC 是必要补充」的直接证据。</div></div>
+
+<h3>训练动态（Fig 5）</h3>
+<p>从头训练对比：BaryBind 总损失下降更快、更早稳定（说明 MWB+BVC 让优化更高效）；
+R@1 全程更高；且 T2V/V2T 差距快速缩小并收敛——训练过程中空间持续变得更对称。
+这动态图直接可视化了「平衡表示空间被逐步建立」的过程。</p>
+</section>
+
+<!-- ============ 17 ============ -->
+<section id="s17">
+<div class="kicker">CHAPTER 17 &middot; 实验 III</div>
+<h2>初始化鲁棒性 + 语义共识 + 体积-性能相关</h2>
+
+<h3>初始化鲁棒性（Table 10/11）</h3>
+<div class="mathcard"><h4>Table 10（T-VA 设定，锚点选择消融）</h4>
+<p class="note"><b>不加 WB 优化</b>：视频锚 46.5、文本锚 48.1、T+V+A 融合锚 50.5（VGGSound V+A）。
+<b>加 WB 优化</b>：视频初始化 55.2、文本初始化 55.6、融合初始化 55.8。三个初始化都大幅涨，
+且彼此接近（55.2/55.6/55.8）。</p>
+<div class="cf">反事实：若「初始化即中心」（没 WB 优化），选哪个模态当锚结果差异大（46.5 vs 50.5）；
+加了 WB 优化后差异被抹平——证明贡献在 <b>WB 公式</b>，不在初始化选择。这是「重心确实不偏向任何模态」
+的实验指纹。</div></div>
+
+<h3>语义共识检索（Table 20/21）</h3>
+<p>用 WB 空间做跨模态检索：把文本查询映进 WB 空间，再去检索视频/音频/字幕。
+检索结果稳定共享同一高层概念（如「厨房烹饪」「篮球」），同时保留模态特异变化
+（Table 20：query「一个人在厨房做饭」→ 检索到「切龙虾」「备菜」「加汤」等视频/音频/字幕）。
+这实证了 WB 空间确实捕获了跨模态的共享语义结构。</p>
+
+<h3>体积-性能相关（Fig 6）</h3>
+<div class="mathcard"><h4>Fig 6：体积与下游 R@1 负相关</h4>
+<p class="note">在 MSR-VTT 零样本检索上，barycenter simplex 体积与 R@1 呈明显负相关，
+Pearson $\rho=-0.9844$。这印证了「体积小 = 对齐好 = 性能高」的核心主张——
+体积不仅是个训练损失，也是<b>性能的代理指标</b>（可预测检索质量）。</p>
+<div class="cf">反事实：若体积与性能无关（$\rho\approx 0$），那它就只是个任意的正则项。$\rho=-0.98$
+说明体积确实在度量「对齐质量」，有诊断价值。但注意：相关不等于因果，也可能是体积小同时
+反映了别的因素（如嵌入范数小）。</div></div>
+</section>
+
+<!-- ============ 18 ============ -->
+<section id="s18">
+<div class="kicker">CHAPTER 18 &middot; 批判</div>
+<h2>八条法证式批判</h2>
+<p>以下是「证据 → 推理 → 影响 → 补救」格式的批判。它们不否定 BaryBind 的贡献，而是标出
+我认为需要额外实验才能坐实的地方。</p>
+
+<div class="critique-box"><span class="tag">C1 · 理论</span>
+<h4>Thm 3.2 的 $\beta$-强凸是条件性假设，未被实证</h4>
+<p><strong>证据</strong>：定理「Assume ... $\beta$-strongly convex」，正文称欧氏成本下神经势足够光滑时成立，
+建议 weight decay。但无实测 Hessian 曲率、无 weight decay 消融、无 $W^2$ 实测对照界。
+<strong>影响</strong>：界是条件性保证，不能读作「必然收敛到真重心」。
+<strong>补救</strong>：小规模用 Sinkhorn 算真 $\mathbb{Q}^*$，实测 $W^2$ 与 $\frac{4}{\beta}(\mathcal{E}_1+\mathcal{E}_2)$ 对照，看界紧不紧。</p></div>
+
+<div class="critique-box"><span class="tag">C2 · 理论</span>
+<h4>Prop 3.1 用欧氏成本 $\|\mathbf{m}-\mathbf{b}\|$，但对偶假设一般成本 $C_k$</h4>
+<p><strong>证据</strong>：附录 A.1 推导时写一般 $C_k$，最终取 $C_k=\|\mathbf{m}_k-\mathbf{b}\|$（Wasserstein）。
+但 $\ell_2$ 范数不可导、非强凸，与 Thm 3.2 的强凸要求存在<b>张力</b>（见 C1）。
+<strong>影响</strong>：理论（一般成本）与实现（欧氏成本）之间有错位，理想条件下成立的结论，
+在真实成本下要额外论证。
+<strong>补救</strong>：显式区分「对偶等式」与「误差界」两处假设；或改用平方成本 $\|\cdot\|^2$（强凸，
+但对应 $W_2$ 二阶）并重跑。</p></div>
+
+<div class="critique-box"><span class="tag">C3 · 归因</span>
+<h4>「WB 是主要贡献」依赖单一消融表，缺隔离</h4>
+<p><strong>证据</strong>：Table 5 显示去掉 MWB 掉点，但 MWB 与 BVC 耦合（BVC 的体积依赖 WB 锚点 b），
+去掉 MWB 时 BVC 也随之失效或变形。<strong>影响</strong>：难以把「WB 的贡献」与「BVC 失效的损失」分开——
+掉点可能部分来自 BVC 塌了，而非 WB 本身。
+<strong>补救</strong>：加一组「固定 WB 锚点（用 Sinkhorn 离线算）+ 只训 BVC」的对照，隔离 WB 优化的净贡献。</p></div>
+
+<div class="critique-box"><span class="tag">C4 · 数值</span>
+<h4>体积度量的数值稳定性与归一化未充分讨论</h4>
+<p><strong>证据</strong>：$\mathrm{V}^2=\det(\mathbf{R}^\top\mathbf{R})$ 在向量范数大时爆，附录 B.8 提到归一化
+但主文只隐含假设 $\langle\mathbf{b},\mathbf{b}\rangle=1$（式 35）。<strong>影响</strong>：实现里若没归一化，
+梯度会爆炸或被范数主导，损失意义漂移。
+<strong>补救</strong>：明确归一化策略（单位化/层归一化）、给数值范围、消融归一化对训练稳定的影响。</p></div>
+
+<div class="critique-box"><span class="tag">C5 · 符号</span>
+<h4>「小体积=正样本」的符号方向易写反，需核实实现</h4>
+<p><strong>证据</strong>：BVC 用 $\exp(-\mathrm{V}/\tau)$，即负体积进 softmax。但体积度量本身常被用来
+做「最大化多样性」。<strong>影响</strong>：若实现里符号反了，会变成推散模态，与主张相反，
+而检索指标涨点可能是别的机制补偿。
+<strong>补救</strong>：开源代码核对（github.com/xl-tang3/BaryBind），并补一个「符号翻转」的对照实验。</p></div>
+
+<div class="critique-box"><span class="tag">C6 · 训练</span>
+<h4>sup-inf 对抗优化的稳定性未量化</h4>
+<p><strong>证据</strong>：MWB 是 max-min，交替优化 $f$（上）与 $T_\theta$（下），但论文未报告
+对偶 gap $\mathcal{E}_1,\mathcal{E}_2$ 的实测轨迹，也未讨论 $f$ 与 $T$ 的学习率比、收敛判据。
+<strong>影响</strong>：对抗训练易震荡或模式坍缩，读者不知这套交替到底稳不稳。
+<strong>补救</strong>：给 $\mathcal{E}_1,\mathcal{E}_2$ 随训练的曲线（与 C1 的实测结合），证明对偶确实在收紧。</p></div>
+
+<div class="critique-box"><span class="tag">C7 · 泛化</span>
+<h4>「语义共识」由检索案例定性支撑，缺定量度量</h4>
+<p><strong>证据</strong>：Table 20/21 用若干查询展示语义一致，但是<b>定性</b>案例。
+<strong>影响</strong>：「WB 空间捕获语义共识」是核心主张，却主要靠可视化与个案，
+缺少如「跨模态语义一致性分数」的定量指标。
+<strong>补救</strong>：定义并报告一个共识度量（如跨模态检索的语义标签一致性率），与 VAST 对比。</p></div>
+
+<div class="critique-box"><span class="tag">C8 · 范围</span>
+<h4>扩到更多模态的 scaling 只到 4-5 个模态，且重心唯一性未讨论</h4>
+<p><strong>证据</strong>：附录 B.6/B.13 讨论扩到更多模态，但模态数有限；且未讨论 $K$ 大时
+重心唯一性/稳定性（第 10 章发散点：正曲率下均值可能不唯一）。<strong>影响</strong>：
+「可扩展」的主张在模态很多时，重心估计可能不稳。
+<strong>补救</strong>：扩到 $K\ge 6$ 模态，报告重心方差/多解性；或引入重心唯一性的充分条件并验证。</p></div>
+</section>
+
+<!-- ============ 19 ============ -->
+<section id="s19">
+<div class="kicker">CHAPTER 19 &middot; 科研问题</div>
+<h2>五个可追问的方向</h2>
+<p>每张卡含「问什么 + 反向判据 + 下手处」，按零成本到训练成本分级。</p>
+
+<div class="research-question"><span class="tag">Q1 · 理论</span>
+<h4>体积度量能否推广到更高阶（三阶以上）不变量？</h4>
+<p>Gram 行列式是二阶内积的乘积；能否构造<b>三阶/四阶张量不变量</b>来度量 $n$ 模态的更高阶对齐？
+<strong>反向判据</strong>：若高阶不变量在检索上无增益，说明二阶（体积）已饱和，高阶是冗余；
+若有增益，说明现有体积丢了信息。<strong>下手处</strong>：构造 $\sum_{i<j<k}\langle\mathbf{r}_i,\mathbf{r}_j,\mathbf{r}_k\rangle$
+型三阶量，加入 BVC，测 MSR-VTT R@1；零训练成本（只改损失）。</p></div>
+
+<div class="research-question"><span class="tag">Q2 · 理论</span>
+<h4>Wasserstein-2 正曲率下，重心唯一性条件是什么？</h4>
+<p>第 10 章指出 WB 可能不唯一。能否给出「各 $\mathbb{P}_k$ 落在凸测地球内 ⇒ 重心唯一」的可验证条件？
+<strong>反向判据</strong>：若实测多模态分布总满足唯一性条件，C8 的担忧被证伪，可安全扩展模态数。
+<strong>下手处</strong>：对真实多模态特征分布，用 Sinkhorn 估重心并测其对初始化的敏感度（多次采样看方差）；
+低训练成本。</p></div>
+
+<div class="research-question"><span class="tag">Q3 · 方法</span>
+<h4>体积度量与矩匹配（moment matching）的等价性？</h4>
+<p>体积小 ≈ 向量组共线，是否等价于「低阶矩匹配」？能否把 WB+体积理解成一种<b>分布矩匹配</b>？
+<strong>反向判据</strong>：若加显式矩匹配（均值+协方差对齐）与体积损失等价，说明体积是矩匹配的压缩形式；
+若不等价，体积有独立价值。<strong>下手处</strong>：加二阶矩匹配项，对比体积损失的检索结果；
+零训练成本（损失替换）。</p></div>
+
+<div class="research-question"><span class="tag">Q4 · 方法</span>
+<h4>缺失模态时，重心能否做「插值」补全？</h4>
+<p>现在缺模态是「用子集重算重心」。能否把 WB 当作<b>生成中心</b>，插值出缺失模态的代理特征？
+<strong>反向判据</strong>：若插值代理与真实特征检索性能差距大，说明重心不含足够模态特异信息，
+只能当共识不能当补全器。<strong>下手处</strong>：拿完整样本，遮蔽一模态，用重心插值重建，
+测检索/分类；中等训练成本。</p></div>
+
+<div class="research-question"><span class="tag">Q5 · 理论</span>
+<h4>WB+体积与信息瓶颈（information bottleneck）的关系？</h4>
+<p>把各模态压缩到重心，是否在最小化「模态特异信息」、保留「共享语义信息」——即一种 IB？
+能否用 IB 目标解释 BaryBind 为何更平衡、更鲁棒？<strong>反向判据</strong>：若 IB 度量（互信息）
+与 BaryBind 的平衡性无相关，说明 IB 解释不成立，需另寻理论。<strong>下手处</strong>：估
+$I(\text{模态};\text{表示})-I(\text{共识};\text{表示})$，与 T2V/V2T 差距做相关分析；理论+低训练成本。</p></div>
+</section>
+
+<!-- ============ 20 ============ -->
+<section id="s20">
+<div class="kicker">CHAPTER 20 &middot; 路线图与代码</div>
+<h2>怎么读、怎么复现</h2>
+<div class="roadmap">
+<div class="step"><h4>第 1-2 天：OT 与重心地基</h4><p>读 Monge/Kantorovich 对偶（Santambrogio《Optimal Transport for Applied Mathematicians》前 3 章）→
+Agueh–Carlier 2011（WB 定义）→ Cuturi–Doucet 2014（快速 WB）。复推本文式 (1)(2)(3)，理解 $c$-transform 凹性。</p></div>
+<div class="step"><h4>第 3-4 天：Prop 3.1 与 Thm 3.2</h4><p>对照附录 A.1/A.2 逐步复推。重点：Sion 三条前提、一致化消元（式 9）、强凸→$W^2$ 界（式 15-16）。
+自己算一遍常数 $4/\beta$ 的来历（平行四边形 + Wasserstein-2 耦合）。</p></div>
+<div class="step"><h4>第 5-6 天：体积几何与 BVC</h4><p>推 Gram 行列式 $\det(\mathbf{R}^\top\mathbf{R})$ 的 $n=2,3$ 显式（式 18-19），
+理解耦合项 $2\cos\theta\cos\beta\cos\gamma$。对照 GRAM/Triangle 的体积度量，看清中心位置的差别。</p></div>
+<div class="step"><h4>第 7 天：复现与验证</h4><p>跑 github.com/xl-tang3/BaryBind。按 Q1-Q5 选一个零成本实验动手（推荐 Q1 或 Q3，只改损失）。
+核对 C1-C8 的批判点，尤其体积符号（C5）与归一化（C4）。</p></div>
+</div>
+
+<div class="codebox">
+<div class="code-head"><span class="cred run">可运行实现</span><h4>A. barycenter simplex 体积（式 17，经维度自检）</h4></div>
+<pre><code class="language-python">import torch
+
+def barycenter_simplex_volume(b, r_list, normalize=True):
+    """b: (D,) WB 锚点；r_list: list of K (D,) 间隙向量 r_k = b - m_k
+    返回 V = sqrt(det(R^T R))，R = (b, r_1, ..., r_K) 形状 (D, K+1)"""
+    R = torch.stack([b] + list(r_list), dim=1)        # (D, K+1)
+    if normalize:
+        R = R / (R.norm(dim=0, keepdim=True) + 1e-8)  # 单位化，防 det 爆炸
+    gram = R.T @ R                                    # (K+1, K+1)
+    # 用 slogdet 求数值稳定；volume^2 = det(gram)
+    sign, logdet = torch.linalg.slogdet(gram)
+    vol_sq = sign * torch.exp(logdet)
+    return torch.sqrt(torch.clamp(vol_sq, min=0.0))
+
+# 自检：n=2 时应等于 sin(theta)
+b = torch.tensor([1.0, 0.0])
+r = torch.tensor([torch.cos(torch.tensor(0.7)), torch.sin(torch.tensor(0.7))])
+v = barycenter_simplex_volume(b, [r])
+assert abs(v.item() - torch.sin(torch.tensor(0.7)).item()) &lt; 1e-5, v
+print("ok, volume =", v.item(), " sin(0.7) =", torch.sin(torch.tensor(0.7)).item())</code></pre>
+<div class="code-note">可信度：可运行（维度与 $n=2$ 解析值 $\sin\theta$ 自检通过）。注意归一化步——不做会因范数爆掉（对应 C4）。</div>
+</div>
+
+<div class="codebox">
+<div class="code-head"><span class="cred idea">示意实现</span><h4>B. MWB loss 的交替优化骨架（式 11）</h4></div>
+<pre><code class="language-python"># 示意：T_theta 最小化、f_omega 最大化，交替
+for m_1K in dataloader:                     # K 个模态特征
+    m0 = m_1K.mean(0)                       # 初始化器：算术均值
+    b  = T_theta(m0)                        # 重心采样
+    # 一致性势：f_k = g_k - sum_i lambda_i g_i
+    g = [g_net[k](b) for k in range(K)]
+    f = [g[k] - sum(lam[i]*g[i] for i in range(K)) for k in range(K)]
+    # MWB loss
+    L_mwb = sum(lam[k] * (torch.norm(m_1K[k]-b) - f[k]) for k in range(K))
+    # 更新 f（最大化 -> 对 f 取 - ）与 T（最小化）
+    opt_f.zero_grad();  (-L_mwb).backward(retain_graph=True); opt_f.step()
+    opt_T.zero_grad();  (L_mwb + alpha1*L_bvc + alpha2*L_dam).backward(); opt_T.step()</code></pre>
+<div class="code-note">可信度：示意（省略 cross-attention 的 DAM 头与 BVC 负样本构造）。真实实现见 Algorithm 1。</div>
+</div>
+
+<div class="codebox">
+<div class="code-head"><span class="cred idea">示意实现</span><h4>C. BVC loss 两组负样本（式 21）</h4></div>
+<pre><code class="language-python">def bvc_loss(bs, rs, tau=0.07):
+    # bs: (B, D) 重心；rs: (B, K, D) 间隙向量
+    B = bs.size(0)
+    # 正样本体积
+    pos = torch.tensor([barycenter_simplex_volume(bs[i], list(rs[i]))
+                        for i in range(B)])
+    # 第一组：固定 b_i，换 r_j
+    neg1 = torch.tensor([[barycenter_simplex_volume(bs[i], list(rs[j]))
+                          for j in range(B)] for i in range(B)])
+    # 第二组：固定 r_i，换 b_j
+    neg2 = torch.tensor([[barycenter_simplex_volume(bs[j], list(rs[i]))
+                          for j in range(B)] for i in range(B)])
+    p1 = torch.logsumexp(-neg1/tau, dim=1)
+    p2 = torch.logsumexp(-neg2/tau, dim=1)
+    return -( -pos/tau - p1 + -pos/tau - p2 ).mean()   # 对称两组</code></pre>
+<div class="code-note">可信度：示意（逐对算体积，实际应批量）。注意 <code>-pos/tau</code> 的负号——对应 C5。</div>
+</div>
+
+<h3>结语</h3>
+<p>BaryBind 的贡献是把「多模态绑定的中心」从「某个模态」换成「所有模态分布的 Wasserstein 重心」，
+并用一个以重心为顶点的单纯形体积作为高阶全局对齐度量。它的两块理论——
+<b>对偶（Prop 3.1）</b>与<b>误差界（Thm 3.2）</b>——把最优传输的语言完整引入多模态表示学习，
+而体积几何则把对齐从二阶推向高阶。诚实地讲，误差界依赖未实证的强凸假设（C1）、对偶与实现的成本有错位（C2）、
+主贡献的隔离不足（C3）——但「用几何共识中心消除模态偏差」这个方向，无论理论还是实验都立得住，
+值得继续追。<b>它留给我的问题</b>：重心到底是一个「共识」还是一个「插值器」？这决定它是只做理解，
+还是也能反过来做生成——论文自己也把「加入重建以支持生成」列为未来工作。</p>
+</section>
+
+</main>
+
+<footer>
+<div class="inner">
+  <h3>参考文献（关键条目）</h3>
+  <ol>
+    <li>Agueh &amp; Carlier (2011). Barycenters in the Wasserstein space. <em>SIAM J. Math. Anal.</em> — WB 定义与存在性。</li>
+    <li>Cuturi &amp; Doucet (2014). Fast computation of Wasserstein barycenters. <em>ICML</em> — WB 的快速算法。</li>
+    <li>Santambrogio. Optimal Transport for Applied Mathematicians — Kantorovich 对偶与 $c$-transform。</li>
+    <li>Gantmacher. The Theory of Matrices — Gram 行列式与体积。</li>
+    <li>Sion (1958). On general minimax theorems — 极小极大定理。</li>
+    <li>Tang, Xu, Gu, Yang, Sun (2026). Binding Multiple Modalities via Multimodal Wasserstein Barycenter (BaryBind). arXiv:2609.33800.</li>
+  </ol>
+  <div class="fin">
+    <p>论文版权归原作者所有；本篇是我自己的深读笔记，批判观点不代表作者立场。代码见
+    <a href="https://github.com/xl-tang3/BaryBind">github.com/xl-tang3/BaryBind</a>。</p>
+  </div>
+</div>
+</footer>
+</body>
+</html>

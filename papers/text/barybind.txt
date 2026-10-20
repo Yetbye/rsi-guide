@@ -1,0 +1,5460 @@
+ 
+ 
+ 
+ Binding Multiple Modalities via Multimodal Wasserstein Barycenter 
+ 
+ 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+- 
+
+ 
+ 
+ 
+ 
+ 
+ 
+
+### Report GitHub Issue
+
+ × 
+ 
+
+ 
+ Title: 
+ 
+
+ 
+
+Content selection saved. Describe the issue below: 
+
+ Description: 
+ 
+ 
+
+ 
+ Submit without GitHub 
+ Submit in GitHub 
+ 
+ 
+ 
+ 
+ arXiv is now an independent nonprofit! 
+ Learn more 
+ × 
+ 
+
+ 
+ 
+ 
+ Back to arXiv 
+ 
+ 
+ 
+ 
+ Why HTML? 
+ 
+ 
+ 
+
+ 
+ Report Issue 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ Back to Abstract 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ Download PDF 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+- Abstract 
+
+- 1 Introduction 
+
+- 2 Related Works 
+
+- 3 Method 
+ 
+
+- 3.1 Preliminaries 
+
+- 3.2 Multimodal Wasserstein Barycenter Optimization 
+
+- 3.3 Barycenter-anchored Volumetric Alignment 
+
+- 3.4 Training Loss 
+ 
+
+- 4 Experiments 
+ 
+
+- 4.1 Experimental Setup 
+ 
+
+- 4.1.1 Zero-shot video/audio classification 
+
+- 4.1.2 Cross-modal retrieval 
+ 
+
+- 4.2 Robustness to Missing Modalities 
+
+- 4.3 Ablation Studies 
+ 
+
+- 5 Conclusion 
+
+- References 
+
+- A Theoretical Results 
+ 
+
+- A.1 Proof of theorem 
+
+- A.2 Proof of Theorem 
+
+- A.3 Analysis on barycenter simplex volume 
+ 
+
+- B Experimental Details and More Results 
+ 
+
+- B.1 Training algorithm 
+
+- B.2 Experimental Details 
+
+- B.3 Broader Multimodal Understanding and Generation 
+
+- B.4 Finetuning Cross-modal Retrieval Results 
+
+- B.5 Clarification on Distinction from Prior Anchor-based Approaches 
+
+- B.6 Scalability of BaryBind with Increasing Modality Number 
+
+- B.7 Robustness on different WB initializers 
+
+- B.8 Normalization Strategies for Polytope Volume Metric 
+
+- B.9 Hyperparameter Sensitivity Analysis 
+
+- B.10 Training from Scratch Evaluation 
+ 
+
+- B.10.1 Effect of Relaxing the Congruence Constraint 
+
+- B.10.2 Stability of WB Map Adaptation under Encoder Distribution Shifts 
+ 
+
+- B.11 Computational Overhead Comparison During Training 
+
+- B.12 Semantic Consensus in the Learned WB Space 
+
+- B.13 More Quantitative Results on Scaling to More Modalities 
+
+- B.14 Additional Evaluations on VideoQA and Cross-modal Generation 
+
+- B.15 Visualization of Top-1 Retrieval Results 
+
+- B.16 Limitations and Future Work 
+
+- B.17 Impact Statement 
+ 
+ 
+ 
+ 
+ 
+ 
+ License: arXiv.org perpetual non-exclusive license
+ 
+ 
+arXiv:2609.33800v1 [cs.LG] 27 Sep 2026 
+ 
+ 
+
+### Binding Multiple Modalities via Multimodal Wasserstein Barycenter
+
+ 
+ 
+ Xiaole Tang
+ 
+    
+ Jiayi Xu
+ 
+    
+ Xiang Gu
+ 
+    
+ Yan Yang
+ 
+    
+ Jian Sun
+ † † thanks: Corresponding authors. 
+ Affiliation:  Xi’an Jiaotong University
+ 
+
+ 
+
+### Abstract
+
+ 
+
+Multimodal learning beyond two modalities commonly leverages a specific modality (e.g., text) to bind other modalities. However, how to establish a more balanced representation space that approximates shared semantics while respecting the holistic geometry of $n$ -modal data remains challenging. In this work, we present BaryBind, which aims to transport the specific modality towards the Wasserstein barycenter (WB) optimized across all modalities and introduces a volumetric alignment objective to establish a unified semantic space around the WB embedding. Specifically, we project specific modalities to the WB, which minimizes the average Wasserstein distances to multimodal distributions and serves as the anchor for subsequent alignment. We then construct a barycenter simplex, whose volume is taken as a similarity metric for global alignment centered at the WB. Experiments show that BaryBind achieves competitive performance in text-video-audio retrieval, classification, videoQA, and cross-modal generation tasks, along with robustness under modality absence and scalability to more than three modalities. 
+ 
+ 
+ 
+ 
+ 
+ Figure 1 : BaryBind learns the multimodal Wasserstein Barycenter (WB) of all modalities via WB optimization, and the WB serves as the anchor to bind modalities via volumetric alignment based on the barycenter simplex volume. Notably, BaryBind yields more balanced multimodal retrieval results and enables TA2I generation that well preserves both text and audio semantics. 
+ 
+ 
+
+### 1 Introduction
+
+ 
+
+Multimodal learning [ 3 ] seeks to integrate and process heterogeneous signals from multiple modalities (e.g., vision, language, audio, depth, etc. ) to build a coherent perception of the surrounding world. Since multimodal data are heterogeneous observations of a shared underlying reality/object, recent multimodal learning methods [ 42 , 20 ] learn a shared representation from different modalities. In this field, the success of CLIP [ 42 ] in aligning unified vision–language representations via contrastive learning has sparked the adoption of contrastive losses as an appealing solution for multimodal representation learning. However, traditional contrastive losses, e.g., InfoNCE [ 40 ] and BYOL [ 17 ] , are formulated in a pairwise fashion for $n=2$ cases typically arising from two modalities such as image–text [ 42 , 20 ] or audio–text [ 18 , 14 ] scenarios. 
+ 
+ 
+
+While scaling to $n$ modalities ( $n\geq 3$ ) poses significant challenges, a series of recent works [ 67 , 60 ] originating from ImageBind [ 16 ] leverage the binding property of a modality-specific anchor (e.g., image or language) to align other modalities via pairwise losses. Recently, VAST [ 9 ] , GRAM [ 12 ] , Triangle [ 11 ] , and Symile [ 44 ] relied on global similarity objectives that align $n$ modalities to a designated central modality, also known as the modality-specific anchor. However, such anchors can introduce modality biases, inducing an imbalanced representation space that deviates from the shared underlying semantics, with one modality dominating the representation space. This can be observed in Fig. 1 b, where the VAST model exhibits a large gap in Recall@1 between the text-to-video and video-to-text tasks, indicating potential asymmetry in cross-modal alignment. 
+ 
+ 
+ Figure 2 : The t-SNE comparison of multimodal embeddings on the zero-shot VGGSound dataset [ 8 ] . Compared to VAST [ 9 ] , BaryBind induces a latent space where class clusters are clearly separated, and multimodal embeddings are grouped around the WB embeddings. 
+ 
+ 
+
+To alleviate this issue, we are motivated by the view that multimodal data, though captured by heterogeneous sensors, reflect a shared underlying reality/object. Therefore, multimodal representations can be interpreted as modality-specific transformations of a shared representation that encodes semantic consensus. With this insight, we propose BaryBind that aligns multiple modalities to the Wasserstein Barycenter (WB) anchor, which defines a distribution that minimizes the average of Wasserstein distances to all multimodal distributions. As shown in Fig. 1 a, the WB is optimized across all modalities via the multimodal WB optimization process and then utilize as the anchor for subsequent alignment, aiming to mitigate modality-specific bias and encourages semantic consensus (Fig. 2 ). Based on the WB anchor, we further introduce a volumetric contrastive loss defined on the volume of a barycenter simplex, which quantifies the global alignment of $n$ -modal data. By contrasting the simplex’s volume (Fig. 1 a), BaryBind aligns modalities to the barycenter while preserving the holistic geometry within $n$ -modal data. Interestingly, with the barycenter-based alignment, we observe that BaryBind substantially alleviates the imbalance across modalities, reducing the T2V/V2T retrieval gap by 3.1% compared to VAST [ 9 ] (Fig. 1 b), and induces a latent space where modalities of each class are consistently clustered around the WB embeddings (Fig. 2 ). 
+ 
+ 
+
+The main contributions are highlighted as follows: 
+ 
+
+- • 
+ 
+
+ Method: We propose BaryBind, which transports the specific anchor to the WB that mitigates modality bias as the geometric semantic center. Multimodal embeddings are aligned to the WB via a volumetric alignment objective, enabling balanced multimodal understanding. 
+ 
+
+- • 
+ 
+
+ Theory: We develop an optimal transport (OT) duality-based optimization framework and error bounds for approximating the Wasserstein barycenter of multimodal representations. Meanwhile, we establish a barycenter simplex, whose volume serves as a global similarity metric and extends the insights of measuring $n$ -modal alignment. 
+ 
+
+- • 
+ 
+
+ Performance: BaryBind achieves balanced state-of-the-art performance in cross-modal retrieval, generation, multimodal classification, and videoQA tasks across diverse datasets. Notably, BaryBind shows unique robustness under modality absence and scalability to three or more modalities. 
+ 
+ 
+ 
+ 
+ 
+
+### 2 Related Works
+
+ 
+
+ Multimodal representation learning. Multimodal representation learning seeks to align heterogeneous modalities into a shared semantic space. CLIP  [ 42 ] initiates this paradigm with image–text contrastive learning, followed by audio extensions such as AudioCLIP  [ 18 ] , CLAP  [ 14 ] , and LAION-CLAP  [ 61 ] . WavCaps  [ 36 ] constructs a large-scale audio captioning dataset to support audio–language retrieval. To scale beyond two modalities, ImageBind  [ 16 ] introduces a pivot-based strategy, aligning each modality to the vision anchor. LanguageBind  [ 67 ] , UniBind  [ 33 ] , GRAM [ 12 ] , Triangle [ 11 ] , and LCO-EMB [ 62 ] extend alignment to language anchors, adopting unique volume-based contrastive losses. OmniBind  [ 60 ] aligns pre-trained unimodal experts via pairwise losses. VAST  [ 9 ] fuses modalities into a shared space but still relies on text-centered supervision. 
+ 
+ 
+
+In contrast, BaryBind alleviates the dominance of the specific anchor modality by explicitly transforming it into the shared WB, which is optimized as the barycenter of all multimodal distributions and acts as the refined anchor. It further leverages a barycenter-anchored volumetric contrastive loss that enables global alignment to the WB embedding, thereby establishing a more balanced semantic space centered at the WB embeddings. 
+ 
+ 
+
+ Wasserstein barycenter. The WB  [ 1 , 4 ] defines an averaging distribution that minimizes the weighted sum of Wasserstein distances [ 52 , 7 , 41 ] to input measures, preserving mass structure and OT-grounded geometry. This formulation has shown effectiveness on heterogeneous supports and has been applied in generative modeling  [ 13 ] and domain adaptation  [ 5 ] . Recent works estimate high-dimensional barycenters via deep dual formulations, including ICNN-based cycle-consistent models  [ 25 ] , neural OT maps  [ 23 , 50 , 51 , 49 ] , and energy-guided potentials  [ 24 ] . We extend this perspective to construct a barycenter-aligned joint space for multimodal alignment, bridging optimal transport with multimodal representation learning. 
+ 
+ 
+ 
+
+### 3 Method
+
+ 
+ Figure 3 : BaryBind establishes unified representation space through two processes: 1) The WB optimization process transforms modality-specific initializer $\bm{m_{0}}$ into the WB anchor $\bm{b}$ , in which the WB map $T_{\theta}$ is optimized by minimizing the average of Wasserstein distances to all multimodal distributions $\mathbb{P}_{k}$ . 2) The volumetric alignment process utilizes the WB anchor to induce a barycenter simplex, whose volume is contrasted to achieve global alignment to the WB embedding. 
+ 
+ 
+
+ Overview. In this work, we introduce BaryBind that aligns multiple modalities to the WB and suggest a volumetric alignment objective to establish a unified representation space. The overview is presented in Fig. 3 , where the WB optimization process (§ 3.2 ) learns a transformation from specific modality to the WB, which serves as the alignment center. The volumetric alignment process (§ 3.3 ) enables global alignment to the WB anchor by contrasting the volume of the barycenter simplex. 
+ 
+ 
+
+### 3.1 Preliminaries
+
+ 
+
+ Notation. 
+Let $\bar{K}=\{1,\dots,K\}$ for some $K\in\mathbb{N}$ . For a sequence $e_{0},\dots,e_{K}$ , we denote by $e_{1:K}$ the tuple $(e_{0},\dots,e_{K})$ . Let $\mathcal{X}\subset\mathbb{R}^{d}$ , $\mathcal{Y}\subset\mathbb{R}^{d^{\prime}}$ , and $\mathcal{X}_{k}\subset\mathbb{R}^{d_{k}}$ be compact subsets of Euclidean space. Denote by $\mathcal{C}(\mathcal{X})$ the space of continuous real-valued functions on $\mathcal{X}$ , and by $\mathcal{P}(\mathcal{X})$ the set of probability measures supported on $\mathcal{X}$ . Given $\mathbb{P}\in\mathcal{P}(\mathcal{X})$ and $\mathbb{Q}\in\mathcal{P}(\mathcal{Y})$ , we write $\Pi(\mathbb{P},\mathbb{Q})$ for the set of transport plans between them, i.e., all joint distributions on $\mathcal{X}\times\mathcal{Y}$ whose marginals are $\mathbb{P}$ and $\mathbb{Q}$ . The notation $\langle\cdot,\cdot\rangle$ denotes the cosine similarity over features. 
+ 
+ 
+
+ Optimal transport. Given two distributions $\mathbb{P}\in\mathcal{P}(\mathcal{X})$ and $\mathbb{Q}\in\mathcal{P}(\mathcal{Y})$ , along with a cost function $c:\mathcal{X}\times\mathcal{Y}\to\mathbb{R}_{+}$ , the classic optimal transport (OT) problem [ 21 ] aims to find a joint distribution $\pi\in\Pi(\mathbb{P},\mathbb{Q})$ that minimizes the expected transport cost: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\text{OT}_{c}(\mathbb{P},\mathbb{Q})\triangleq\inf_{\pi\in\Pi(\mathbb{P},\mathbb{Q})}\mathbb{E}_{(x,y)\sim\pi}\left[c(x,y)\right].$ 
+ | 
+ | (1) 
+
+[/TABLE]
+
+The specific choice of $c(x,y)=\|x-y\|$ yields $W(\mathbb{P},\mathbb{Q})=\inf_{\pi\in\Pi(\mathbb{P},\mathbb{Q})}\mathbb{E}_{(x,y)\sim\pi}\|x-y\|$ , known as the Earth-Mover or Wasserstein distance. 
+ 
+ 
+
+ Wasserstein barycenter (WB). Given distributions $\mathbb{P}_{k}\in\mathcal{P}(\mathcal{X}_{k})$ for $k\in\bar{K}$ and a vector $\lambda\in\mathbb{R}^{K+1}$ of non-negative weights $\lambda_{k}$ summing to 1, the WB problem seeks the distribution $\mathbb{Q}$ that minimizes the weighted sum of Wasserstein distances to the fixed marginals $\mathbb{P}_{1:K}$ : 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{Y})}\sum_{k=1}^{K}\lambda_{k}W(\mathbb{P}_{k},\mathbb{Q}).$ 
+ | 
+ | (2) 
+
+[/TABLE]
+
+We apply the WB formulation to the multimodal latent space $\mathcal{M}$ , where the encoded features of the $k$ -th modality lie in a subspace $\mathcal{M}_{k}$ and follow a distribution $\mathbb{P}_{k}$ . The WB approximates the geometric consensus of semantics as it models the “closest” distribution to all multimodal distributions. 
+ 
+ 
+ 
+
+### 3.2 Multimodal Wasserstein Barycenter Optimization
+
+ 
+
+Let $\mathbb{P}_{k}$ be the distribution of encoded features $\bm{m}_{k}\in\mathcal{M}_{k}\subset\mathcal{M}$ for modality $k\in\bar{K}$ , defined in the multimodal latent space $\mathcal{M}\subset\mathbb{R}^{D}$ . $\bm{m}_{0}$ denotes the anchor modality feature. The WB space is defined as $\mathcal{M}_{B}:=\text{supp}(\mathbb{Q})$ where $\mathbb{Q}$ denotes the WB distribution and $\mathcal{M}_{B}$ contains the barycenter features $\bm{b}$ . Given the distributions $\mathbb{P}_{1:K}$ , our goal is to establish the barycenter space $(\mathcal{M}_{B},\mathbb{Q})$ and use it as the joint representation space for multimodal alignment. Based on the WB formulation ( 2 ) over multimodal latent space, the multimodal WB problem can be written as 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}_{\mathrm{MWB}}^{*}=\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})}\sum_{k=1}^{K}\lambda_{k}W(\mathbb{P}_{k},\mathbb{Q}).$ 
+ | 
+ | (3) 
+
+[/TABLE]
+
+This formulation induces a barycenter distribution that minimizes the average of Wasserstein distances to all modalities. However, directly optimizing ( 3 ) is highly intractable. Therefore, we deduce a new dual reformulation (see Appendix A.1 ) with sup-inf objective as follows. 
+ 
+ 
+
+### Proposition 3.1 ( Duality of multimodal WB problem ) . 
+
+ 
+
+ The infimum value $\mathcal{L}^{*}_{\mathrm{MWB}}$ of the multimodal WB problem ( 3 ) can be expressed as 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}_{\mathrm{MWB}}=\sup\limits_{\sum_{k}\!\lambda_{k}f_{k}=0}~\inf_{\begin{subarray}{c}\\[0.3014pt]
+\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})\end{subarray}}\sum_{k=1}^{K}\lambda_{k}\mathop{\mathbb{E}}_{\begin{subarray}{c}\bm{m}_{k}\sim\mathbb{P}_{k}\\
+\bm{b}\sim\mathbb{Q}\end{subarray}}\big[\|\bm{m}_{k}-\bm{b}\|-f_{k}(\bm{b})\big],$ 
+ | 
+ | (4) 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+where the supremum is taken over the potentials $f_{k}:\mathcal{M}_{B}\rightarrow\mathbb{R}$ . We aim to learn the distribution $\mathbb{Q}$ by sampling WB embedding $\bm{b}=T(\bm{m_{0}})$ via a trainable WB map $T_{\theta}(\cdot):\mathcal{M}_{0}\rightarrow\mathcal{M}_{B}$ . Here, $\bm{m}_{0}$ represents the WB initializer, empirically selected as the arithmetic mean of all available multimodal features, i.e., $\bm{m_{0}}=\bar{\bm{m}}_{i}$ and can also be chosen as any modality (see ablation in Appendix B.7 ). We parameterize $T_{\theta}$ using an MLP. To ensure the congruence $\sum_{k}\!\lambda_{k}f_{k}=0$ [ 26 ] , we parameterize the potentials $f_{\omega_{k}}$ as $g_{\omega_{k}}-\sum_{i=1}^{K}\lambda_{i}g_{\omega_{i}}$ with two-layer MLPs $g_{\omega_{k}}:\mathbb{R}^{D}\rightarrow\mathbb{R}$ , which is a common trick used in [ 26 , 23 , 24 ] . 
+ 
+ 
+
+ Multimodal Wasserstein barycenter (MWB) loss . With this parameterization, we rewrite ( 4 ) as a max-min objective of the MWB loss $\mathcal{L}_{\mathrm{MWB}}$ , which can be optimized to compute the barycenter map $T_{\theta}$ for approximating the WB: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\max_{\omega_{1:K}}\min_{\theta}\bigg\{\mathcal{L}_{\mathrm{MWB}}(\omega_{1:K},\theta)\triangleq\sum_{k=1}^{K}\lambda_{k}\mathop{\mathbb{E}}_{\bm{m}_{k}\sim\mathbb{P}_{k}}\big[\|\bm{m}_{k}-T_{\theta}(\bm{m}_{0})\|-f_{\omega_{k}}(T_{\theta}(\bm{m}_{0}))\big]\bigg\}.$ 
+ | 
+ | (5) 
+
+[/TABLE]
+
+To solve the problem ( 5 ), we train $T_{\theta}$ and $f_{\omega_{1:K}}$ by alternately maximizing over $\omega_{1:K}$ and minimizing over $\theta$ in the MWB loss, in which we estimate the expectation using mini-batch data at each training step. During the optimization, all modalities jointly update the barycenter, ensuring that no single modality dominates and that the modality bias is reduced. Then the WB embedding is computed as $\bm{b}=T_{\theta}(\bm{m}_{0})$ , serving as the anchor for subsequent alignment. 
+ 
+ 
+
+We also establish the error bounds for the map $T$ with the following simplified notations: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | 
+ | $\displaystyle\mathcal{F}(f_{1:K},T):=\mathcal{L}_{\mathrm{MWB}}(f_{1:K},T),~~~\mathcal{L}(f_{1:K}):=\inf_{T:\mathcal{M}\rightarrow\mathcal{M}_{B}}\mathcal{F}(f_{1:K},T),~~~\mathcal{L}^{*}:=\mathcal{L}_{\mathrm{MWB}}^{*}.$ 
+ | 
+ | (6) 
+
+[/TABLE]
+
+ 
+ 
+
+### Theorem 3.2 (Error analysis via duality gaps for the barycenter distribution) . 
+
+ 
+
+ Let $C_{k}$ be any transport costs. Assume that the maps 
+ $\bm{b}\mapsto C_{k}(\bm{m}_{k},\bm{b})-\widehat{f}_{k}(\bm{b})$ 
+are $\beta$ -strongly convex for $\bm{m}_{k}\in\mathcal{M}_{k}$ , $k\in\{0,\dots,K\}$ .
+Consider the duality gaps for an approximate solution $(\widehat{f}_{1:K},\widehat{T})$ : 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{E}_{1}(\widehat{f}_{1:K},\widehat{T})\triangleq\mathcal{F}(\widehat{f}_{1:K},\widehat{T})-\mathcal{L}(\widehat{f}_{1:K}),~~~~~\mathcal{E}_{2}(\widehat{f}_{1:K})\triangleq\mathcal{L}^{*}-\mathcal{L}(\widehat{f}_{1:K}),$ 
+ | 
+ | (7) 
+
+[/TABLE]
+
+ Then the following inequality holds: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $W^{2}\!\left(\widehat{T}_{\#}\mathbb{P}_{0},\mathbb{Q}^{*}\right)\leq\frac{4}{\beta}\big(\mathcal{E}_{1}+\mathcal{E}_{2}\big).$ 
+ | 
+ | (8) 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+The proof is provided in the Appendix A.2 . This theorem ensures that the Wasserstein distance between the estimated distribution $\widehat{T}_{\#}\mathbb{P}_{0}$ and the true barycenter $\mathbb{Q}^{*}$ is upper-bounded by the sum of these two errors. In our setting with Euclidean cost, this local condition can hold when the learned neural potentials are sufficiently smooth. In practice, regularization (e.g., weight decay) can improve the smoothness of neural potentials, and our experiments demonstrate the effectiveness of the proposed Wasserstein barycenter solver. Our experiments also demonstrate that the WB solver performs well with Euclidean cost. 
+ 
+ 
+ 
+
+### 3.3 Barycenter-anchored Volumetric Alignment
+
+ 
+
+To bind modalities to the WB anchor while preserving the global structures of $K$ -dimensional multimodal data, we introduce a geometric structure called the barycenter simplex . As illustrated in Fig.  3 , the simplex takes the WB embedding $\bm{b}$ as the apex and is spanned by the vectors from the origin to $\bm{b}$ and the modality-to-barycenter gap vectors $\bm{r}_{k}=\bm{b}-\bm{m}_{k}$ for all modalities $\bm{m}_{k}$ ( $k\geq 1$ ). Owing to its unique composition, the simplex volume quantifies two aspects of multimodal features: (1) the global alignment to the barycenter, and (2) the inter-modality discrepancy across modalities. 
+ 
+ 
+
+Given the WB embedding $\bm{b}$ (i.e., the vector from the origin to the barycenter) and gap vectors $\{\bm{r}_{k}\}_{k=1}^{K}$ (i.e., the vectors from each modality to the barycenter), we define the matrix $\mathbf{R}=(\bm{b},\bm{r}_{1},\cdots,\bm{r}_{K})$ as the set of vectors spanning the barycenter simplex, whose square of volume can be computed according to Gantmacher [15] as: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\text{V}^{2}($ 
+ | $\displaystyle\bm{b},\bm{r}_{1:K}):=\text{V}^{2}(\bm{b},\bm{r}_{1},\cdots,\bm{r}_{K})=\det(\mathbf{R}^{T}\mathbf{R})=\begin{vmatrix}\langle\bm{b},\bm{b}\rangle&\langle\bm{b},\bm{r}_{1}\rangle&\cdots&\langle\bm{b},\bm{r}_{K}\rangle\\
+\langle\bm{r}_{1},\bm{b}\rangle&\langle\bm{r}_{1},\bm{r}_{1}\rangle&\cdots&\langle\bm{r}_{1},\bm{r}_{K}\rangle\\
+\vdots&\vdots&\ddots&\vdots\\
+\langle\bm{r}_{K},\bm{b}\rangle&\langle\bm{r}_{K},\bm{r}_{1}\rangle&\cdots&\langle\bm{r}_{K},\bm{r}_{K}\rangle\end{vmatrix}.$ 
+ | 
+ | (9) 
+
+[/TABLE]
+
+ 
+ 
+
+ Barycenter-anchored volumetric contrastive (BVC) loss . We propose the barycenter-anchored volumetric contrastive (BVC) loss that contrasts the volume of the barycenter simplex. Given multimodal embeddings $\{\bm{m}_{1}^{(i)},\dots,\bm{m}_{K}^{(i)}\}_{i=1}^{B}$ , where $B$ is the batch size and $\bm{m}_{0}^{(i)}$ is the anchor, the WB anchor is computed by $\bm{b}^{(i)}=T_{\theta}(\bm{m}_{0}^{(i)})$ , and the modality-to-barycenter gap vectors are defined as $\bm{r}_{1:K}^{(i)}=\{\bm{r}_{1}^{(i)},\dots,\bm{r}_{K}^{(i)}\}$ . We treat each $(\bm{b}^{(i)},\bm{r}_{1:K}^{(i)})$ as a positive pair , and construct two sets of negative pairs : (i) by fixing $\bm{b}^{(i)}$ and pairing it with $\bm{r}_{1:K}^{(j)}$ $j\neq i$ , and (ii) by fixing $\bm{r}_{1:K}^{(i)}$ and pairing it with $\bm{b}_{j}$ for $j\neq i$ . 
+ 
+ 
+
+The BVC loss contrasts small volumes for positive pairs against large volumes for negative ones: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}_{\mathrm{BVC}}=-\mathop{\mathbb{E}}_{i}\left[\log\frac{\exp\left(-\mathrm{V}(\bm{b}^{(i)},\bm{r}_{1:K}^{(i)})/\tau\right)}{\mathop{\sum}_{j}\exp\left(-\mathrm{V}(\bm{b}^{(i)},\bm{r}_{1:K}^{(j)})/\tau\right)}+\log\frac{\exp\left(-\mathrm{V}(\bm{b}^{(i)},\bm{r}_{1:K}^{(i)})/\tau\right)}{\mathop{\sum}_{j}\exp\left(-\mathrm{V}(\bm{b}^{(j)},\bm{r}_{1:K}^{(i)})/\tau\right)}\right],$ 
+ | 
+ | (10) 
+
+[/TABLE]
+
+where $\mathrm{V}(\bm{b},\bm{r}_{1:K})$ denotes the volume of the barycenter simplex formed by the WB and modality-to-barycenter gap vectors, whose square is computed as ( 9 ). The BVC loss binds multiple modalities to the shared WB embedding, ensuring a more holistic and accurate alignment of $n$ -modal data. 
+ 
+ 
+ 
+
+### 3.4 Training Loss
+
+ 
+
+To further guide the training process following VAST [ 9 ] , we employ a data-anchor matching (DAM) loss that distinguishes matched and mismatched data pairs: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}_{\mathrm{DAM}}=\mathbb{E}_{(\bm{b},\bm{m}_{1:K})\sim(\mathbb{Q},\mathbb{P}_{1:K})}[y\log p_{m}(\bm{b},\bm{m}_{1:K})+(1-y)\log(1-p_{m}(\bm{b},\bm{m}_{1:K}))].$ 
+ | 
+ | (11) 
+
+[/TABLE]
+
+To produce binary predictions $p_{m}$ , the modality-specific anchor data are fed into the anchor encoder and integrated with the concatenated non-anchor features $\bm{m}_{1:K}$ by cross-attention layers. Then the output feature is passed through a two-layer MLP to generate the output probability. 
+ 
+ 
+
+The overall pre-training objective $\mathcal{L}$ combines the three losses, $\mathcal{L}_{\text{MWB}}$ , $\mathcal{L}_{\text{BVC}}$ , and $\mathcal{L}_{\text{DAM}}$ , as follows: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}:=\mathcal{L}_{\text{MWB}}+\alpha_{1}\mathcal{L}_{\text{BVC}}+\alpha_{2}\mathcal{L}_{\text{DAM}}.$ 
+ | 
+ | (12) 
+
+[/TABLE]
+
+Particularly, the potentials $f_{\omega_{1:K}}$ in $\mathcal{L}_{\text{MWB}}$ are optimized via maximization, and are trained in an alternating manner against the minimization of the remaining networks. The training pipeline in summarized in Algorithm 1 in the Appendix B.1 . 
+ 
+ 
+ Figure 4 : Visualization of multimodal embeddings before alignment (left) and after applying TV + TA cosine-based alignment (middle) and the proposed BVC alignment (right). The BVC loss promotes convergence of embeddings towards the WB anchors, forming compact clusters around the WB embeddings, which highlights improved balanced multimodal alignment. 
+ 
+ 
+
+ Visualization of multimodal embeddings before and after alignment .
+To intuitively illustrate the effect of our barycenter-based alignment, we visualize the embeddings of three categories (cat meowing, sea waves, tapping guitar) across audio, text, and vision modalities from VGGSound [ 8 ] , as shown in Fig. 4 . Without alignment (left), embeddings of different modalities are scattered, exhibiting notable modality gaps within the same class. Incorporating pairwise alignment (middle) improves class clustering but still reveals modality separations. In contrast, with our BVC loss (right), embeddings of all modalities converge around their class-wise Wasserstein barycenters, leading to compact intra-class structures and reduced inter-modality discrepancies. This clearly demonstrates that the volumetric constraint effectively promotes balanced alignment around the WB embeddings. 
+ 
+ 
+ 
+ 
+
+### 4 Experiments
+
+ 
+
+### 4.1 Experimental Setup
+
+ 
+ Table 1: 
+ Zero-shot video/audio classification results on VGGSound5K. Results from our baseline VAST and the proposed BaryBind , and the performance gains are highlighted accordingly.
+ 
+ 
+
+[TABLE]
+
+| 
+ | Method 
+ | Modality 
+ | Acc@1 
+ | Acc@5 
+
+| 
+ | ImageBind [ 16 ] 
+ | A 
+ | 31.6 
+ | 58.7 
+
+| 
+ | ImageBind [ 16 ] 
+ | V 
+ | 37.9 
+ | 65.9 
+
+| 
+ | LanguageBind [ 67 ] 
+ | A 
+ | 34.1 
+ | 62.8 
+
+| 
+ | LanguageBind [ 67 ] 
+ | V 
+ | 39.6 
+ | 64.5 
+
+| 
+ | GRAM [ 12 ] 
+ | V 
+ | 41.6 
+ | 74.3 
+
+| 
+ | GRAM [ 12 ] 
+ | A+V 
+ | 42.3 
+ | 76.4 
+
+| 
+ | Triangle [ 11 ] 
+ | A+V 
+ | 44.8 
+ | 80.0 
+
+| 
+ | OmniBind [ 60 ] 
+ | A 
+ | 41.7 
+ | 70.8 
+
+| 
+ | OmniBind [ 60 ] 
+ | V 
+ | 45.4 
+ | 73.2 
+
+| 
+ | OmniBind [ 60 ] 
+ | A+V 
+ | 46.2 
+ | 76.2 
+
+| 
+ | VAST [ 9 ] 
+ | A 
+ | 40.3 
+ | 71.7 
+
+| 
+ | VAST [ 9 ] 
+ | V 
+ | 46.3 
+ | 72.7 
+
+| 
+ | VAST [ 9 ] 
+ | A+V 
+ | 48.1 
+ | 79.6 
+
+| 
+ | BaryBind 
+ | A 
+ | 45.7 ​(+5.4) 
+ | 75.2 ​(+3.5) 
+
+| 
+ | BaryBind 
+ | V 
+ | 48.3 ​(+2.0) 
+ | 76.4 ​(+3.7) 
+
+| 
+ | BaryBind 
+ | A+V 
+ | 55.6 ​(+7.5) 
+ | 83.4 ​(+3.8) 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+We adopt VAST  [ 9 ] as the backbone, with BERT-B for text, BEATs for audio, and EVA-CLIP-ViT-G  [ 48 ] for visual encoding. In total, the model comprises approximately 1B parameters (see Appendix B.11 for computational overhead analysis). Unlike VAST, we discard its modality fusion layers and introduce lightweight MLPs for barycenter optimization. Following the setting of GRAM [ 12 ] and Triagnle [ 11 ] , we continue pretraining based on VAST using our proposed loss functions on the VAST150k dataset  [ 9 ] . VAST [ 9 ] , GRAM [ 12 ] , Triangle [ 11 ] , and PMRL [ 31 ] adopt the same architectures and training strategy for a fair comparison. $\tau$ is 0.07 and the trade-off parameters in ( 12 ) are set as $\alpha_{1}=1,\alpha_{2}=0.1$ (see Appendix B.9 for sensitivity analysis). The barycenter weights $\lambda_{k}$ ( $k\in\bar{K}$ ) are uniformly set as $1/K$ , where $n$ is the number of modalities. The compared methods are implemented under identical experimental conditions. 
+ 
+ 
+
+We use benchmarks spanning diverse modalities to evaluate the BaryBind’s capability in multimodal understanding across retrieval and classification tasks. These benchmarks include: (i) three-modality datasets DiDeMo  [ 2 ] and ActivityNet  [ 6 ] , where video serves as the primary modality while audio and text provide auxiliary cues; (ii) four-modality datasets MSR-VTT  [ 65 ] and VATEX  [ 56 ] , covering video (V), audio (A), text (T), subtitles (S) and we additionally introduce depth (D) modality, which is derived using ChronoDepth  [ 45 ] and integrated via an additional lightweight head attached to the vision encoder; and (iii) audio-centered dataset VGGSound  [ 8 ] , where audio plays the dominant role and complementary information is also available in visual and textual forms. T-VAS denotes that the WB embedding is derived from the text, while the concatenated VAS embeddings serve as the condition. More details, evaluations on multimodal tasks, covering video-QA and cross-modal generation , and ablation studies are provided in Appendix B.2 . 
+ 
+ 
+
+### 4.1.1 Zero-shot video/audio classification
+
+ 
+
+We first evaluate BaryBind on VGGSound5K to assess its multimodal understanding ability in the zero-shot setting, particularly when jointly modeling video and audio signals. As shown in Table  1 , BaryBind achieves the best top-1 and top-5 accuracy across all modality configurations, which verifies its strong generalization ability across modalities. It reaches (55.6%/83.4%) on the classification integrating video and audio, significantly outperforming the VAST baseline (48.1%/79.6%) and other competitors such as OmniBind (46.2%/76.2%), GRAM (42.3%/74.5%). The substantial gains with A+V highlight the enhanced holistic semantics understanding, enabled by the BVC loss that preserves the global geometry of $n$ -modal data. 
+ 
+ 
+
+On the other hand, BaryBind improves the performance of the weaker audio-only modality classification (A) from 40.3% (VAST) to 45.7% for Acc@1, indicating its ability to alleviate under-optimization of weaker modalities. These results confirm that BaryBind learns a more balanced semantic space via our barycenter-based alignment strategy. 
+ 
+ 
+ Table 2 : Zero-shot text-to-video (T2V) and video-to-text (V2T) retrieval results in terms of Recall at 1 score (R@1). Results from our baseline VAST and BaryBind are highlighted accordingly. 
+ 
+
+[TABLE]
+
+| 
+ | Methods 
+ | Modality 
+ | MSR-VTT 
+ | DiDeMo 
+ | ActivityNet 
+ | VATEX 
+
+| 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+
+| 
+ | X-CLIP [ 35 ] 
+ | T-V 
+ | 46.1 
+ | 46.8 
+ | 45.2 
+ | 42.3 
+ | 44.3 
+ | 42.6 
+ | - 
+ | - 
+
+| 
+ | ImageBind [ 16 ] 
+ | T-V 
+ | 36.8 
+ | - 
+ | - 
+ | - 
+ | - 
+ | - 
+ | - 
+ | - 
+
+| 
+ | ViCLIP [ 57 ] 
+ | T-V 
+ | 42.4 
+ | 41.3 
+ | 18.4 
+ | 27.9 
+ | 15.1 
+ | 24.0 
+ | - 
+ | - 
+
+| 
+ | VideoPrism-b [ 66 ] 
+ | T-V 
+ | 51.4 
+ | 50.2 
+ | - 
+ | - 
+ | 49.6 
+ | 47.9 
+ | 62.5 
+ | 77.1 
+
+| 
+ | LanguageBind [ 67 ] 
+ | T-V 
+ | 44.8 
+ | 40.9 
+ | 39.9 
+ | 39.8 
+ | 41.0 
+ | 39.1 
+ | - 
+ | - 
+
+| 
+ | InternVL [ 10 ] 
+ | T-V 
+ | 46.3 
+ | 42.4 
+ | 43.7 
+ | 42.2 
+ | 45.1 
+ | 42.4 
+ | 66.8 
+ | 69.3 
+
+| 
+ | OmniBind [ 60 ] 
+ | T-V 
+ | 47.4 
+ | 45.2 
+ | 43.5 
+ | 42.6 
+ | 44.3 
+ | 40.8 
+ | - 
+ | - 
+
+| 
+ | NarVid [ 19 ] 
+ | T-V 
+ | 51.8 
+ | 50.3 
+ | 52.4 
+ | 50.5 
+ | 51.8 
+ | 46.6 
+ | 73.8 
+ | 76.3 
+
+| 
+ | Video-ColBERT [ 43 ] 
+ | T-V 
+ | 51.9 
+ | 48.8 
+ | 51.7 
+ | 50.1 
+ | 52.7 
+ | 47.8 
+ | 72.4 
+ | 73.7 
+
+| 
+ | VAST [ 9 ] 
+ | T-VA 
+ | 49.3 
+ | 43.7 
+ | 49.5 
+ | 48.2 
+ | 51.4 
+ | 46.8 
+ | 80.0 
+ | 77.3 
+
+| 
+ | VAST [ 9 ] 
+ | T-VAS 
+ | 50.9 
+ | 47.9 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 82.1 
+ | 78.7 
+
+| 
+ | VAST [ 9 ] 
+ | T-VASD 
+ | 51.2 
+ | 48.3 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 82.4 
+ | 79.2 
+
+| 
+ | GRAM [ 12 ] 
+ | T-VAS 
+ | 54.2 
+ | 51.6 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 83.2 
+ | 81.9 
+
+| 
+ | GRAM [ 12 ] 
+ | T-VASD 
+ | 54.9 
+ | 51.3 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 83.8 
+ | 82.1 
+
+| 
+ | Triangle [ 11 ] 
+ | T-VA 
+ | 54.8 
+ | 51.9 
+ | 54.6 
+ | 52.2 
+ | 59.6 
+ | 54.4 
+ | 84.0 
+ | 80.1 
+
+| 
+ | PMRL [ 31 ] 
+ | T-VAS 
+ | 54.6 
+ | 51.4 
+ | 50.6 
+ | 48.4 
+ | 56.0 
+ | 49.6 
+ | 80.5 
+ | 75.2 
+
+| 
+ | BaryBind 
+ | T-V 
+ | 54.2 
+ | 52.0 
+ | 54.8 
+ | 52.9 
+ | 59.3 
+ | 52.8 
+ | 82.9 
+ | 80.4 
+
+| 
+ | BaryBind 
+ | T-VA 
+ | 56.1 
+ | 53.6 
+ | 56.3 
+ | 54.0 
+ | 60.6 
+ | 57.2 
+ | 84.7 
+ | 81.8 
+
+| 
+ | BaryBind 
+ | T-VAS 
+ | 57.1 
+ | 53.8 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 85.5 
+ | 84.3 
+
+| 
+ | BaryBind 
+ | T-VASD 
+ | 57.8 
+ | 54.6 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 86.1 
+ | 85.4 
+
+| 
+ | InternVideo2-6B [ 58 ] 
+ | T-VA 
+ | 54.9 
+ | 49.1 
+ | 55.7 
+ | 51.6 
+ | 61.2 
+ | 52.8 
+ | 82.7 
+ | 76.4 
+
+[/TABLE]
+
+ 
+ 
+ 
+ 
+ 
+ 
+ Table 3 : Text-to-audio (T2A) and audio-to-text (A2T) R@1 retrieval results on AudioCaps w/ and w/o audio during training . 
+ 
+
+[TABLE]
+
+| 
+ | Method 
+ | Training modality 
+ | T2A 
+ | A2T 
+
+| 
+ | VAST 
+ | 
+ | 32.1 
+ | 26.1 
+
+| 
+ | GRAM 
+ | 
+ | 33.2 
+ | 27.4 
+
+| 
+ | Triangle 
+ | T-VA 
+ | 32.2 
+ | 28.1 
+
+| 
+ | BaryBind 
+ | 
+ | 35.7 
+ | 32.5 
+
+| 
+ | vs. baseline (VAST) 
+ | 
+ | +3.6 
+ | +6.4 
+
+| 
+ | VAST 
+ | 
+ | 10.4 
+ | 6.7 
+
+| 
+ | GRAM 
+ | 
+ | 12.8 
+ | 7.3 
+
+| 
+ | Triangle 
+ | 
+ | 11.6 
+ | 7.1 
+
+| 
+ | SMIL 
+ | T-V 
+ | 13.3 
+ | 9.5 
+
+| 
+ | ShaSpec 
+ | 
+ | 16.6 
+ | 10.8 
+
+| 
+ | BaryBind 
+ | 
+ | 21.2 
+ | 14.5 
+
+| 
+ | vs. baseline (VAST) 
+ | 
+ | +10.8 
+ | + 7.8 
+
+[/TABLE]
+
+ 
+ 
+ 
+ Table 4 : Multimodal event classification on VGGSound5K w/ and w/o video during inference when training with audio and video. 
+ 
+
+[TABLE]
+
+| 
+ | Method 
+ | Inference modality 
+ | Acc@1 
+ | Acc@5 
+
+| 
+ | VAST 
+ | 
+ | 48.1 
+ | 79.6 
+
+| 
+ | GRAM 
+ | 
+ | 42.3 
+ | 76.4 
+
+| 
+ | Triangle 
+ | A+V 
+ | 44.8 
+ | 80.0 
+
+| 
+ | BaryBind 
+ | 
+ | 55.6 
+ | 83.4 
+
+| 
+ | vs. baseline (VAST) 
+ | 
+ | +7.5 
+ | +3.8 
+
+| 
+ | VAST 
+ | 
+ | 40.8 
+ | 71.6 
+
+| 
+ | GRAM 
+ | 
+ | 38.5 
+ | 70.1 
+
+| 
+ | Triangle 
+ | 
+ | 40.1 
+ | 70.9 
+
+| 
+ | SMIL 
+ | A 
+ | 43.5 
+ | 70.2 
+
+| 
+ | ShaSpec 
+ | 
+ | 46.2 
+ | 74.5 
+
+| 
+ | BaryBind 
+ | 
+ | 49.4 
+ | 78.3 
+
+| 
+ | vs. baseline (VAST) 
+ | 
+ | +8.6 
+ | +6.7 
+
+[/TABLE]
+
+ 
+ 
+ 
+ 
+ 
+
+### 4.1.2 Cross-modal retrieval
+
+ 
+
+We evaluate BaryBind on zero-shot text-to-video (T2V) and video-to-text (V2T) retrieval across four benchmarks. As shown in Table  2 , BaryBind consistently achieves state-of-the-art results under all modality configurations. For instance, under the T-VA setting, it achieves 56.1 and 54.0 R@1 on DiDeMo (T2V/V2T), outperforming all prior methods. With T-VAS, BaryBind further sets new records on MSR-VTT and VATEX, demonstrating strong retrieval performance across both directions. In addition to these overall gains, BaryBind effectively reduces the T2V/V2T performance gap, such as 2.8 on MSR-VTT under the T-VA setting vs 5.6 of the VAST baseline, which highlights improved balanced alignment. This suggests that BaryBind learns more balanced, unified representations, which can be attributed to the WB optimization and volumetric alignment process for establishing a balanced unified semantic space. 
+ 
+ 
+ 
+ 
+
+### 4.2 Robustness to Missing Modalities
+
+ 
+
+Barybind is designed to capture balanced representations from arbitrary subsets of multimodal inputs, enabling the aligned representations of available modalities to serve as proxy features when others are missing. We evaluate BaryBind under two settings: (1) text-to-audio (T2A) and audio-to-text (A2T) retrieval on AudioCaps [ 22 ] with missing audio during training, and (2) multimodal event classification with missing video during inference on VGGSound, where the model is trained using both video and audio. In both cases, the barycenter is optimized using only the accessible modalities. Results in Table 4 and 4 show that BaryBind preserves robust and graceful degradation under missing-modality conditions as compared to traditional anchor-based methods VAST [ 9 ] , GRAM [ 12 ] , and missing modality-tailored methods SIML [ 34 ] and ShaSpec [ 53 ] , which demonstrate the effectiveness of our barycenter modeling for the shared semantics. 
+ 
+ 
+ 
+
+### 4.3 Ablation Studies
+
+ 
+ Figure 5 : 
+ Training dynamics comparison with cosine-based VAST: 
+(a) Training loss comparison between BaryBind and VAST.
+(b) Recall@1 (R@1) evolution on MSR-VTT under T2V and V2T retrieval tasks.
+BaryBind achieves higher retrieval accuracy and better modal balance (smaller T2V/V2T R@1 gap). (c) V2T/T2V retrieval gaps throughout training.
+ 
+ 
+ 
+ Table 5 : Ablation study on loss functions. We report the zero-shot top-1 classification accuracy (Acc@1) on VGGSound5K and top-1 retrieval recall at 1 score (R@1) on MSR-VTT. The performance gains over the baseline are highlighted accordingly. 
+ 
+
+[TABLE]
+
+| 
+ | Loss function components    
+ | Classification 
+ | Retrieval   
+
+| 
+ | VGGSound 
+ | MSR-VTT   
+
+| 
+ | TV+TA CL 
+ | MWB 
+ | BVC 
+ | DAM 
+ | A 
+ | V 
+ | V+A 
+ | T2V 
+ | V2T 
+
+| 
+ | ✓ 
+ | ✗ 
+ | ✗ 
+ | ✗ 
+ | 38.1 
+ | 42.8 
+ | 44.5 
+ | 46.8 
+ | 40.1 
+
+| 
+ | ✓ 
+ | ✗ 
+ | ✗ 
+ | ✓ 
+ | 40.3 
+ | 43.6 
+ | 46.3 
+ | 49.3 
+ | 43.7 
+
+| 
+ | ✓ 
+ | ✓ 
+ | ✗ 
+ | ✗ 
+ | 43.6 ​(+5.5) 
+ | 45.6 
+ | 48.6 
+ | 49.1 
+ | 47.3 ​(+7.2) 
+
+| 
+ | ✓ 
+ | ✓ 
+ | ✗ 
+ | ✓ 
+ | 44.3 ​(+4.0) 
+ | 46.8 
+ | 49.8 
+ | 50.6 
+ | 48.8 ​(+5.1) 
+
+| 
+ | ✗ 
+ | ✗ 
+ | ✓ 
+ | ✗ 
+ | 42.2 
+ | 44.8 
+ | 47.2 
+ | 50.6 
+ | 46.4 
+
+| 
+ | ✗ 
+ | ✗ 
+ | ✓ 
+ | ✓ 
+ | 42.9 
+ | 47.1 
+ | 50.1 
+ | 51.5 
+ | 46.8 
+
+| 
+ | ✗ 
+ | ✓ 
+ | ✓ 
+ | ✗ 
+ | 45.2 ​(+7.1) 
+ | 47.8 ​(+5.0) 
+ | 54.7 ​(+10.2) 
+ | 54.8 ​(+8.0) 
+ | 51.1 ​(+11.0) 
+
+| 
+ | ✗ 
+ | ✓ 
+ | ✓ 
+ | ✓ 
+ | 45.7 ​(+5.4) 
+ | 48.3 ​(+4.7) 
+ | 55.6 ​(+9.3) 
+ | 56.1 ​(+6.8) 
+ | 53.6 ​(+9.9) 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+ Training dynamics comparison. 
+We compare the training from scratch behaviors of BaryBind and the baseline VAST to assess the impact of our binding strategy and loss design. As shown in Fig.  5 , BaryBind exhibits consistently superior training dynamics. In (a), the total loss drops faster and stabilizes earlier, suggesting that our MWB and BVC losses facilitate more efficient optimization. In (b), BaryBind consistently achieves higher R@1 accuracy for both T2V and V2T retrieval, while maintaining a smaller performance gap between the two directions, suggesting more symmetric multimodal representations. (c) demonstrates that BaryBind rapidly reduces the gap between V2T and T2V performance, converging toward a balanced retrieval behavior. This improvement stems from the joint effect of MWB and the BVC loss, which together promote consistent alignment of embeddings toward a unified barycenter. Such training behavior reflects our barycentric optimization converges stably, and also demonstrates the effectiveness of the barycenter-based alignment in constructing a balanced representation space. 
+ 
+ 
+
+ Impact of loss functions. 
+To evaluate the contribution of each loss component, we conduct an ablation study on VGGSound  [ 8 ] for audio/video classification and on MSR-VTT  [ 65 ] for text–video retrieval under a tri-modal setting (text, video, audio). The baseline adopts pairwise cosine contrastive losses (TV+TA CL). As summarized in Table  5 , introducing the multimodal Wasserstein barycenter (MWB) loss consistently improves performance across tasks. For example, boosting audio-only classification from 40.3% to 44.3% and V2T retrieval from 43.7% to 48.8%. In this sense, MWB constructs a barycentric semantic anchor to filter out modality-specific biases from the original anchor (e.g., text). The barycenter volume contrastive (BVC) loss further enhances global consistency among modalities, enabling full-modality gains such as 55.6% in audio classification and 56.1/53.6 R@1 for T2V/V2T retrieval. Overall, the combination of MWB and BVC promotes coordinated alignment to the WB, yielding a more balanced representation space. 
+ 
+ 
+ Table 6 : Ablation on batch size. 
+
+[TABLE]
+
+| 
+ | Batch Size 
+ | T2V/V2T R@1 
+ | A+C Acc@1 
+
+| 
+ | 16 
+ | 55.2/52.6 
+ | 54.5 
+
+| 
+ | 32 
+ | 55.8/53.4 
+ | 55.1 
+
+| 
+ | 64 
+ | 55.9/53.2 
+ | 55.4 
+
+| 
+ | 128 
+ | 56.1/53.5 
+ | 55.8 
+
+| 
+ | 256 
+ | 56.1/53.6 
+ | 55.6 
+
+[/TABLE]
+
+ 
+ 
+
+ Effect of batch size. Since BaryBind performs distribution-level alignment through Wasserstein barycentric optimization, we investigate the effect of batch size on the learned barycentric space. The training is conducted on two A100 GPUs without gradient accumulation. We evaluate under the T-VA setting on MSR-VTT retrieval and VGGSound classification. As shown in Table  6 , the performance remains stable across different batch sizes. Although a very small batch size (16) introduces a slight performance decrease due to noisier empirical distribution estimation, the overall gap is marginal. When the batch size is larger than 32, the performance becomes highly consistent, demonstrating the robustness of the learned barycentric representation under moderate batch-size variations. 
+ 
+ 
+ 
+ 
+
+### 5 Conclusion
+
+ 
+
+In this work, we tackle the multimodal representation learning problem and propose BaryBind, a novel approach that aligns multiple modalities to a multimodal Wasserstein barycenter through a volumetric alignment objective. We demonstrate that this barycenter - based alignment strategy is scalable and effectively alleviates modality imbalance in complex scenarios involving more than three modalities. Moreover, BaryBind exhibits robustness in missing - modality settings. Overall, this work advances multimodal learning by introducing a barycenter-aligned joint representation that enables more balanced and effective multimodal understanding. In the future, we plan to further incorporate reconstruction into this framework to enable joint understanding and generation. 
+ 
+ 
+ 
+
+### Acknowledgments and Disclosure of Funding
+
+ 
+
+This work was supported in part by National Key R&D Program under Grant 2021YFA1003000, in part by NSFC under Grant 125B2028, 12125104, 12426313, 12501709, and 12401671, in part by the National Postdoctoral Program for Innovative Talents under Grant BX20240276, in part by China Postdoctoral Science Foundation under Grant 2025M773058, and in part by the Fundamental Research Funds for the Central Universities, China under Grant xzy022025047. 
+ 
+ 
+ 
+
+### References
+
+ 
+
+- [1] 
+ M. Agueh and G. Carlier (2011) 
+ 
+ Barycenters in the wasserstein space .
+ 
+ SIAM Journal on Mathematical Analysis 43 ( 2 ), pp. 904–924 .
+ 
+ Cited by: §2 .
+ 
+
+- [2] 
+ L. Anne Hendricks, O. Wang, E. Shechtman, J. Sivic, T. Darrell, and B. Russell (2017) 
+ 
+ Localizing moments in video with natural language .
+ 
+ In ICCV ,
+ 
+ pp. 5803–5812 .
+ 
+ Cited by: §B.2 ,
+ §4.1 .
+ 
+
+- [3] 
+ T. Baltrušaitis, C. Ahuja, and L. Morency (2018) 
+ 
+ Multimodal machine learning: a survey and taxonomy .
+ 
+ IEEE TPAMI 41 ( 2 ), pp. 423–443 .
+ 
+ Cited by: §1 .
+ 
+
+- [4] 
+ F. Beier, R. Beinert, and G. Steidl (2023) 
+ 
+ Multi-marginal gromov–wasserstein transport and barycentres .
+ 
+ Information and Inference: A Journal of the IMA 12 ( 4 ), pp. 2753–2781 .
+ 
+ Cited by: §2 .
+ 
+
+- [5] 
+ N. Bonneel, J. Rabin, G. Peyré, and H. Pfister (2015) 
+ 
+ Sliced and radon wasserstein barycenters of measures .
+ 
+ Journal of Mathematical Imaging and Vision 51 , pp. 22–45 .
+ 
+ Cited by: §2 .
+ 
+
+- [6] 
+ F. Caba Heilbron, V. Escorcia, B. Ghanem, and J. Carlos Niebles (2015) 
+ 
+ Activitynet: a large-scale video benchmark for human activity understanding .
+ 
+ In CVPR ,
+ 
+ pp. 961–970 .
+ 
+ Cited by: §B.2 ,
+ §4.1 .
+ 
+
+- [7] 
+ J. Chemseddine, P. Hagemann, G. Steidl, and C. Wald (2025) 
+ 
+ Conditional wasserstein distances with applications in bayesian ot flow matching .
+ 
+ JMLR 26 ( 141 ), pp. 1–47 .
+ 
+ Cited by: §2 .
+ 
+
+- [8] 
+ H. Chen, W. Xie, A. Vedaldi, and A. Zisserman (2020) 
+ 
+ Vggsound: a large-scale audio-visual dataset .
+ 
+ In ICASSP ,
+ 
+ pp. 721–725 .
+ 
+ Cited by: §B.2 ,
+ Figure 2 ,
+ Figure 2 ,
+ §3.4 ,
+ §4.1 ,
+ §4.3 .
+ 
+
+- [9] 
+ S. Chen, H. Li, Q. Wang, Z. Zhao, M. Sun, X. Zhu, and J. Liu (2023) 
+ 
+ VAST: a vision-audio-subtitle-text omni-modality foundation model and dataset .
+ 
+ In NeurIPS ,
+ 
+ Cited by: §B.10 ,
+ §B.14 ,
+ §B.2 ,
+ Table 15 ,
+ Table 8 ,
+ Table 8 ,
+ Figure 2 ,
+ Figure 2 ,
+ §1 ,
+ §1 ,
+ §2 ,
+ §3.4 ,
+ §4.1 ,
+ §4.2 ,
+ Table 1 ,
+ Table 1 ,
+ Table 1 ,
+ Table 2 ,
+ Table 2 ,
+ Table 2 .
+ 
+
+- [10] 
+ Z. Chen, J. Wu, W. Wang, W. Su, G. Chen, S. Xing, M. Zhong, Q. Zhang, X. Zhu, L. Lu, et al. (2024) 
+ 
+ Internvl: scaling up vision foundation models and aligning for generic visual-linguistic tasks .
+ 
+ In CVPR ,
+ 
+ pp. 24185–24198 .
+ 
+ Cited by: Table 2 .
+ 
+
+- [11] 
+ G. Cicchetti, E. Grassucci, and D. Comminiello (2025) 
+ 
+ A triangle enables multimodal alignment beyond cosine similarity .
+ 
+ arXiv preprint arXiv:2509.24734 .
+ 
+ Cited by: §B.10 ,
+ Table 15 ,
+ §1 ,
+ §2 ,
+ §4.1 ,
+ Table 1 ,
+ Table 2 .
+ 
+
+- [12] 
+ G. Cicchetti, E. Grassucci, L. Sigillo, and D. Comminiello (2025) 
+ 
+ Gramian multimodal representation learning and alignment .
+ 
+ In ICLR ,
+ 
+ Cited by: §B.10 ,
+ Table 15 ,
+ §1 ,
+ §2 ,
+ §4.1 ,
+ §4.2 ,
+ Table 1 ,
+ Table 1 ,
+ Table 2 ,
+ Table 2 .
+ 
+
+- [13] 
+ M. Cuturi and A. Doucet (2014) 
+ 
+ Fast computation of wasserstein barycenters .
+ 
+ In ICML ,
+ 
+ pp. 685–693 .
+ 
+ Cited by: §2 .
+ 
+
+- [14] 
+ B. Elizalde, S. Deshmukh, M. Al Ismail, and H. Wang (2023) 
+ 
+ Clap learning audio concepts from natural language supervision .
+ 
+ In ICASSP ,
+ 
+ pp. 1–5 .
+ 
+ Cited by: §1 ,
+ §2 .
+ 
+
+- [15] 
+ F. R. Gantmacher (1959) 
+ 
+ Matrix theory .
+ 
+ Chelsea, New York 21 , pp. 6 .
+ 
+ Cited by: §3.3 .
+ 
+
+- [16] 
+ R. Girdhar, A. El-Nouby, Z. Liu, M. Singh, K. V. Alwala, A. Joulin, and I. Misra (2023) 
+ 
+ ImageBind one embedding space to bind them all .
+ 
+ In CVPR ,
+ 
+ pp. 15180–15190 .
+ 
+ Cited by: §1 ,
+ §2 ,
+ Table 1 ,
+ Table 1 ,
+ Table 2 .
+ 
+
+- [17] 
+ J. Grill, F. Strub, F. Altché, C. Tallec, P. Richemond, E. Buchatskaya, C. Doersch, B. Avila Pires, Z. Guo, M. Gheshlaghi Azar, et al. (2020) 
+ 
+ Bootstrap your own latent-a new approach to self-supervised learning .
+ 
+ NeurIPS 33 , pp. 21271–21284 .
+ 
+ Cited by: §1 .
+ 
+
+- [18] 
+ A. Guzhov, F. Raue, J. Hees, and A. Dengel (2022) 
+ 
+ Audioclip: extending clip to image, text and audio .
+ 
+ In ICASSP ,
+ 
+ pp. 976–980 .
+ 
+ Cited by: §1 ,
+ §2 .
+ 
+
+- [19] 
+ C. Hur, J. Hong, D. Lee, D. Kang, S. Myeong, S. Park, and H. Park (2025) 
+ 
+ Narrating the video: boosting text-video retrieval via comprehensive utilization of frame-level captions .
+ 
+ In CVPR ,
+ 
+ Cited by: Table 2 .
+ 
+
+- [20] 
+ C. Jia, Y. Yang, Y. Xia, Y. Chen, Z. Parekh, H. Pham, Q. Le, Y. Sung, Z. Li, and T. Duerig (2021) 
+ 
+ Scaling up visual and vision-language representation learning with noisy text supervision .
+ 
+ In ICML ,
+ 
+ pp. 4904–4916 .
+ 
+ Cited by: §1 .
+ 
+
+- [21] 
+ L. V. Kantorovich (1942) 
+ 
+ On the translocation of masses .
+ 
+ In Dokl. Akad. Nauk. USSR (NS) ,
+ 
+ Vol. 37 , pp. 199–201 .
+ 
+ Cited by: §3.1 .
+ 
+
+- [22] 
+ C. D. Kim, B. Kim, H. Lee, and G. Kim (2019) 
+ 
+ Audiocaps: generating captions for audios in the wild .
+ 
+ In ACL ,
+ 
+ pp. 119–132 .
+ 
+ Cited by: §4.2 .
+ 
+
+- [23] 
+ A. Kolesov, P. Mokrov, I. Udovichenko, M. Gazdieva, G. Pammer, E. Burnaev, and A. Korotin (2024) 
+ 
+ Estimating barycenters of distributions with neural optimal transport .
+ 
+ arXiv preprint arXiv:2402.03828 .
+ 
+ Cited by: §2 ,
+ §3.2 .
+ 
+
+- [24] 
+ A. Kolesov, P. Mokrov, I. Udovichenko, M. Gazdieva, G. Pammer, A. Kratsios, E. Burnaev, and A. Korotin (2024) 
+ 
+ Energy-guided continuous entropic barycenter estimation for general costs .
+ 
+ NeurIPS 37 , pp. 107513–107546 .
+ 
+ Cited by: §2 ,
+ §3.2 .
+ 
+
+- [25] 
+ A. Korotin, L. Li, J. Solomon, and E. Burnaev (2021) 
+ 
+ Continuous wasserstein-2 barycenter estimation without minimax optimization .
+ 
+ In ICLR ,
+ 
+ Cited by: §2 .
+ 
+
+- [26] 
+ L. Li, A. Genevay, M. Yurochkin, and J. M. Solomon (2020) 
+ 
+ Continuous regularized wasserstein barycenters .
+ 
+ In NeurIPS ,
+ 
+ Vol. 33 , pp. 17755–17765 .
+ 
+ Cited by: §3.2 .
+ 
+
+- [27] 
+ J. Liu, S. Chen, X. He, L. Guo, X. Zhu, W. Wang, and J. Tang (2024) 
+ 
+ Valor: vision-audio-language omni-perception pretraining model and dataset .
+ 
+ IEEE TPAMI .
+ 
+ Cited by: Table 8 .
+ 
+
+- [28] 
+ M. Liu, J. Liu, M. Y. Yang, C. Jiang, J. Li, Y. Zhang, H. Wang, F. Nex, and H. Cheng (2026) 
+ 
+ StreamVLO: streaming visual–lidar odometry with cumulative drift compensation .
+ 
+ In CVPR ,
+ 
+ pp. 39086–39097 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [29] 
+ M. Liu, D. Zhang, J. Liu, J. Cui, H. Xie, G. Chen, H. Ye, F. Nex, H. Cheng, and M. Y. Yang (2026) 
+ 
+ UNIVERSE: unified video action models for autonomous driving with flexible mask-modulated modality generation .
+ 
+ arXiv preprint arXiv:2607.05133 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [30] 
+ M. Liu, D. Zhang, J. Liu, J. Cui, H. Xie, G. Chen, H. Ye, M. Y. Yang, F. Nex, and H. Cheng (2026) 
+ 
+ DriveVA: video action models are zero-shot drivers .
+ 
+ In ECCV ,
+ 
+ pp. 315–335 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [31] 
+ X. Liu, X. Xia, S. Ng, and T. Chua (2026) 
+ 
+ Principled multimodal representation learning .
+ 
+ IEEE TPAMI .
+ 
+ Cited by: §4.1 ,
+ Table 2 .
+ 
+
+- [32] 
+ H. Luo, L. Ji, M. Zhong, Y. Chen, W. Lei, N. Duan, and T. Li (2021) 
+ 
+ CLIP4Clip: an empirical study of clip for end to end video clip retrieval .
+ 
+ Neurocomputing 508 , pp. 293–304 .
+ 
+ Cited by: Table 8 .
+ 
+
+- [33] 
+ Y. Lyu, X. Zheng, J. Zhou, and L. Wang (2024) 
+ 
+ Unibind: llm-augmented unified and balanced representation space to bind them all .
+ 
+ In CVPR ,
+ 
+ pp. 26752–26762 .
+ 
+ Cited by: §2 .
+ 
+
+- [34] 
+ M. Ma, J. Ren, L. Zhao, S. Tulyakov, C. Wu, and X. Peng (2021) 
+ 
+ Smil: multimodal learning with severely missing modality .
+ 
+ In Proceedings of the AAAI conference on artificial intelligence ,
+ 
+ Vol. 35 , pp. 2302–2310 .
+ 
+ Cited by: §4.2 .
+ 
+
+- [35] 
+ Y. Ma, G. Xu, X. Sun, M. Yan, J. Zhang, and R. Ji (2022) 
+ 
+ X-clip: end-to-end multi-grained contrastive learning for video-text retrieval .
+ 
+ In ACM International Conference on Multimedia ,
+ 
+ pp. 638–647 .
+ 
+ Cited by: Table 2 .
+ 
+
+- [36] 
+ X. Mei, C. Meng, H. Liu, Q. Kong, T. Ko, C. Zhao, M. D. Plumbley, Y. Zou, and W. Wang (2024) 
+ 
+ Wavcaps: a chatgpt-assisted weakly-labelled audio captioning dataset for audio-language multimodal research .
+ 
+ IEEE/ACM Transactions on Audio, Speech, and Language Processing .
+ 
+ Cited by: §2 .
+ 
+
+- [37] 
+ Z. Meng, J. Liu, Y. Liu, C. Tong, X. Liu, Y. Zhang, Y. Xu, and P. Wan (2026) 
+ 
+ ARGUS: stacked multi-view identity mosaic injection for subject-preserving video generation .
+ 
+ arXiv preprint arXiv:2606.11670 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [38] 
+ Z. Meng, Y. Liu, C. Ma, Z. Li, J. Liu, W. Nie, B. Wei, S. Chen, W. Xu, J. Yuan, et al. (2026) 
+ 
+ OmniDrive: an LLM-choreographed multi-agent world model with unified latent co-compression for multi-view driving video generation .
+ 
+ arXiv preprint arXiv:2606.17536 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [39] 
+ Z. Meng (2026) 
+ 
+ Decoupling semantics from distortions: multi-scale two-stream vision-language alignment for AI-generated image quality assessment .
+ 
+ arXiv preprint arXiv:2606.16799 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [40] 
+ A. v. d. Oord, Y. Li, and O. Vinyals (2018) 
+ 
+ Representation learning with contrastive predictive coding .
+ 
+ arXiv preprint arXiv:1807.03748 .
+ 
+ Cited by: §1 .
+ 
+
+- [41] 
+ M. Piening and R. Beinert (2026) 
+ 
+ A novel sliced fused gromov-wasserstein distance .
+ 
+ In AAAI ,
+ 
+ Vol. 40 , pp. 24828–24836 .
+ 
+ Cited by: §2 .
+ 
+
+- [42] 
+ A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, G. Krueger, and I. Sutskever (2021) 
+ 
+ Learning transferable visual models from natural language supervision .
+ 
+ In ICML ,
+ 
+ Cited by: §1 ,
+ §2 .
+ 
+
+- [43] 
+ A. Reddy, A. Martin, E. Yang, A. Yates, K. Sanders, K. Murray, R. Kriz, C. M. de Melo, B. Van Durme, and R. Chellappa (2025) 
+ 
+ Video-colbert: contextualized late interaction for text-to-video retrieval .
+ 
+ In CVPR ,
+ 
+ Cited by: Table 2 .
+ 
+
+- [44] 
+ A. Saporta, A. M. Puli, M. Goldstein, and R. Ranganath (2024) 
+ 
+ Contrasting with symile: simple model-agnostic representation learning for unlimited modalities .
+ 
+ In Neural Information Processing Systems ,
+ 
+ Cited by: §1 .
+ 
+
+- [45] 
+ J. Shao, Y. Yang, H. Zhou, Y. Zhang, Y. Shen, V. Guizilini, Y. Wang, M. Poggi, and Y. Liao (2025) 
+ 
+ Learning temporally consistent video depth from video diffusion priors .
+ 
+ In Proceedings of the Computer Vision and Pattern Recognition Conference ,
+ 
+ pp. 22841–22852 .
+ 
+ Cited by: §B.6 ,
+ §4.1 .
+ 
+
+- [46] 
+ L. Shen, T. Hao, T. He, S. Zhao, Y. Zhang, P. Liu, Y. Bao, and G. Ding (2025) 
+ 
+ Tempme: video temporal token merging for efficient text-video retrieval .
+ 
+ In ICLR ,
+ 
+ Cited by: Table 8 .
+ 
+
+- [47] 
+ M. Sion (1958) 
+ 
+ On general minimax theorems. .
+ 
+ Pacific Journal of Mathematics 21 ( 1 ), pp. 171–176 .
+ 
+ Cited by: §A.1 .
+ 
+
+- [48] 
+ Q. Sun, Y. Fang, L. Wu, X. Wang, and Y. Cao (2023) 
+ 
+ Eva-clip: improved training techniques for clip at scale .
+ 
+ arXiv preprint arXiv:2303.15389 .
+ 
+ Cited by: §4.1 .
+ 
+
+- [49] 
+ X. Tang, X. Gu, X. He, X. Hu, and J. Sun (2025) 
+ 
+ Degradation-aware residual-conditioned optimal transport for unified image restoration .
+ 
+ IEEE Transactions on Pattern Analysis and Machine Intelligence 47 ( 8 ), pp. 1–16 .
+ 
+ Cited by: §2 .
+ 
+
+- [50] 
+ X. Tang, X. He, X. Gu, and J. Sun (2025) 
+ 
+ BaryIR: learning multi-source unified representation in continuous barycenter space for generalizable all-in-one image restoration .
+ 
+ arXiv preprint arXiv:2505.21637 .
+ 
+ Cited by: §2 .
+ 
+
+- [51] 
+ X. Tang, X. He, J. Xu, X. Gu, and J. Sun (2026) 
+ 
+ Learning continuous wasserstein barycenter space for generalized all-in-one image restoration .
+ 
+ IEEE Transactions on Pattern Analysis and Machine Intelligence .
+ 
+ Cited by: §2 .
+ 
+
+- [52] 
+ C. Villani et al. (2009) 
+ 
+ Optimal transport: old and new .
+ 
+ Vol. 338 , Springer .
+ 
+ Cited by: §2 .
+ 
+
+- [53] 
+ H. Wang, Y. Chen, C. Ma, J. Avery, L. Hull, and G. Carneiro (2023) 
+ 
+ Multi-modal learning with missing modality via shared-specific feature modelling .
+ 
+ In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,
+ 
+ pp. 15878–15887 .
+ 
+ Cited by: §4.2 .
+ 
+
+- [54] 
+ J. Wang, G. Sun, P. Wang, D. Liu, S. A. Dianat, M. Rabbani, R. M. Rao, and Z. Tao (2024) 
+ 
+ Text Is MASS: modeling as stochastic embedding for text-video retrieval .
+ 
+ CVPR , pp. 16551–16560 .
+ 
+ Cited by: Table 8 .
+ 
+
+- [55] 
+ J. Wang, C. Wang, K. Huang, J. Huang, and L. Jin (2024) 
+ 
+ VideoCLIP-xl: advancing long description understanding for video clip models .
+ 
+ In EMNLP ,
+ 
+ pp. 16061–16075 .
+ 
+ Cited by: Table 8 .
+ 
+
+- [56] 
+ X. Wang, J. Wu, J. Chen, L. Li, Y. Wang, and W. Y. Wang (2019) 
+ 
+ Vatex: a large-scale, high-quality multilingual dataset for video-and-language research .
+ 
+ In ICCV ,
+ 
+ pp. 4581–4591 .
+ 
+ Cited by: §B.2 ,
+ §4.1 .
+ 
+
+- [57] 
+ Y. Wang, Y. He, Y. Li, K. Li, J. Yu, X. Ma, X. Li, G. Chen, X. Chen, Y. Wang, et al. (2024) 
+ 
+ InternVid: a large-scale video-text dataset for multimodal understanding and generation .
+ 
+ In ICLR ,
+ 
+ Cited by: Table 8 ,
+ Table 2 .
+ 
+
+- [58] 
+ Y. Wang, K. Li, X. Li, J. Yu, Y. He, G. Chen, B. Pei, R. Zheng, J. Xu, Z. Wang, Y. Shi, T. Jiang, S. Li, H. Zhang, Y. Huang, Y. Qiao, Y. Wang, and L. Wang (2024) 
+ 
+ InternVideo2: scaling video foundation models for multimodal video understanding .
+ 
+ ArXiv preprint: 2403.15377 .
+ 
+ Cited by: Table 2 .
+ 
+
+- [59] 
+ Y. Wang, K. Li, Y. Li, Y. He, B. Huang, Z. Zhao, H. Zhang, J. Xu, Y. Liu, Z. Wang, et al. (2022) 
+ 
+ Internvideo: general video foundation models via generative and discriminative learning .
+ 
+ arXiv preprint arXiv:2212.03191 .
+ 
+ Cited by: Table 8 .
+ 
+
+- [60] 
+ Z. Wang, Z. Zhang, H. Zhang, L. Liu, R. Huang, X. Cheng, H. Zhao, and Z. Zhao (2025) 
+ 
+ Omnibind: large-scale omni multimodal representation via binding spaces .
+ 
+ In ICLR ,
+ 
+ Cited by: §1 ,
+ §2 ,
+ Table 1 ,
+ Table 1 ,
+ Table 1 ,
+ Table 2 .
+ 
+
+- [61] 
+ Y. Wu, K. Chen, T. Zhang, Y. Hui, T. Berg-Kirkpatrick, and S. Dubnov (2023) 
+ 
+ Large-scale contrastive language-audio pretraining with feature fusion and keyword-to-caption augmentation .
+ 
+ In ICASSP ,
+ 
+ Cited by: §2 .
+ 
+
+- [62] 
+ C. Xiao, H. P. Chan, H. Zhang, W. Xu, M. Aljunied, and Y. Rong (2025) 
+ 
+ Scaling language-centric omnimodal representation learning .
+ 
+ In Neural Information Processing Systems ,
+ 
+ Cited by: §2 .
+ 
+
+- [63] 
+ C. Xu, J. Yan, and C. Deng (2025) 
+ 
+ Keep and extent: unified knowledge embedding for few-shot image generation .
+ 
+ IEEE Transactions on Image Processing 34 , pp. 2315–2324 .
+ 
+ External Links: Document 
+ 
+ Cited by: §B.3 .
+ 
+
+- [64] 
+ H. Xu, Q. Ye, M. Yan, Y. Shi, J. Ye, Y. Xu, C. Li, B. Bi, Q. Qian, W. Wang, G. Xu, J. Zhang, S. Huang, F. Huang, and J. Zhou (2023) 
+ 
+ mPLUG-2: a modularized multi-modal foundation model across text, image and video .
+ 
+ In ICML ,
+ 
+ Cited by: Table 8 .
+ 
+
+- [65] 
+ J. Xu, T. Mei, T. Yao, and Y. Rui (2016) 
+ 
+ Msr-vtt: a large video description dataset for bridging video and language .
+ 
+ In CVPR ,
+ 
+ pp. 5288–5296 .
+ 
+ Cited by: §B.2 ,
+ §4.1 ,
+ §4.3 .
+ 
+
+- [66] 
+ L. Zhao, N. B. Gundavarapu, L. Yuan, H. Zhou, S. Yan, J. J. Sun, L. Friedman, R. Qian, T. Weyand, Y. Zhao, R. Hornung, F. Schroff, M. Yang, D. A. Ross, H. Wang, H. Adam, M. Sirotenko, T. Liu, and B. Gong (2024) 
+ 
+ VideoPrism: a foundational visual encoder for video understanding .
+ 
+ In ICML ,
+ 
+ Cited by: Table 2 .
+ 
+
+- [67] 
+ B. Zhu, B. Lin, M. Ning, Y. Yan, J. Cui, H. Wang, Y. Pang, W. Jiang, J. Zhang, Z. Li, W. Zhang, Z. Li, W. Liu, and L. Yuan (2024) 
+ 
+ LanguageBind: extending video-language pretraining to n-modality by language-based semantic alignment .
+ 
+ In ICLR ,
+ 
+ Cited by: Table 15 ,
+ §1 ,
+ §2 ,
+ Table 1 ,
+ Table 1 ,
+ Table 2 .
+ 
+
+- [68] 
+ X. Zou, H. Deng, Y. Yan, S. Liu, Z. Jin, C. Chen, H. Lu, and X. Hu (2026) 
+ 
+ Clearer sight, fewer lies: oriented pickup preference optimization for multimodal hallucination mitigation .
+ 
+ arXiv preprint arXiv:2606.29805 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [69] 
+ X. Zou, D. Lu, Y. Wang, Y. Yan, Y. Lyu, X. Zheng, L. Zhang, and X. Hu (2025) 
+ 
+ Don’t just chase “highlighted tokens” in MLLMs: revisiting visual holistic context retention .
+ 
+ NeurIPS 38 , pp. 39800–39832 .
+ 
+ Cited by: §B.3 .
+ 
+
+- [70] 
+ X. Zou, Y. Wang, Y. Yan, Y. Lyu, K. Zheng, S. Huang, J. Chen, P. Jiang, J. Liu, C. Tang, and X. Hu (2025) 
+ 
+ Look twice before you answer: memory-space visual retracing for hallucination mitigation in multimodal large language models .
+ 
+ Proceedings of the 42nd ICML .
+ 
+ Cited by: §B.3 .
+ 
+ 
+ 
+ 
+
+### Appendix A Theoretical Results
+
+ 
+
+### A.1 Proof of theorem 3.1 
+
+ 
+
+### Proof.
+
+ 
+
+ Beyond the WB problem, we deduce based on the duality of with general costs $C_{k}(x,y)$ . In this sense, we write the dual reformulation of the multimodal OT barycenter problem ( 3 ): 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}=\inf_{\begin{subarray}{c}\hskip 8.19447pt\\
+\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})\end{subarray}}\sup_{f_{0},\ldots,f_{k}\in\mathcal{C}(\mathcal{M}_{B})}\underbrace{\sum_{k=1}^{K}\lambda_{k}\left\{\int_{\mathcal{M}_{k}}f_{k}^{C_{k}}(\bm{m}_{k})\mathrm{d}\mathbb{P}_{k}(\bm{m}_{k})+\int_{\mathcal{M}_{B}}f_{k}(\bm{b})\mathrm{d}\mathbb{Q}(\bm{b})\right\}}_{\triangleq\widetilde{\mathcal{F}}\left(\mathbb{Q},f_{1:K}\right)}.$ 
+ | 
+ | (13) 
+
+[/TABLE]
+
+ where 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle f_{k}^{C_{k}}(\bm{m}_{k})=\inf_{b\in\mathcal{M}_{B}}[C_{k}(\bm{m}_{k},\bm{b})-f_{k}(\bm{b})].$ 
+ | 
+ | (14) 
+
+[/TABLE]
+
+ We denote the expression under the $\inf$ and $\inf\sup$ in ( 13 ) as functionals $\mathcal{L}:\mathcal{C}(\mathcal{M}_{B})^{K}$ and $\widetilde{\mathcal{F}}:\mathcal{P}(\mathcal{M}_{B})\times\mathcal{C}(\mathcal{M}_{B})^{K}$ , respectively. For simplicity, we also introduce the following notations 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\bar{f}\triangleq\sum_{k=1}^{K}\lambda_{k}f_{k}~~~~\text{and}~~~~~M\triangleq\inf_{\bm{b}\in\mathcal{M}_{B}}\bar{f}(\bm{b})=\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})}\int_{\mathcal{M}_{B}}\bar{f}(\bm{b})d\mathbb{Q}(\bm{b}),$ 
+ | 
+ | (15) 
+
+[/TABLE]
+
+ where the equality follows from two fundamental observations:
+(a) $M\leq\int\bar{f}(\bm{b})\,d\mathbb{Q}(\bm{b})\,\text{ for any }\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})$ , and (b) $\bar{f}(\bm{b})=\int\bar{f}(\bm{b}^{\prime})\,d\delta_{\bm{b}}(\bm{b}^{\prime})$ 
+where $\delta_{\bm{b}}$ represents the Dirac mass at $\bm{b}\in\mathcal{M}_{B}.$ 
+ 
+ 
+
+Firstly, due to the compactness of $\mathcal{M}_{B}$ , the space $\mathcal{P}(\mathcal{M}_{B})$ is compact with respect to the weak topology. For fixed potentials $f_{1:K}\in\mathcal{P}(\mathcal{M}_{B})^{K+1}$ we have that $\widetilde{\mathcal{F}}(\mathbb{\cdot},f_{1:K})$ is linear, convex and continuous. Secondly, for a fixed $\mathbb{Q}$ , the functional $\widetilde{\mathcal{F}}(\mathbb{Q},\cdot)$ is a concave due to the concavity of $C$ -transform. These properties enable the application of Sion’s minimax theorem ( [ 47 ] , Theorem 3.4), which allows the interchange of the $\sup$ and $\inf$ in ( 13 ). Thus with ( 15 ) we obtain 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}$ 
+ | $\displaystyle=\sup_{f_{0},\ldots,f_{K}\in\mathcal{C}(\mathcal{M}_{B})}\underbrace{\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})}\sum_{k=1}^{K}\lambda_{k}\left\{\int_{\mathcal{M}_{k}}f_{k}^{C_{k}}(\bm{m}_{k})\mathrm{d}\mathbb{P}_{k}(\bm{m}_{k})+\int_{\mathcal{M}_{B}}f_{k}(\bm{b})\mathrm{d}\mathbb{Q}(\bm{b})\right\}}_{\triangleq\mathcal{L}(f_{1:K})}$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\sup_{f_{0},\ldots,f_{K}\in\mathcal{C}(\mathcal{M}_{B})}\left\{\sum_{k=1}^{K}\lambda_{k}\int_{\mathcal{M}_{k}}f_{k}^{C_{k}}(\bm{m}_{k})\mathrm{d}\mathbb{P}_{k}(\bm{m}_{k})+\inf_{\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})}\int_{\mathcal{M}_{B}}\bar{f}(\bm{b})\mathrm{d}\mathbb{Q}(\bm{b})\right\}$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\sup_{f_{0},...,f_{K}\in\mathcal{C}(\mathcal{M}_{B})}\underbrace{\left\{\sum_{k=1}^{K}\lambda_{k}\int_{\mathcal{M}_{k}}f_{k}^{C_{k}}(\bm{m}_{k})\mathrm{d}\mathbb{P}_{k}(\bm{m}_{k})+\inf_{\bm{b}\in\mathcal{M}_{B}}\bar{f}(\bm{b})\right\}}_{\triangleq\widetilde{\mathcal{L}}(f_{1:K})}.$ 
+ | 
+ | (16) 
+
+[/TABLE]
+
+Now we show that the $\sup$ in ( 16 ) can be restricted to potentials $\tilde{f}_{1:K}$ which satisfy the congruence condition $\sum_{k=1}^{K}\lambda_{k}\tilde{f}_{k}=1$ . It is enough to show that for every tuple $f_{1:K}$ there exists a congruent tuple $\tilde{f}_{1:K}\in\mathcal{C}(\mathcal{M}_{B})^{K}$ such that $\widetilde{\mathcal{L}}(\tilde{f}_{1:K})\geq\widetilde{\mathcal{L}}(f_{1:K})$ . 
+ 
+ 
+
+For this, we consider the congruent potentials given any tuple $f_{1:K}$ 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle(\tilde{f}_{0},\cdots,\tilde{f}_{K})=\left(f_{0},\cdots,f_{K-1},f_{K}-\frac{\bar{f}}{\lambda_{K}}\right).$ 
+ | 
+ | (17) 
+
+[/TABLE]
+
+Since $\tilde{M}\triangleq\inf_{\bm{b}\in\mathcal{M}_{B}}\sum_{k=1}^{K}\lambda_{k}\tilde{f}_{k}=1$ , we obtain 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\widetilde{\mathcal{L}}(\tilde{f}_{1:K})-\widetilde{\mathcal{L}}(f_{1:K})$ 
+ | $\displaystyle=\lambda_{K}\int_{\mathcal{M}_{k}}\left(\tilde{f}_{K}^{C_{K}}(\bm{m}_{K})-f_{K}^{C_{K}}(\bm{m}_{K})\right)d\mathbb{P}_{K}(\bm{m}_{K})-M$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\lambda_{K}\int_{\mathcal{M}_{k}}\left[\left(f_{K}-\frac{\bar{f}}{\lambda_{K}}\right)^{C_{K}}(\bm{m}_{K})-f_{K}^{C_{K}}(\bm{m}_{K})\right]d\mathbb{P}_{K}(\bm{m}_{K})-M$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle\geq\lambda_{K}\int_{\mathcal{M}_{k}}\left[\left(f_{K}-\frac{M}{\lambda_{K}}\right)^{C_{K}}(\bm{m}_{K})-f_{K}^{C_{K}}(\bm{m}_{K})\right]d\mathbb{P}_{K}(\bm{m}_{K})-M$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\lambda_{K}\int_{\mathcal{M}_{k}}\frac{M}{\lambda_{K}}d\mathbb{P}_{K}(\bm{m}_{K})-M=0,$ 
+ | 
+ | (18) 
+
+[/TABLE]
+
+where the first inequality arises from the monotonicity of the $C$ -transform, along with the fact $\bar{f}_{K}=f_{K}-\frac{\bar{f}}{\lambda_{K}}\leq f_{K}-\frac{M}{\lambda_{k}}$ . The last equality follows from the definition of $C$ -transform. 
+ 
+ 
+
+Finally, since $\widetilde{\mathcal{L}}(f_{1:K})={\mathcal{L}}(f_{1:K})$ for congruent potentials $f_{1:K}$ , with ( 14 ) we obtain 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}=\sup\limits_{\sum_{k}\!\lambda_{k}f_{k}=0}{\mathcal{L}}(f_{1:K})$ 
+ | $\displaystyle=\sup\limits_{\sum_{k}\!\lambda_{k}f_{k}=0}\sum_{k=1}^{K}\lambda_{k}\int_{\mathcal{M}_{k}}f_{k}^{C_{k}}(\bm{m}_{k})\mathrm{d}\mathbb{P}_{k}(\bm{m}_{k}),$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\sup\limits_{\sum_{k}\!\lambda_{k}f_{k}=0}\sum_{k=1}^{K}\lambda_{k}\inf_{\begin{subarray}{c}\\[0.3014pt]
+\bm{b}\in\mathcal{M}_{B}\end{subarray}}\int_{\mathcal{M}_{k}}\big[C_{k}(\bm{m}_{k}-\bm{b})-f_{k}(\bm{b})\big]\mathrm{d}\mathbb{P}_{k}(\bm{m}_{k}).$ 
+ | 
+ | (19) 
+
+[/TABLE]
+
+In practice, we replace each integral with an empirical expectation over the distribution $\mathbb{P}_{k}$ , and adopt $C_{k}(\bm{m}_{k}-\bm{b})=\|\bm{m}_{k}-\bm{b}\|$ , which corresponds to the Wasserstein distance between the modality feature and the barycenter. We exchange the summation and the infimum since $\bm{b}$ is shared across all terms and the objective is linear. We then sample the barycenter $\bm{b}$ from a distribution $\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})$ , and express the integral as an expectation over both $\bm{m}_{k}\sim\mathbb{P}_{k}$ and $\bm{b}\sim\mathbb{Q}$ : 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}=\sup\limits_{\sum_{k}\!\lambda_{k}f_{k}=0}~\inf_{\begin{subarray}{c}\\[0.3014pt]
+\mathbb{Q}\in\mathcal{P}(\mathcal{M}_{B})\end{subarray}}\sum_{k=1}^{K}\lambda_{k}\mathop{\mathbb{E}}_{\begin{subarray}{c}\bm{m}_{k}\sim\mathbb{P}_{k}\\
+\bm{b}\sim\mathbb{Q}\end{subarray}}\big[\|\bm{m}_{k}-\bm{b}\|-f_{k}(\bm{b})\big],$ 
+ | 
+ | (20) 
+
+[/TABLE]
+
+which completes the proof.
+∎ 
+ 
+ 
+ 
+ 
+
+### A.2 Proof of Theorem 3.2 
+
+ 
+
+### Proof.
+
+ 
+
+ Let $\mathbb{P}_{1:K}$ denote the joint distribution over the multimodal tuples $(\bm{m}_{0},\dots,\bm{m}_{K})=:\bm{m}_{1:K}$ , where $\bm{m}_{k}\in\mathcal{M}_{k}$ . The barycenter map is a function $T:\mathcal{M}_{0}\to\mathcal{M}_{B}$ that acts on the anchor modality. For a set of potential functions $f_{1:K}$ and a map $T$ , we rewrite the total cost functional $\mathcal{F}$ and its corresponding minimal cost functional $\mathcal{L}$ as follows: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{F}(f_{1:K},T)$ 
+ | $\displaystyle\triangleq\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\sum_{k=1}^{K}\lambda_{k}\left(C_{k}(\bm{m}_{k},T(\bm{m}_{0}))-f_{k}(T(\bm{m}_{0}))\right)\right],$ 
+ | 
+ | (21) 
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}(f_{1:K})$ 
+ | $\displaystyle\triangleq\inf_{T:\mathcal{M}_{0}\to\mathcal{M}_{B}}\mathcal{F}(f_{1:K},T).$ 
+ | 
+ | (22) 
+
+[/TABLE]
+
+ The minimizer of functional $\mathcal{F}$ is denoted as: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle T^{f}\in\mathop{\arg\inf}_{T:\mathcal{M}\rightarrow\mathcal{M}_{B}}\mathcal{F}(\widehat{f}_{1:K},T).$ 
+ | 
+ | (23) 
+
+[/TABLE]
+
+ Given $T^{f}:\mathcal{M}_{0}\rightarrow\mathcal{M}_{B}$ , the functional $\mathcal{L}$ in ( 22 ) can be written as: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}(\widehat{f}_{1:K})=\mathcal{F}(\widehat{f}_{0:k},T^{f}).$ 
+ | 
+ | (24) 
+
+[/TABLE]
+
+ We can observe that the first gap $\mathcal{E}_{1}$ is the difference between ( 21 ) and ( 24 ): 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{E}_{1}(\widehat{f}_{1:K},\widehat{T})=\mathcal{F}(\widehat{f}_{1:K},\widehat{T})-\mathcal{L}(\widehat{f}_{1:K})=\mathcal{F}(\widehat{f}_{1:K},\widehat{T})-\mathcal{F}(\widehat{f}_{1:K},T^{f}).$ 
+ | 
+ | (25) 
+
+[/TABLE]
+
+ Before looking into the second gap $\mathcal{E}_{2}$ , we recall the optimal value $\mathcal{L}^{*}$ of the OT barycenter problem and express the OT cost with Monge’s formulation: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}\triangleq\sum_{k=1}^{K}\lambda_{k}\text{OT}_{C_{k}}(\mathbb{P}_{k},\mathbb{Q}^{*}).$ 
+ | 
+ | (26) 
+
+[/TABLE]
+
+ where $\mathbb{Q}^{*}$ is the true barycenter distribution. By introducing Monge’s OT formulation with the true OT map $T^{*}$ that satisfies $T^{*}_{\#}\mathbb{P}_{0}=\mathbb{Q}^{*}$ , the expression can be rewritten as: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}=\sum_{k=1}^{K}\lambda_{k}\int_{\mathcal{M}_{k}}C_{k}(\bm{m}_{k},T^{*}(\bm{m}_{0}))d\mathbb{P}_{k}(\bm{m}_{k}).$ 
+ | 
+ | (27) 
+
+[/TABLE]
+
+ Due to the congruence condition on the potentials $\widehat{f}_{1:K}$ and the property $T^{*}_{\#}\mathbb{P}_{0}=\mathbb{Q}^{*}$ for all $k$ , we have: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\sum_{k=1}^{K}\lambda_{k}\mathbb{E}_{\bm{m}_{k}\sim\mathbb{P}_{k}}[\widehat{f}_{k}(T^{*}(\bm{m}_{0}))]=\mathbb{E}_{\bm{b}\sim\mathbb{Q}^{*}}\left[\sum_{k=1}^{K}\lambda_{k}\widehat{f}_{k}(\bm{b})\right]=0.$ 
+ | 
+ | (28) 
+
+[/TABLE]
+
+ This allows us to reformulate the optimal value $\mathcal{L}^{*}$ . Using the definition of $\mathcal{F}$ in ( 21 ), we find: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{L}^{*}$ 
+ | $\displaystyle=\sum_{k=1}^{K}\lambda_{k}\mathbb{E}_{\bm{m}_{k}\sim\mathbb{P}_{k}}[C_{k}(\bm{m}_{0},T^{*}(\bm{m}_{k}))]-\underbrace{\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\sum_{k=1}^{K}\lambda_{k}\widehat{f}_{k}(T^{*}(\bm{m}_{0}))\right]}_{=0\text{ from }(\ref{eq:congruence_zero})}$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\sum_{k=1}^{K}\lambda_{k}\left(C_{k}(\bm{m}_{k},T^{*}(\bm{m}_{0}))-\widehat{f}_{k}(T^{*}(\bm{m}_{0}))\right)\right]=\mathcal{F}(\widehat{f}_{1:K},T^{*}).$ 
+ | 
+
+[/TABLE]
+
+ With ( 24 ) we derive the second gap $\mathcal{E}_{2}$ can be written as 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{E}_{2}=\mathcal{L}^{*}-\mathcal{L}(\widehat{f}_{1:K})=\mathcal{F}(\widehat{f}_{1:K},T^{*})-\mathcal{F}(\widehat{f}_{1:K},T^{f}).$ 
+ | 
+ | (29) 
+
+[/TABLE]
+
+ We introduce the function $g_{k}(\bm{m}_{k},\bm{b})\triangleq C_{k}(\bm{m}_{k},\bm{b})-\widehat{f}_{k}(\bm{b})$ , which is assumed to be $\beta$ -strongly convex with respect to $\bm{b}$ . Using this, we can rewrite our total cost functional $\mathcal{F}$ from ( 21 ) as: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{F}(f_{1:K},T)=\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\sum_{k=1}^{K}\lambda_{k}g_{k}(\bm{m}_{k},T(\bm{m}_{0}))\right].$ 
+ | 
+ | (30) 
+
+[/TABLE]
+
+ As a result of convexity, it follows that a necessary condition for $T^{f}$ to minimize $\mathcal{F}(f_{1:K},T)$ is the vanishing of its first variation, yielding 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\sum_{k=1}^{K}\lambda_{k}\nabla_{\bm{b}}g_{k}(\bm{m}_{k},T^{f}(\bm{m}_{0}))\right]=0.$ 
+ | 
+ | (31) 
+
+[/TABLE]
+
+ Now, we analyze the gap $\mathcal{E}_{1}$ by applying the $\beta$ -strong convexity of $g_{k}(\bm{m}_{k},\cdot)$ : 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{E}_{1}$ 
+ | $\displaystyle=\mathcal{F}(\widehat{f}_{1:K},\widehat{T})-\mathcal{F}(\widehat{f}_{1:K},T^{f})$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\sum_{k=1}^{K}\lambda_{k}\left(g_{k}(\bm{m}_{k},\widehat{T}(\bm{m}_{0}))-g_{k}(\bm{m}_{k},T^{f}(\bm{m}_{0}))\right)\right]$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle\geq\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\sum_{k=1}^{K}\lambda_{k}\left(\langle\nabla_{\bm{b}}g_{k}(\bm{m}_{k},T^{f}(\bm{m}_{0})),\widehat{T}(\bm{m}_{0})-T^{f}(\bm{m}_{0})\rangle+\frac{\beta}{2}\|\widehat{T}(\bm{m}_{0})-T^{f}(\bm{m}_{0})\|^{2}\right)\right]$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\mathbb{E}_{\bm{m}_{1:K}\sim\mathbb{P}_{1:K}}\left[\left\langle\sum_{k=1}^{K}\lambda_{k}\nabla_{\bm{b}}g_{k}(\bm{m}_{k},T^{f}(\bm{m}_{0})),\widehat{T}(\bm{m}_{0})-T^{f}(\bm{m}_{0})\right\rangle\right]+\frac{\beta}{2}\mathbb{E}_{\bm{m}_{0}\sim\mathbb{P}_{0}}\left[\|\widehat{T}(\bm{m}_{0})-T^{f}(\bm{m}_{0})\|^{2}\right]$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle\overset{(\ref{eq:grad_zero_new})}{=}0+\frac{\beta}{2}\mathbb{E}_{\bm{m}_{0}\sim\mathbb{P}_{0}}\left[\|\widehat{T}(\bm{m}_{0})-T^{f}(\bm{m}_{0})\|^{2}\right].$ 
+ | 
+ | (32) 
+
+[/TABLE]
+
+ For the second gap $\mathcal{E}_{2}$ , we conduct the same analysis and obtain 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{E}_{2}\geq\frac{\beta}{2}\mathbb{E}_{\bm{m}_{0}\sim\mathbb{P}_{0}}\left[\|T^{f}(\bm{m}_{0})-T^{*}(\bm{m}_{0})\|^{2}\right].$ 
+ | 
+ | (33) 
+
+[/TABLE]
+
+ Now we sum the inequalities for $\mathcal{E}_{1}$ ( 32 ) and $\mathcal{E}_{2}$ ( 33 ): 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathcal{E}_{1}+\mathcal{E}_{2}$ 
+ | $\displaystyle\geq\frac{\beta}{2}\mathbb{E}_{\bm{m}_{0}\sim\mathbb{P}_{0}}\left[\|\widehat{T}(\bm{m}_{0})-T^{f}(\bm{m}_{0})\|^{2}\right]+\frac{\beta}{2}\mathbb{E}_{\bm{m}_{0}\sim\mathbb{P}_{0}}\left[\|T^{f}(\bm{m}_{0})-T^{*}(\bm{m}_{0})\|^{2}\right]$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\frac{\beta}{2}\mathbb{E}_{\bm{m}_{0}\sim\mathbb{P}_{0}}\left[\|\widehat{T}(\bm{m}_{0})-T^{f}(\bm{m}_{0})\|^{2}+\|T^{f}(\bm{m}_{0})-T^{*}(\bm{m}_{0})\|^{2}\right]$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle\geq\frac{\beta}{4}\mathbb{E}_{\bm{m}_{0}\sim\mathbb{P}_{0}}\left[\|\widehat{T}(\bm{m}_{0})-T^{*}(\bm{m}_{0})\|^{2}\right]\geq\frac{\beta}{4}W^{2}(\widehat{T}_{\#}\mathbb{P}_{0},T^{*}_{\#}\mathbb{P}_{0})=\frac{\beta}{4}W^{2}(\widehat{T}_{\#}\mathbb{P}_{0},\mathbb{Q}^{*}).$ 
+ | 
+ | (34) 
+
+[/TABLE]
+
+ ∎ 
+ 
+ 
+ 
+ 
+
+### A.3 Analysis on barycenter simplex volume
+
+ 
+
+Given the matrix containing vectors spanning the barycenter simplex 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\mathbf{R}=(\bm{b},\bm{r}_{1},\cdots,\bm{r}_{K}),$ 
+ | 
+
+[/TABLE]
+
+we discuss the geometric meaning of barycenter simplex volumes for $n=2$ and $n=3$ modalities. $\langle\cdot,\cdot\rangle$ denotes the cosine similarity between two normalized vectors, so that 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\langle\bm{b},\bm{b}\rangle=\langle\bm{r}_{1},\bm{r}_{1}\rangle=\langle\bm{r}_{2},\bm{r}_{2}\rangle=1.$ 
+ | 
+ | (35) 
+
+[/TABLE]
+
+We define the cosine of the angles between these vectors as 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\cos\theta:=\langle\bm{b},\bm{r}_{1}\rangle,\quad\cos\beta:=\langle\bm{b},\bm{r}_{2}\rangle,\quad\cos\gamma:=\langle\bm{r}_{1},\bm{r}_{2}\rangle.$ 
+ | 
+ | (36) 
+
+[/TABLE]
+
+ 
+ 
+
+For the special case $n=2$ , the squared volume can be expressed as the determinant 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\mathrm{Vol}^{2}_{n=2}=\det(\mathbf{R}^{\top}\mathbf{R})=\begin{vmatrix}\langle\bm{b},\bm{b}\rangle&\langle\bm{r}_{1},\bm{b}\rangle\\
+\langle\bm{b},\bm{r}_{1}\rangle&\langle\bm{r}_{1},\bm{r}_{1}\rangle\end{vmatrix}=1-\cos^{2}\theta$ 
+ | 
+
+[/TABLE]
+
+Therefore, the simplex volume in the bimodal case reduces to: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\text{Vol}_{n=2}=\sqrt{1-\cos^{2}\theta}=\sqrt{\sin^{2}\theta}=\sin\theta,$ 
+ | 
+
+[/TABLE]
+
+which quantifies the spatial deviation between the WB embedding vector $\bm{b}$ and the vector $\bm{b}-\bm{m}_{1}$ , reflecting how well the modality aligns with the overall barycenter direction. A smaller volume indicates stronger alignment, while a larger value implies greater directional discrepancy. 
+ 
+ 
+
+For the special case $n=3$ , the squared volume can be expressed as the determinant 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\mathrm{Vol}^{2}_{n=3}=\det(\mathbf{R}^{\top}\mathbf{R})=\begin{vmatrix}\langle\bm{b},\bm{b}\rangle&\langle\bm{r}_{1},\bm{b}\rangle&\langle\bm{r}_{2},\bm{b}\rangle\\
+\langle\bm{b},\bm{r}_{1}\rangle&\langle\bm{r}_{1},\bm{r}_{1}\rangle&\langle\bm{r}_{2},\bm{r}_{1}\rangle\\
+\langle\bm{b},\bm{r}_{2}\rangle&\langle\bm{r}_{1},\bm{r}_{2}\rangle&\langle\bm{r}_{2},\bm{r}_{2}\rangle\end{vmatrix}.$ 
+ | 
+
+[/TABLE]
+
+Substituting ( 35 ) and ( 36 ) into the determinant, the expression simplifies to 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\displaystyle\mathrm{Vol}^{2}_{n=3}$ 
+ | $\displaystyle=1-\cos^{2}\theta-\cos^{2}\beta-\cos^{2}\gamma+2\cos\theta\cos\beta\cos\gamma,$ 
+ | 
+ 
+| 
+ | 
+ | 
+ | $\displaystyle=\sin^{2}\theta+\sin^{2}\beta+\sin^{2}\gamma+2\cos\theta\cos\beta\cos\gamma-2.$ 
+ | 
+
+[/TABLE]
+
+ 
+ 
+
+This form reveals the geometric interpretation more clearly: 1) The $\sin^{2}$ terms quantify the angular deviation of each vector pair. The $2\cos\theta\cos\beta\cos\gamma$ term reflects the angular coupling between all three directions. 2) $\gamma$ is the angle between the two modality gap vectors $\bm{r}_{1}$ and $\bm{r}_{2}$ , and thus directly reflects the structural inter-modality gaps between non-anchor modalities. 
+ 
+ 
+ Figure 6 : The simplex’s volume is correlated ( $\rho=-0.9844$ ) with the downstream retrieval performance. 
+ 
+ 
+
+The volume becomes small when each modality vector closely follows the barycenter direction (small angles $\alpha$ and $\beta$ ). In addition, if the gap vectors between modalities, $\bm{r}_{1}$ and $\bm{r}_{2}$ , are nearly aligned (small inter-modality angle $\gamma$ ), the volume is further reduced. In this case, all three angles are small, their sines are close to $0$ , and their cosines are close to $1$ . Conversely, the volume increases when the directions are mutually orthogonal, which maximizes the total dispersion among them. Fig.  6 plots the R@1 values of zero-shot retrieval on MSR-VTT with respect to the volume, showing a clear negative correlation between volume and performance. 
+ 
+ 
+
+Unlike pairwise cosine similarity, which only captures alignment between two modalities, the barycenter simplex volume offers a rich higher-order understanding of multimodal structure. It not only measures the holistic geometric alignment of each modality toward the barycenter, but also preserves inter-modal interactions, yielding a more compact multimodal joint representation space. In this sense, the volume serves as a non-trivial metric for measuring $n$ -modality alignment. 
+ 
+ 
+
+ Geometric Intuition. Geometrically, traditional methods rely on asymmetric alignment, forcing non-anchor modalities (e.g., video) to conform to a modality-specific anchor (e.g., text). In contrast, BaryBind establishes a shared "geometric consensus" by optimizing a Wasserstein barycenter across all modalities. Instead of leaning towards a fixed specific modality, the multimodal embeddings of BaryBind converge toward the central manifold supported by the refined WB anchor. This balanced constraint shares the optimization burden and mitigates modality-specific bias, logically explaining the reduced T2V/V2T performance gap observed in our experiments. 
+ 
+ 
+ 
+ 
+
+### Appendix B Experimental Details and More Results
+
+ 
+
+### B.1 Training algorithm
+
+ 
+
+ Algorithm 1 Training Algorithm 
+ 
+
+ Input : Per-modality encoders $E_{\phi_{1:K}}$ ; Multimodal data set $\mathcal{S}_{1:K}$ ; NN-based WB map $T_{\theta}$ ; NN-based potentials $f_{\omega_{1:K}}$ ; Learning rate $\gamma$ 
+ Output : Learned $T_{\theta}$ , $E_{\phi_{1:K}}$ , $f_{\omega_{1:K}}$ 
+ 
+ 
+ 1: 
+ 
+ 
+   while not converged do 
+
+ 
+ 
+ 2: 
+ 
+ 
+   Sample multimodal batch data $\bm{z}_{1:K}\sim\mathcal{S}_{1:K}$ 
+
+ 
+ 
+ 3: 
+ 
+ 
+   Extract embeddings $\{\bm{m}_{k}=E_{\phi_{k}}(\bm{z}_{k})\sim\mathbb{P}_{k}\}_{k=1}^{K}$ 
+
+ 
+ 
+ 4: 
+ 
+ 
+   Compute WB anchor $\bm{b}=T_{\theta}(\bm{m}_{0})$ 
+
+ 
+ 
+ 5: 
+ 
+ 
+   Compute $\mathcal{L}_{\mathrm{MWB}}$ by Eqn. ( 5 )
+
+ 
+ 
+ 6: 
+ 
+ 
+   Compute $\mathcal{L}_{\mathrm{BVC}},\mathcal{L}_{\mathrm{DAM}},\mathcal{L}$ by Eqns. ( 10 ), ( 11 ), ( 12 )
+
+ 
+ 
+ 7: 
+ 
+ 
+   # Optimize network blocks
+
+ 
+ 
+ 8: 
+ 
+ 
+    $\omega_{k}=\omega_{k}+2\gamma\frac{\partial\mathcal{L}_{\mathrm{MWB}}}{\partial\omega_{k}}$ , $k=1,\cdots,K$ 
+
+ 
+ 
+ 9: 
+ 
+ 
+    $\phi_{k}=\phi_{k}-\gamma\frac{\partial\mathcal{L}}{\partial\phi_{k}}$ , $k=1,\cdots,K$ 
+
+ 
+ 
+ 10: 
+ 
+ 
+    $\theta=\theta-\gamma\frac{\partial\mathcal{L}}{\partial\theta}$ 
+
+ 
+ 
+ 11: 
+ 
+ 
+   end while 
+ 
+ 
+ 
+ 
+ 
+
+### B.2 Experimental Details
+
+ 
+
+We perform both continued pretraining on top of VAST models and training from scratch of the BaryBind model using 2×A100 GPUs. For continued pretraining, We sampled 150,000 examples from the VAST-27M dataset [ 9 ] due to the unavailability of the full dataset. Each example consists of a video (comprising frames and an audio track) paired with a corresponding caption. We further evaluate the training-from-scratch models on MSR-VTT and ActivityNet in § B.10 . The model backbone follows the VAST multimodal encoder, utilizing BERT-B, modality-specific audio and vision encoders, and other modality encoders as applicable, resulting in a total of approximately 1.3 billion parameters. 
+ 
+ 
+
+During the continued pretraining phase, we use a single frame and a single 10-second audio clip per sample; in the training-from-scratch setting, we use eight randomly sampled video frames and a single 10-second audio clip per video. 
+ 
+ 
+
+For the continued pretraining, BaryBind is trained for 10k steps on the 150k-sample subset of VAST27M. Retrieval performance is evaluated every 100 steps on the MSR-VTT test set, and the checkpoint with the best performance is selected. We employ an initial learning rate of 1e-4 with a linear decay schedule and a batch size of 256. In the training-from-scratch experiments, all encoders are trained from scratch on the MSR-VTT training dataset for 4 epochs, using an initial learning rate of 1e-4 with a linear decay schedule and a batch size of 64. 
+ 
+ 
+ Table 7 : Overview of multimodal benchmarks used for downstream evaluation. 
+
+ 
+ 
+ 
+ 
+ 
+ Benchmark 
+ Modalities 
+ Train 
+ Val 
+ Test 
+ # Frames (train) 
+ # Frames (test) 
+ 
+ DiDeMo 
+ Video + Text + Audio 
+ 8,394 
+ 1,065 
+ 1,003 
+ 8 
+ 32 
+ 
+ ActivityNet 
+ Video + Text + Audio 
+ 10,009 
+ — 
+ 4,917 
+ 8 
+ 32 
+ 
+ MSR - VTT 
+ Video + Text + Audio + Subtitle 
+ 9,000 
+ — 
+ 1,000 
+ 8 
+ 8 
+ 
+ VATEX 
+ Video + Text + Audio + Subtitle 
+ 14,060 
+ — 
+ 431 
+ 8 
+ 16 
+ 
+ VGGSound 
+ Audio + Video + Text 
+ — 
+ — 
+  5000 
+ - 
+ 8 
+ 
+ 
+ 
+ 
+
+Table  7 summarizes the modality configuration, data statistics, and frame settings across benchmarks. 
+ 
+ 
+
+ MSR-VTT   [ 65 ] is a widely used benchmark for video-text retrieval. It contains 10,000 video clips, each paired with approximately 20 textual captions, totaling around 200,000 captions. We use 9,000 videos for training and 1,000 for testing, with 8 frames sampled per video. 
+ 
+ 
+
+ DiDeMo   [ 2 ] consists of 10,000 long-form videos, each annotated with 4 temporally ordered paragraph descriptions. It is mainly used for moment localization retrieval. The official split includes 8,394/1,065/1,003 videos for training/validation/testing, and 12 frames are sampled per video. 
+ 
+ 
+
+ ActivityNet   [ 6 ] contains about 20,000 YouTube videos with a total duration of approximately 180 hours, annotated with multiple temporal sentence descriptions. We use the official training set (10,009 videos) for training and the validation set (4,917 videos) for downstream testing. The number of sampled frames per video is 8. 
+ 
+ 
+
+ VATEX   [ 56 ] includes around 25,000 English videos, each annotated with 10 English captions. It is commonly used for four-modality text retrieval tasks. We adopt 14,060 videos for training and 431 for testing. 
+ 
+ 
+
+ VGGSound5K   [ 8 ] is a 5,000-video subset of VGGSound, containing diverse audio event categories (typically 310 classes) along with corresponding video frames and subtitles. Each video clip
+in the dataset has a duration of 10 seconds and is annotated with a single label corresponding to the predominant sound event occurring within the clip. The dataset covers a wide spectrum of audio events, including human actions, animal vocalizations, natural phenomena, and mechanical sounds.It is commonly used for audio-video multimodal classification tasks. 
+ 
+ 
+ 
+
+### B.3 Broader Multimodal Understanding and Generation
+
+ 
+
+Multimodal learning has recently expanded beyond conventional image–text understanding to complex temporal, embodied, and generative scenarios. In autonomous systems, StreamVLO integrates visual and LiDAR observations with spatio-temporal correlation modeling for robust streaming odometry  [ 28 ] , while DriveVA jointly models future videos and driving actions to transfer video-generation priors to zero-shot planning  [ 30 ] . UNIVERSE further unifies video and trajectory generation within a mask-modulated architecture  [ 29 ] , and OmniDrive coordinates language, geometry, and multi-view visual signals for controllable driving-world generation  [ 38 ] . These developments highlight the growing need to organize heterogeneous sensory and semantic information within a coherent representation space. Reliable multimodal understanding additionally requires preserving and faithfully exploiting visual evidence. MemVR mitigates hallucinations by reinjecting visual information into the model’s memory space when relevant evidence has faded  [ 70 ] . HoloV instead studies holistic visual-token retention, showing that maintaining globally distributed visual context is important for efficient multimodal reasoning  [ 69 ] . OPPO further calibrates generation preferences according to the strength of visual evidence, improving visual grounding and reducing hallucinations  [ 68 ] . Related challenges also arise in visual generation and evaluation: ARGUS aggregates multi-view identity evidence for subject-consistent video generation  [ 37 ] , MST-CLIPIQA decouples semantic coherence from perceptual distortions through multi-scale vision–language alignment  [ 39 ] , and KAE develops unified knowledge embedding for few-shot image generation  [ 63 ] . Collectively, these studies demonstrate that modern multimodal systems must reconcile heterogeneous modalities, granularities, and objectives while retaining both global semantics and modality-specific information. BaryBind addresses this general representation challenge from an optimal-transport perspective, using a multimodal Wasserstein barycenter as a shared anchor to bind multiple modalities without collapsing their complementary structures. 
+ 
+ 
+ 
+
+### B.4 Finetuning Cross-modal Retrieval Results
+
+ 
+
+We present the fine-tuning results in Table  8 , which shows BaryBind maintains its advantage, outperforming prior models such as InternVideo, VideoCLIP-XL, and VAST. For instance, our T-VA setting achieves 60.3 R@1 on MSR-VTT and 72.1 on ActivityNet for T2V, surpassing VAST by +4.5 and +2.3 points, respectively. The performance further improves under T-VAS, where BaryBind reaches 65.7 R@1 on MSR-VTT, indicating that our binding strategy generalizes well with additional modalities and scales effectively with fine-tuning. 
+ 
+ 
+ Table 8 : Finetuning text-to-video (T2V) and video-to-text (V2T) retrieval results in terms of Recall at 1 score (R@1). Results from our baseline VAST and BaryBind are highlighted accordingly. 
+ 
+
+[TABLE]
+
+| 
+ | Methods 
+ | Modality 
+ | MSR-VTT 
+ | DiDeMo 
+ | ActivityNet 
+ | VATEX 
+
+| 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+
+| 
+ | CLIP4Clip [ 32 ] 
+ | T-V 
+ | 45.6 
+ | 45.9 
+ | 43.0 
+ | 43.6 
+ | 40.3 
+ | 41.6 
+ | 63.0 
+ | 78.3 
+
+| 
+ | InternVideo-L [ 59 ] 
+ | T-V 
+ | 53.1 
+ | 54.4 
+ | 57.9 
+ | 59.1 
+ | 62.2 
+ | 62.8 
+ | 69.8 
+ | 80.6 
+
+| 
+ | mPLUG-2 [ 64 ] 
+ | T-V 
+ | 53.1 
+ | - 
+ | 56.4 
+ | - 
+ | - 
+ | - 
+ | - 
+ | - 
+
+| 
+ | ViCLIP [ 57 ] 
+ | T-V 
+ | 52.5 
+ | 51.8 
+ | 49.4 
+ | 50.2 
+ | 49.8 
+ | 48.1 
+ | - 
+ | - 
+
+| 
+ | T-MASS [ 54 ] 
+ | T-VA 
+ | 52.7 
+ | - 
+ | 53.3 
+ | - 
+ | - 
+ | - 
+ | 65.6 
+ | - 
+
+| 
+ | VALOR-L [ 27 ] 
+ | T-VAS 
+ | 54.4 
+ | - 
+ | 57.6 
+ | - 
+ | 63.4 
+ | - 
+ | 76.9 
+ | - 
+
+| 
+ | VideoCLIP-XL [ 55 ] 
+ | T-V 
+ | 54.6 
+ | 54.0 
+ | 62.3 
+ | 62.7 
+ | 58.4 
+ | 59.2 
+ | - 
+ | - 
+
+| 
+ | TempMe [ 46 ] 
+ | T-V 
+ | 49.0 
+ | 47.6 
+ | 48.0 
+ | 48.4 
+ | 44.9 
+ | 45.3 
+ | 69.6 
+ | 71.8 
+
+| 
+ | VAST [ 9 ] 
+ | T-VA 
+ | 55.8 
+ | 57.6 
+ | 65.6 
+ | 62.0 
+ | 68.8 
+ | 66.7 
+ | 86.9 
+ | 84.1 
+
+| 
+ | VAST [ 9 ] 
+ | T-VAS 
+ | 56.6 
+ | 57.6 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 87.5 
+ | 84.0 
+
+| 
+ | BaryBind 
+ | T-V 
+ | 57.4 
+ | 57.8 
+ | 67.2 
+ | 64.6 
+ | 67.3 
+ | 65.2 
+ | 85.0 
+ | 82.4 
+
+| 
+ | BaryBind 
+ | T-VA 
+ | 61.0 
+ | 61.4 
+ | 69.6 
+ | 66.3 
+ | 73.5 
+ | 70.2 
+ | 88.2 
+ | 85.2 
+
+| 
+ | BaryBind 
+ | T-VAS 
+ | 65.7 
+ | 65.4 
+ | - 
+ | - 
+ | - 
+ | - 
+ | 89.5 
+ | 86.4 
+
+[/TABLE]
+
+ 
+ 
+ 
+ 
+
+### B.5 Clarification on Distinction from Prior Anchor-based Approaches
+
+ 
+
+Our core contribution is the introduction of Wasserstein Barycenter (WB) optimization for establishing a balanced representation space. This differs fundamentally from pure anchor-based alignment approaches (e.g., GRAM and Triangle), by introducing an additional optimization process prior to alignment. This methodology is presented in Section 3, especially Section 3.2 with theoretical analysis. Specifically, BaryBind introduces a learnable WB anchor via WB optimization. The WB optimization transports modality-specific distributions toward a barycenter, defined as the distribution closest to all modality-specific distributions under the Wasserstein distance, ensuring multimodal semantic consensus for subsequent volumetric alignment. Both comparisons and ablations validate that the WB optimization is the main contributor to the superior performance. 
+ 
+ 
+
+On the other hand, along the line of alignment, GRAM and Triangle define a parallelotope and a triangle, respectively, both centered at the origin. In contrast, BaryBind constructs a simplex spanned by the WB anchor and gap vectors. Contrasting this volume enforces paired multimodal data toward a shared representation. This mechanism provides an optimized geometric reference (the WB anchor), followed by contrastive alignment guided by the WB anchor, which is substantially different from pure anchor-based methods. 
+ 
+ 
+
+The advantage of the WB-based representation is further supported by results across multiple tasks, including multimodal retrieval (consistently smaller gaps across benchmarks, and improved robustness under missing-modality settings), multimodal classification, and video-QA. Ablations further show that removing WB leads to consistent performance drops, indicating that it is the primary contributor. 
+ 
+ 
+ 
+
+### B.6 Scalability of BaryBind with Increasing Modality Number
+
+ 
+ Table 9 : Computation time (in seconds) of similarity metrics vs. number of modalities, measured on an NVIDIA A100 GPU with batch size $B=64$ and embedding dimension $D=512$ . 
+ 
+
+[TABLE]
+
+| 
+ | Number of modality $n$ 
+ | 2 
+ | 3 
+ | 4 
+ | 5 
+ | 10 
+ | 20 
+
+| 
+ | Pairwise cosine similarity 
+ | $3.0\times 10^{-7}$ 
+ | $7.0\times 10^{-7}$ 
+ | $1.0\times 10^{-6}$ 
+ | $1.3\times 10^{-6}$ 
+ | $2.9\times 10^{-6}$ 
+ | $4.9\times 10^{-6}$ 
+
+| 
+ | Barycenter simplex volume 
+ | $4.9\times 10^{-6}$ 
+ | $6.8\times 10^{-6}$ 
+ | $5.9\times 10^{-6}$ 
+ | $9.8\times 10^{-6}$ 
+ | $3.6\times 10^{-5}$ 
+ | $8.8\times 10^{-5}$ 
+
+[/TABLE]
+
+ 
+ 
+ 
+ Figure 7 : Zero-shot text-to-video retrieval R@1 results as scaling from 2 (T-V) modalities to 5 (T-VASD) modalities. 
+ 
+ 
+
+We evaluate the computation efficiency of different similarity metrics with varying modality number $n$ . For each metric, we sample $B=64$ sets of $n$ vectors in $\mathbb{R}^{D}$ with $D=512$ , simulating multimodal embeddings. As shown in Table  9 , the simplex volume remains computationally efficient and scales reasonably as the modality number increases. The negligible overhead incurred when extending to more modalities highlights the volume as a non-trivial and scalable metric for assessing $n$ -modality alignment. 
+ 
+ 
+
+To evaluate how BaryBind scales from bimodal (e.g., text-vision) setups to richer multimodal settings, we progressively expand the input from a basic text-video (T-V) pair to more complex configurations on the MSR-VTT dataset: text-video-audio (T-VA), text-video-audio-subtitle (T-VAS), and finally text-video-audio-subtitle-depth (T-VASD). The depth modality is derived using ChronoDepth  [ 45 ] and integrated via an additional lightweight head attached to the vision encoder. As shown in Fig.  7 , BaryBind consistently improves Recall@1 as the number of modalities increases, significantly outperforming the VAST baseline on MSR-VTT across all configurations. This highlights the scalability of BaryBind in practical multimodal understanding as it effectively integrates more modalities to shape a richer semantic space. 
+ 
+ 
+ 
+
+### B.7 Robustness on different WB initializers
+
+ 
+
+BaryBind learns the Wasserstein Barycenter (WB) anchor $\bm{b}$ that serves as a balanced representation aiming to approximate the ideal geometric semantic center. We utilize the specific modality as a semantic warm-start to initialize the barycenter mapping, and the $\bm{b}$ is derived from the initial specific modality $\bm{m_{0}}$ , i.e.,: $\bm{b}=T_{\theta}(\bm{m}_{0})$ . This allows us to leverage the rich semantic priors to accelerate convergence, while the MWB objective ensures the final representation shifts away from the modality bias towards the geometric center. Crucially, although $T_{\theta}$ takes $m_{0}$ as input, its optimization gradients are derived from the Wasserstein distance to all $K$ modalities simultaneously. Therefore, the direction of the update actively pulls the embedding out of the modality-specific manifold. 
+ 
+ 
+
+To verify the robustness of the WB initializer choice, we perform ablation on using vision, text, and T+V+A (arithmetic fusion) as the initializer across multimodal tasks. From Tables  10 and 11 , we observe two findings. (1) Simply choosing a specific modality or fused embedding as the anchor without our barycenter optimization leads to inferior performance and modality imbalance. (2) With WB-driven optimization, all initializations (including the symmetric T+V+A fused initialization) gain clear performance boosts, indicating that the WB formulation itself, rather than the initial anchor choice, is the key contributor to balanced performance. Notably, the text-driven WB performs comparably to the fused-driven and video-driven ones (e.g., 55.6% vs. 55.8% and 55.2% on V+A setting of VGGSound), reflecting the high robustness of BaryBind to different initializations. 
+ 
+ 
+ Table 10 : 
+ Ablation on the anchor selection under the T-VA setting. 
+ 
+
+[TABLE]
+
+| 
+ | Anchor Modality 
+ | VGGSound 
+ | MSR-VTT 
+
+| 
+ | V 
+ | A 
+ | V + A 
+ | T2V 
+ | V2T 
+
+| 
+ | Acc@1 
+ | Acc@1 
+ | Acc@1 
+ | R@1 
+ | R@5 
+ | R@1 
+ | R@5 
+
+| 
+ | Video (w/o WB opt.) 
+ | 45.8 
+ | 39.6 
+ | 46.5 
+ | 50.9 
+ | 72.6 
+ | 47.4 
+ | 74.8 
+
+| 
+ | Text (w/o WB opt.) 
+ | 46.3 
+ | 40.3 
+ | 48.1 
+ | 51.5 
+ | 72.2 
+ | 46.8 
+ | 73.1 
+
+| 
+ | T+V+A (w/o WB opt.) 
+ | 46.1 
+ | 41.8 
+ | 50.5 
+ | 51.2 
+ | 73.5 
+ | 46.9 
+ | 74.5 
+
+| 
+ | Video-initialized WB 
+ | 47.9 ​(+2.8) 
+ | 44.8 ​(+5.2) 
+ | 55.2 ​(+8.7) 
+ | 54.9 ​(+4.0) 
+ | 74.6 ​(+2.0) 
+ | 52.9 ​(+5.5) 
+ | 78.5 ​(+3.7) 
+
+| 
+ | Text-initialized WB 
+ | 48.3 ​(+2.0) 
+ | 45.6 ​(+5.3) 
+ | 55.6 ​(+7.5) 
+ | 56.0 ​(+4.5) 
+ | 75.4 ​(+3.2) 
+ | 53.2 ​(+6.4) 
+ | 78.1 ​(+5.0) 
+
+| 
+ | T+V+A initialized WB 
+ | 48.3 ​(+2.2) 
+ | 45.2 ​(+3.4) 
+ | 55.8 ​(+5.3) 
+ | 56.1 ​(+4.9) 
+ | 75.2 
+ | 53.6 ​(+6.7) 
+ | 78.8 ​(+4.3) 
+
+[/TABLE]
+
+ 
+ 
+ 
+ Table 11 : Comparison of arithmetic fusion and WB-based models on MSR-VTT and VideoQA under different modalities 
+
+[TABLE]
+
+| 
+ | Anchor 
+ | Modality 
+ | Retrieval (R@1) 
+ | VideoQA (Acc) 
+
+| 
+ | T2V 
+ | V2T 
+ | MSRVTT-QA 
+ | MSVD-QA 
+
+| 
+ | T+V+A (w/o WB opt.) 
+ | T-VA 
+ | 51.2 
+ | 46.9 
+ | 47.6 
+ | 55.1 
+
+| 
+ | T+V+A-initialized WB 
+ | T-VA 
+ | 56.1 
+ | 53.6 
+ | 52.0 
+ | 60.3 
+
+| 
+ | Text-initialized WB 
+ | T-VA 
+ | 56.0 
+ | 53.2 
+ | 52.2 
+ | 60.3 
+
+| 
+ | T+V+A+S (w/o WB opt.) 
+ | T-VAS 
+ | 51.7 
+ | 47.3 
+ | 50.3 
+ | 57.9 
+
+| 
+ | T+V+A+S-initialized WB 
+ | T-VAS 
+ | 57.1 
+ | 53.8 
+ | 55.7 
+ | 63.8 
+
+| 
+ | Text-initialized WB 
+ | T-VAS 
+ | 57.2 
+ | 53.9 
+ | 55.4 
+ | 63.6 
+
+| 
+ | T+V+A+S+D (w/o WB opt.) 
+ | T-VASD 
+ | 51.8 
+ | 47.2 
+ | $-$ 
+ | $-$ 
+
+| 
+ | T+V+A+S+D-initialized WB 
+ | T-VASD 
+ | 57.9 
+ | 55.0 
+ | $-$ 
+ | $-$ 
+
+| 
+ | Text-initialized WB 
+ | T-VASD 
+ | 57.8 
+ | 55.1 
+ | $-$ 
+ | $-$ 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+### B.8 Normalization Strategies for Polytope Volume Metric
+
+ 
+ Table 12 : Zero-shot generalization on MSR-VTT under different normalization strategies for the simplex volume. 
+ 
+
+[TABLE]
+
+| 
+ | Normalization 
+ | Setting 
+ | T2V 
+ | V2T 
+
+| 
+ | $(V/2!)^{1/2}$ 
+ | T-V 
+ | 53.9 
+ | 52.2 
+
+| 
+ | $V$ 
+ | T-V 
+ | 54.1 
+ | 52.0 
+
+| 
+ | $(V/3!)^{1/3}$ 
+ | T-VA 
+ | 54.8 
+ | 52.9 
+
+| 
+ | $V$ 
+ | T-VA 
+ | 55.1 
+ | 52.7 
+
+| 
+ | $(V/4!)^{1/4}$ 
+ | T-VAS 
+ | 57.3 
+ | 54.2 
+
+| 
+ | $V$ 
+ | T-VAS 
+ | 57.2 
+ | 54.5 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+While the raw barycenter simplex volume $V$ serves as a global alignment metric, it depends on the number of modalities and embedding dimensionality, which limits interpretability and cross-setting comparability. To address this, we consider normalization strategies such as $(V/n!)^{1/n}$ (viewing the WB simplex as an $n$ -simplex), which scale the volume to better reflect per-modality contributions and make the metric more comparable across different modality configurations. 
+ 
+ 
+
+Table  12 reports zero-shot retrieval results on MSR-VTT under different normalization strategies. We observe that applying normalization slightly reduces the absolute retrieval scores compared to the raw volume $V$ , likely because normalization reduces the magnitude of the gradient signal from the volume metric, slightly weakening the alignment supervision. Nonetheless, the overall performance remains stable, indicating that $(V/n!)^{1/n}$ provides a reliable and interpretable metric without significantly sacrificing retrieval accuracy. 
+ 
+ 
+ 
+
+### B.9 Hyperparameter Sensitivity Analysis
+
+ 
+
+We study the sensitivity of the loss weights in the total objective on the MSR-VTT validation set: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\mathcal{L}=\mathcal{L}_{\text{MWB}}+\alpha_{1}\mathcal{L}_{\text{BVC}}+\alpha_{2}\mathcal{L}_{\text{DAM}}.$ 
+ | 
+ | (37) 
+
+[/TABLE]
+
+ 
+ 
+
+As reported in Table  14 , adjusting $\alpha_{1}$ on MSR-VTT shows that increasing the weight of the BVC loss gradually improves retrieval performance, and the best results are achieved when $\alpha_{1}=1$ . A further increase leads to a performance decline, indicating that over-restricting barycentric geometry may weaken instance-level discrimination. 
+ 
+ 
+ 
+ 
+ 
+ Table 13 : Sensitivity analysis of $\alpha_{1}$ on MSR-VTT validation set. 
+ 
+
+[TABLE]
+
+| 
+ | $\alpha_{1}$ 
+ | 0.3 
+ | 0.6 
+ | 1 
+ | 1.5 
+ | 1.8 
+
+| 
+ | T2V (R@1) 
+ | 56.2 
+ | 55.7 
+ | 56.5 
+ | 56.0 
+ | 55.3 
+
+| 
+ | V2T (R@1) 
+ | 58.0 
+ | 57.5 
+ | 58.3 
+ | 57.9 
+ | 56.5 
+
+[/TABLE]
+
+ 
+ 
+ 
+ Table 14 : Sensitivity analysis of $\alpha_{2}$ on MSR-VTT validation set. 
+ 
+
+[TABLE]
+
+| 
+ | $\alpha_{2}$ 
+ | 0.02 
+ | 0.06 
+ | 0.1 
+ | 0.14 
+ | 0.18 
+
+| 
+ | T2V (R@1) 
+ | 55.6 
+ | 55.8 
+ | 56.5 
+ | 56.2 
+ | 56.0 
+
+| 
+ | V2T (R@1) 
+ | 57.6 
+ | 57.2 
+ | 58.3 
+ | 57.9 
+ | 57.7 
+
+[/TABLE]
+
+ 
+ 
+ 
+ 
+
+Table  14 reveals that $\alpha_{2}$ also has an optimal range, with $\alpha_{2}=0.1$ yielding the strongest retrieval performance. Excessively small or large weights cause suboptimal alignment due to either under-constrained or modality-biased instance matching. 
+ 
+ 
+
+Overall, $\alpha_{1}=1$ and $\alpha_{2}=0.1$ deliver the highest multimodal alignment on the MSR-VTT validation set, demonstrating the complementary strengths of BVC and DAM. 
+ 
+ 
+ 
+
+### B.10 Training from Scratch Evaluation
+
+ 
+ Table 15 : Training-from-scratch T2V and V2T results on MSR-VTT and ActivityNet. The training follows the T-VA setting. 
+ 
+
+[TABLE]
+
+| 
+ | Methods 
+ | MSR-VTT 
+ | ActivityNet 
+
+| 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+
+| 
+ | VAST [ 9 ] 
+ | 35.0 
+ | 39.1 
+ | 26.7 
+ | 25.2 
+
+| 
+ | LanguageBind [ 67 ] 
+ | 31.8 
+ | 36.4 
+ | 29.3 
+ | 26.1 
+
+| 
+ | GRAM [ 12 ] 
+ | 35.7 
+ | 39.4 
+ | 27.2 
+ | 29.1 
+
+| 
+ | Triangle [ 11 ] 
+ | 39.4 
+ | 40.1 
+ | 27.8 
+ | 29.3 
+
+| 
+ | BaryBind 
+ | 44.8 
+ | 43.2 
+ | 33.6 
+ | 34.2 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+Due to the unavailability of full VAST27M dataset [ 9 ] , we adopt continuing training based on the VAST model in § 1 . Here we further evaluate the models trained from scratch on MSR-VTT and ActivityNet. Four representative models: VAST  [ 9 ] , which performs pairwise alignment with cosine-similarity heads and lightweight fusion layers; GRAM  [ 12 ] , Triangle  [ 11 ] , and the proposed BaryBind.
+Table  15 reports the R@1 results for both text-to-video (T2V) and video-to-text (V2T) retrieval. BaryBind achieves the highest performance across all settings, surpassing VAST, GRAM, and Triangle on both datasets. On MSR-VTT, BaryBind improves over VAST by +6.4% (T2V) and +3.8% (V2T), while also outperforming GRAM and Triangle by comparable margins. A similar pattern appears on ActivityNet, where BaryBind reaches 30.8% (T2V) and 32.4% (V2T). The training curves in Fig.   5 show that BaryBind continues to refine the latent space throughout training, whereas the other methods plateau earlier. These observations indicate that a barycenter-based objective provides stronger structural guidance when no pretrained semantic prior is available, enabling the model to form a more coherent multimodal representation. 
+ 
+ 
+
+### B.10.1 Effect of Relaxing the Congruence Constraint
+
+ 
+
+The proposed formulation enforces the congruence constraint
+ $\sum_{k}\lambda_{k}f_{k}=0$ 
+through a hard parameterization. To investigate the necessity of strictly enforcing the congruence constraint, we replace the hard parameterization with a soft penalty formulation and optimize the following objective: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\mathcal{L}_{\mathrm{soft}}=\mathcal{L}_{\mathrm{MWB}}+\eta\left\|\sum_{k}\lambda_{k}f_{k}\right\|_{2}^{2}.$ 
+ | 
+ | (38) 
+
+[/TABLE]
+
+During alternating optimization, we record the objective function for updating the potentials: 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\mathcal{L}_{f}=-\sum_{k}\lambda_{k}\mathbb{E}_{m_{k}\sim\mathbb{P}_{k}}\left[f_{k}(T_{\theta}(m_{k}))\right]+\eta\left\|\sum_{k}\lambda_{k}f_{k}\right\|_{2}^{2},$ 
+ | 
+ | (39) 
+
+[/TABLE]
+
+ 
+ 
+ Table 16 : Stability analysis of potential optimization during alternating updates. 
+
+[TABLE]
+
+| 
+ | Iterations 
+ | Mean $\mathcal{L}_{f}$ 
+ | Range 
+ | $\Delta$ 
+
+| 
+ | 0–500 
+ | -0.376 
+ | [-1.000,-0.154] 
+ | 0.846 
+
+| 
+ | 500–1000 
+ | -0.237 
+ | [-0.309,-0.171] 
+ | 0.138 
+
+| 
+ | 1000–2000 
+ | -0.181 
+ | [-0.242,-0.134] 
+ | 0.108 
+
+| 
+ | 2000–3000 
+ | -0.098 
+ | [-0.138,-0.045] 
+ | 0.093 
+
+| 
+ | 3000–10000 
+ | -0.030 
+ | [-0.049,-0.011] 
+ | 0.038 
+
+[/TABLE]
+
+ 
+ 
+
+where $\eta=10$ is used in the experiment. The optimization dynamics are summarized in Table  16 . Although the early optimization stage exhibits noticeable fluctuations, the potential optimization gradually stabilizes after approximately 3,000 iterations without persistent divergence. 
+ 
+ 
+
+We further compare the hard and soft formulations in Table  17 . The soft penalty achieves comparable performance with only marginal degradation, demonstrating that the congruence constraint mainly enables a stable optimization. 
+ 
+ 
+ Table 17 : Comparison between hard and soft congruence constraints. 
+
+[TABLE]
+
+| 
+ | Constraint 
+ | T2V/V2T R@1 
+ | A+C Acc@1 
+
+| 
+ | Hard constraint 
+ | 56.1/53.6 
+ | 55.6 
+
+| 
+ | Soft constraint 
+ | 55.9/53.2 
+ | 55.1 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+### B.10.2 Stability of WB Map Adaptation under Encoder Distribution Shifts
+
+ 
+
+During encoder fine-tuning, the feature distributions continuously evolve. We therefore analyze the adaptation dynamics of the WB map $T_{\theta}$ . Specifically, we track the WB mapping loss: 
+ 
+ 
+
+[TABLE]
+
+ 
+| 
+ | 
+ | $\mathcal{L}_{T}\triangleq\sum_{k=1}^{K}\lambda_{k}\mathbb{E}_{m_{k}\sim\mathbb{P}_{k}}\left[\left\|m_{k}-T_{\theta}(m_{0})\right\|_{2}^{2}-f_{\omega_{k}}(T_{\theta}(m_{0}))\right].$ 
+ | 
+ | (40) 
+
+[/TABLE]
+
+ 
+ 
+ Table 18 : Loss analysis of WB map $T_{\theta}$ adaptation during encoder fine-tuning. 
+
+[TABLE]
+
+| 
+ | Iterations 
+ | Mean $\mathcal{L}_{T}$ 
+ | Range 
+ | $\Delta$ 
+
+| 
+ | 0–500 
+ | 0.971 
+ | [0.913,1.000] 
+ | 0.087 
+
+| 
+ | 500–1000 
+ | 0.602 
+ | [0.317,0.913] 
+ | 0.597 
+
+| 
+ | 1000–2000 
+ | 0.136 
+ | [0.073,0.330] 
+ | 0.257 
+
+| 
+ | 2000–3000 
+ | 0.052 
+ | [0.020,0.095] 
+ | 0.075 
+
+| 
+ | 3000–10000 
+ | 0.029 
+ | [0.000,0.022] 
+ | 0.022 
+
+[/TABLE]
+
+ 
+ 
+
+As shown in Table  18 , the WB map gradually adapts to the evolving encoder distributions. During the initial stage, the mapping loss changes as the WB map responds to encoder updates. A rapid adaptation phase is observed between 500 and 2,000 iterations, where the loss decreases substantially. After approximately 3,000 iterations, the variation becomes significantly smaller, indicating that the WB map reaches a stable adaptation regime with the evolving feature distributions. 
+ 
+ 
+ 
+ 
+
+### B.11 Computational Overhead Comparison During Training
+
+ 
+
+We provide a comparison of computational overhead among VAST, GRAM, and BaryBind. All experiments are conducted on 2 $\times$ NVIDIA A100 80GB GPUs with mixed-precision (FP16/AMP). The additional computation in BaryBind mainly comes from the Wasserstein barycenter optimization and auxiliary alignment losses. The increase in per-step time remains moderate while providing improved multimodal alignment performance. 
+ 
+ 
+ Table 19 : Computational overhead comparison during training. 
+
+[TABLE]
+
+| 
+ | Model 
+ | Params 
+ | Batch size 
+ | Forward+Backward 
+ | Steps/Epoch 
+ | Time/Epoch 
+
+| 
+ | VAST 
+ | 1.28B 
+ | 64 
+ | $\sim$ 8.8s 
+ | 2344 
+ | $\sim$ 5.7h 
+
+| 
+ | GRAM 
+ | 1.30B 
+ | 64 
+ | $\sim$ 9.4s 
+ | 2344 
+ | $\sim$ 6.1h 
+
+| 
+ | BaryBind 
+ | 1.34B 
+ | 64 
+ | $\sim$ 9.7s 
+ | 2344 
+ | $\sim$ 6.3h 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+### B.12 Semantic Consensus in the Learned WB Space
+
+ 
+
+ Empirical illustration. 
+To illustrate the semantic consensus property of the learned WB space, we
+perform cross-modal retrieval through the WB space. Given a query from one
+modality, it is first mapped into the WB space and then used to retrieve
+samples from other modalities. As shown in Table  20 
+and Table  21 , the retrieved samples consistently
+share the same high-level semantic concepts (e.g., cooking and basketball),
+while preserving modality-specific variations. These results empirically
+demonstrate that the learned WB space captures shared semantic structures
+across modalities. 
+ 
+ 
+ Table 20 : Empirical illustration of semantic consensus through
+Text $\rightarrow$ WB $\rightarrow$ X retrieval. 
+
+ 
+ 
+ 
+ 
+ 
+ Query 
+ Retrieval Path 
+ Modality (Retrievaled sample) 
+ Caption 
+ 
+ A man is cooking in the kitchen 
+ Text $\rightarrow$ WB $\rightarrow$ Video 
+ Video8834 
+ A man is cooking in the kitchen; he states he will return later to add to the dish 
+ 
+ Video9687 
+ A man chopping lobster and taking off the shell 
+ 
+ Video9038 
+ A person is preparing some food 
+ 
+ A man is cooking in the kitchen 
+ Text $\rightarrow$ WB $\rightarrow$ Audio 
+ Audio (Video7376) 
+ Broth is being added to a soup pot and stirred with a rubber spatula 
+ 
+ Audio (Video8834) 
+ A man is cooking in the kitchen; he states he will return later to add to the dish 
+ 
+ Audio (Video7799) 
+ A guy chops up garlic and pours it over chicken frying in a pan 
+ 
+ A man is cooking in the kitchen 
+ Text $\rightarrow$ WB $\rightarrow$ Subtitle 
+ Subtitle (Video7362) 
+ A person is cooking on stage 
+ 
+ Subtitle (Video9687) 
+ A man chopping lobster and taking off the shell 
+ 
+ Subtitle (Video8772) 
+ The man is making a sauce in the kitchen 
+ 
+ 
+ 
+ 
+ Table 21 : Empirical illustration of semantic consensus through
+Video $\rightarrow$ WB $\rightarrow$ X retrieval. 
+
+ 
+ 
+ 
+ 
+ 
+ Query 
+ Retrieval Path 
+ Modality (Retrieved sample) 
+ Caption 
+ 
+ video of a basketball event 
+ Video $\rightarrow$ WB $\rightarrow$ Text 
+ Text (Video7763) 
+ People are playing basketball 
+ 
+ Text (Video9029) 
+ A player is putting a basketball into the basket from distance 
+ 
+ Text (Video8124) 
+ Basketball players making a shot in the last seven seconds 
+ 
+ Text (Video9013) 
+ Basketball highlights of players scoring 
+ 
+ video of a basketball event 
+ Video $\rightarrow$ WB $\rightarrow$ Audio 
+ Audio (Video8124) 
+ Basketball players making a shot in the last seven seconds 
+ 
+ Audio (Video7763) 
+ People are playing basketball 
+ 
+ Audio (Video9013) 
+ Basketball highlights of players scoring 
+ 
+ video of a basketball event 
+ Video $\rightarrow$ WB $\rightarrow$ Subtitle 
+ Subtitle (Video8124) 
+ Basketball players making a shot in the last seven seconds 
+ 
+ Subtitle (Video9013) 
+ Basketball highlights of players scoring 
+ 
+ Subtitle (Video8652) 
+ A man runs into the crowd when trying to catch a basketball 
+ 
+ 
+ 
+ 
+ 
+
+### B.13 More Quantitative Results on Scaling to More Modalities
+
+ 
+
+To systematically evaluate the scalability of multimodal models with respect to the number of input modalities, we conduct experiments under four configurations, progressively increasing from two modalities (text and video) to five (text, video, audio, subtitle, and depth). This stepwise setup enables a controlled analysis of how each additional modality affects performance and alignment quality. For consistency and interpretability, text is used as the anchor modality throughout. 
+ 
+ 
+
+As shown in Table  22 , both VAST and BaryBind benefit from the inclusion of additional modalities, demonstrating improved performance on MSR-VTT and VATEX in terms of both T2V and V2T retrieval. Notably, BaryBind consistently outperforms VAST across all modality configurations and datasets, highlighting its stronger scalability and generalization capacity. 
+ 
+ 
+ Table 22 : 
+Downstream performance with increasing number of modalities. 
+ 
+
+[TABLE]
+
+| 
+ | Modalities 
+ | MSR-VTT 
+ | VATEX 
+
+| 
+ | VAST 
+ | BaryBind 
+ | VAST 
+ | BaryBind 
+
+| 
+ | Text 
+ | Video 
+ | Audio 
+ | Sub. 
+ | Depth 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+ | T2V 
+ | V2T 
+
+| 
+ | ✓ 
+ | ✓ 
+ | ✗ 
+ | ✗ 
+ | ✗ 
+ | 48.7 
+ | 43.2 
+ | 54.2 
+ | 52.0 
+ | 78.8 
+ | 77.0 
+ | 82.3 
+ | 79.8 
+
+| 
+ | ✓ 
+ | ✓ 
+ | ✓ 
+ | ✗ 
+ | ✗ 
+ | 49.3 
+ | 43.7 
+ | 56.0 
+ | 53.2 
+ | 80.0 
+ | 77.3 
+ | 84.2 
+ | 81.3 
+
+| 
+ | ✓ 
+ | ✓ 
+ | ✓ 
+ | ✓ 
+ | ✗ 
+ | 50.9 
+ | 47.9 
+ | 57.2 
+ | 53.6 
+ | 82.1 
+ | 78.7 
+ | 84.6 
+ | 83.5 
+
+| 
+ | ✓ 
+ | ✓ 
+ | ✓ 
+ | ✓ 
+ | ✓ 
+ | 51.2 
+ | 49.3 
+ | 57.9 
+ | 54.4 
+ | 82.4 
+ | 79.2 
+ | 84.9 
+ | 83.8 
+
+[/TABLE]
+
+ 
+ 
+ 
+ 
+
+### B.14 Additional Evaluations on VideoQA and Cross-modal Generation
+
+ 
+
+To further demonstrate the versatility and broader impact of BaryBind, we conduct additional experiments on Video Question Answering (VideoQA) and cross-modal generation tasks. 
+ 
+ 
+
+ VideoQA. Following the data and captioner setting of VAST [ 9 ] , we evaluate BaryBind on the VideoQA benchmarks MSRVTT-QA and MSVD-QA. As shown in Table  24 , BaryBind achieves competitive accuracy on both benchmarks and outperforms recent global alignment methods. Notably, the superior performance on QA tasks highlights the effectiveness of the learned representations in capturing fine-grained semantics. 
+ 
+ 
+
+ Cross-modal generation. We use the VGGSound dataset to evaluate the generation performance, which consists of approximately 200K video clips annotated with 309 sound classes. We utilize the captioner provided by VAST to generate video captions, using 1024 videos for testing and the remainder for training. We adopt a single encoder–decoder configuration compatible with UnCLIP-style generators, specifically a CLIP ViT-H/14 image–text encoder paired with the ImageBind audio encoder, compatible with the Stable UnCLIP decoder. We evaluate text-to-image (T2I), audio-to-image (A2I), and text-audio-to-image (TA2I) generation performance. 
+ 
+ 
+ 
+ 
+ 
+ Table 23 : Evaluation on VideoQA benchmarks. Methods utilizing audio or subtitle modalities are bolded . 
+
+[TABLE]
+
+| 
+ | Method 
+ | MSRVTT-QA 
+ | MSVD-QA 
+
+| 
+ | mPLUG-2 
+ | 48.0 
+ | 58.1 
+
+| 
+ | VALOR-L 
+ | 49.2 
+ | 60.0 
+
+| 
+ | VAST 
+ | 50.1 
+ | 60.2 
+
+| 
+ | GRAM 
+ | 52.3 
+ | 61.5 
+
+| 
+ | Triangle 
+ | 52.0 
+ | 61.9 
+
+| 
+ | BaryBind 
+ | 55.4 
+ | 63.6 
+
+[/TABLE]
+
+ 
+ 
+ Table 24 : Cross-modal generation results on VGGSound (FID $\downarrow$ ). T2I, A2I, and TA2I denote text-to-image, audio-to-image, and joint text-audio-to-image generation, respectively. 
+
+[TABLE]
+
+| 
+ | Method 
+ | T2I 
+ | A2I 
+ | TA2I 
+
+| 
+ | ImageBind 
+ | 50.1 
+ | 53.6 
+ | 46.8 
+
+| 
+ | VAST 
+ | 48.1 
+ | 57.2 
+ | 50.6 
+
+| 
+ | GRAM 
+ | 46.7 
+ | 56.5 
+ | 45.2 
+
+| 
+ | Triangle 
+ | 46.4 
+ | 54.5 
+ | 44.3 
+
+| 
+ | BaryBind 
+ | 43.6 
+ | 50.3 
+ | 38.6 
+
+[/TABLE]
+
+ 
+ 
+ 
+
+Qualitative examples of the generation results are provided in the right part of Figure  1 , illustrating the semantic consistency achieved by BaryBind. 
+ 
+ 
+ 
+
+### B.15 Visualization of Top-1 Retrieval Results
+
+ 
+
+To qualitatively assess the retrieval performance of BaryBind, we visualize top-1 text-to-video results compared with two strong baselines in Fig.  8 . BaryBind integrates text, audio, video, and subtitle modalities during both training and inference. Each row shows five frames from the top-retrieved video along with the query subtitle. In the first example, BaryBind retrieves a beach party scene aligned with the query’s semantic and acoustic mood, while baselines return less relevant results. In the second case, BaryBind accurately matches a gameplay scene described by both visual and subtitle cues, whereas baselines retrieve unrelated content. The third example features a simple emotional phrase, “I’m scared.”, where BaryBind selects an animated video of a fearful cat-dog chase, while others fail to reflect the emotional context or core entities. These results demonstrate BaryBind’s ability to leverage complementary multimodal cues for precise and context-aware retrieval, effectively grounding both semantics and affect across diverse scenarios. 
+ 
+ 
+ 
+
+### B.16 Limitations and Future Work
+
+ 
+
+ Limitation : We note that the introduction of the iterative barycenter optimization involves a marginal increase in training computational overhead compared to simple pairwise alignment. However, as shown in Table 19 , this cost is negligible and is well-justified by the notable gains in cross-modal retrieval accuracy. 
+ 
+ 
+
+We consider the integration of BaryBind into large multimodal language models (LLMs) as a direction for future work. Specifically, we are interested in exploring how BaryBind can enhance the multimodal understanding capabilities of these models by providing a unified, balanced token space that is not centered around language. This approach could help alleviate the issue of “hallucinations" in large multimodal models. Furthermore, by focusing on a more balanced representation across modalities, we aim to promote a deeper understanding of the physical world, moving beyond linguistic reasoning towards true multimodal perception that can more accurately capture and reason about real-world phenomena. In addition, we plan to incorporate reconstruction into the BaryBind framework to enable multimodal understanding and generation, broadening its applicability in both discriminative and generative multimodal tasks. 
+ 
+ 
+ 
+
+### B.17 Impact Statement
+
+ 
+
+This paper advances multimodal learning by leveraging optimal-transport–based barycenter theory to achieve more balanced multimodal representation learning. The potential societal impact includes enabling more efficient and robust approaches for general multimodal understanding. To the best of our knowledge, this work does not pose notable ethical or societal risks. Our goal is to support the responsible development of scalable and balanced multimodal learning methods and theories. 
+ 
+ 
+ Figure 8 : Visual results of text-to-video retrieval. We display 5 frames from the top-1 video. 
+ 
+ 
+ 
+ 
+ 
+ 
+
+### NeurIPS Paper Checklist
+
+ 
+ 
+
+- 1. 
+ 
+
+ Claims 
+ 
+
+- 
+ 
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper’s contributions and scope? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: The main contributions are summarized in the introduction Section. These contributions are consistent with the results we presented in Section 3 and Section 4. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the abstract and introduction do not include the claims made in the paper. 
+ 
+
+- • 
+ 
+
+The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A [No] or [N/A] answer to this question will not be perceived well by the reviewers. 
+ 
+
+- • 
+ 
+
+The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings. 
+ 
+
+- • 
+ 
+
+It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper. 
+ 
+ 
+ 
+
+- 2. 
+ 
+
+ Limitations 
+ 
+
+- 
+ 
+
+Question: Does the paper discuss the limitations of the work performed by the authors? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: We discuss the limitations and future work in Appendix B.16 . 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper has no limitation while the answer [No] means that the paper has limitations, but those are not discussed in the paper. 
+ 
+
+- • 
+ 
+
+The authors are encouraged to create a separate “Limitations” section in their paper. 
+ 
+
+- • 
+ 
+
+The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be. 
+ 
+
+- • 
+ 
+
+The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated. 
+ 
+
+- • 
+ 
+
+The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon. 
+ 
+
+- • 
+ 
+
+The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size. 
+ 
+
+- • 
+ 
+
+If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness. 
+ 
+
+- • 
+ 
+
+While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren’t acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations. 
+ 
+ 
+ 
+
+- 3. 
+ 
+
+ Theory assumptions and proofs 
+ 
+
+- 
+ 
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: All assumptions are stated before the theorems. Due to space constraints, we provide the complete proofs in Appendix A . 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not include theoretical results. 
+ 
+
+- • 
+ 
+
+All the theorems, formulas, and proofs in the paper should be numbered and cross-referenced. 
+ 
+
+- • 
+ 
+
+All assumptions should be clearly stated or referenced in the statement of any theorems. 
+ 
+
+- • 
+ 
+
+The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition. 
+ 
+
+- • 
+ 
+
+Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. 
+ 
+
+- • 
+ 
+
+Theorems and Lemmas that the proof relies upon should be properly referenced. 
+ 
+ 
+ 
+
+- 4. 
+ 
+
+ Experimental result reproducibility 
+ 
+
+- 
+ 
+
+Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: We provide all necessary details for reproduction in Section 4 and Appendix B.2. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not include experiments. 
+ 
+
+- • 
+ 
+
+If the paper includes experiments, a [No] answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not. 
+ 
+
+- • 
+ 
+
+If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable. 
+ 
+
+- • 
+ 
+
+Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed. 
+ 
+
+- • 
+ 
+
+While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example 
+ 
+
+- (a) 
+ 
+
+If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. 
+ 
+
+- (b) 
+ 
+
+If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. 
+ 
+
+- (c) 
+ 
+
+If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). 
+ 
+
+- (d) 
+ 
+
+We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 
+ 
+ 
+ 
+ 
+ 
+
+- 5. 
+ 
+
+ Open access to data and code 
+ 
+
+- 
+ 
+
+Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material? 
+ 
+
+- 
+ 
+
+Answer: [No] 
+ 
+
+- 
+ 
+
+Justification: While the data are publicly available, the code is not included in the supplemental material at this stage. However, we provide comprehensive implementation details in Section 4 and Appendix B.2 and algorithm in Appendix B.1 to ensure reproducibility. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that paper does not include experiments requiring code. 
+ 
+
+- • 
+ 
+
+Please see the NeurIPS code and data submission guidelines ( https://neurips.cc/public/guides/CodeSubmissionPolicy ) for more details. 
+ 
+
+- • 
+ 
+
+While we encourage the release of code and data, we understand that this might not be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark). 
+ 
+
+- • 
+ 
+
+The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ( https://neurips.cc/public/guides/CodeSubmissionPolicy ) for more details. 
+ 
+
+- • 
+ 
+
+The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc. 
+ 
+
+- • 
+ 
+
+The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why. 
+ 
+
+- • 
+ 
+
+At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable). 
+ 
+
+- • 
+ 
+
+Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 
+ 
+ 
+ 
+
+- 6. 
+ 
+
+ Experimental setting/details 
+ 
+
+- 
+ 
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer) necessary to understand the results? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: We specify all training and test details in Section 4 and Appendix B.2. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not include experiments. 
+ 
+
+- • 
+ 
+
+The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them. 
+ 
+
+- • 
+ 
+
+The full details can be provided either with the code, in appendix, or as supplemental material. 
+ 
+ 
+ 
+
+- 7. 
+ 
+
+ Experiment statistical significance 
+ 
+
+- 
+ 
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? 
+ 
+
+- 
+ 
+
+Answer: [No] 
+ 
+
+- 
+ 
+
+Justification: We use fixed random seeds and deterministic configurations for all experiments to ensure reproducibility. Therefore, error bars are not reported. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not include experiments. 
+ 
+
+- • 
+ 
+
+The authors should answer [Yes] if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper. 
+ 
+
+- • 
+ 
+
+The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions). 
+ 
+
+- • 
+ 
+
+The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.) 
+ 
+
+- • 
+ 
+
+The assumptions made should be given (e.g., Normally distributed errors). 
+ 
+
+- • 
+ 
+
+It should be clear whether the error bar is the standard deviation or the standard error of the mean. 
+ 
+
+- • 
+ 
+
+It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified. 
+ 
+
+- • 
+ 
+
+For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g., negative error rates). 
+ 
+
+- • 
+ 
+
+If error bars are reported in tables or plots, the authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text. 
+ 
+ 
+ 
+
+- 8. 
+ 
+
+ Experiments compute resources 
+ 
+
+- 
+ 
+
+Question: For each experiment, does the paper provide sufficient information on the computer resources (type of compute workers, memory, time of execution) needed to reproduce the experiments? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: We specify the hardware (2 $\times$ A100 GPUs) and the training duration in Appendix B.2 . Further details on computational overhead are provided in Appendix B.11 . 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not include experiments. 
+ 
+
+- • 
+ 
+
+The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage. 
+ 
+
+- • 
+ 
+
+The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. 
+ 
+
+- • 
+ 
+
+The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn’t make it into the paper). 
+ 
+ 
+ 
+
+- 9. 
+ 
+
+ Code of ethics 
+ 
+
+- 
+ 
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines ? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: We have reviewed the NeurIPS Code of Ethics and confirm that our research, including data usage and methodology, adheres to all its guidelines. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the authors have not reviewed the NeurIPS Code of Ethics. 
+ 
+
+- • 
+ 
+
+If the authors answer [No] , they should explain the special circumstances that require a deviation from the Code of Ethics. 
+ 
+
+- • 
+ 
+
+The authors should make sure to preserve anonymity (e.g., if there is a special consideration due to laws or regulations in their jurisdiction). 
+ 
+ 
+ 
+
+- 10. 
+ 
+
+ Broader impacts 
+ 
+
+- 
+ 
+
+Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: We discuss the potential positive and negative societal impacts of our work in Appendix B.17 . 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that there is no societal impact of the work performed. 
+ 
+
+- • 
+ 
+
+If the authors answer [N/A] or [No] , they should explain why their work has no societal impact or why the paper does not address societal impact. 
+ 
+
+- • 
+ 
+
+Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations. 
+ 
+
+- • 
+ 
+
+The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate Deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster. 
+ 
+
+- • 
+ 
+
+The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology. 
+ 
+
+- • 
+ 
+
+If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML). 
+ 
+ 
+ 
+
+- 11. 
+ 
+
+ Safeguards 
+ 
+
+- 
+ 
+
+Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)? 
+ 
+
+- 
+ 
+
+Answer: [N/A] 
+ 
+
+- 
+ 
+
+Justification: We use only existing, publicly available datasets. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper poses no such risks. 
+ 
+
+- • 
+ 
+
+Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters. 
+ 
+
+- • 
+ 
+
+Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images. 
+ 
+
+- • 
+ 
+
+We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort. 
+ 
+ 
+ 
+
+- 12. 
+ 
+
+ Licenses for existing assets 
+ 
+
+- 
+ 
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected? 
+ 
+
+- 
+ 
+
+Answer: [Yes] 
+ 
+
+- 
+ 
+
+Justification: All existing assets (datasets and backbone models) are properly cited in Section 4. And we use them only for academic research in compliance with their original licenses and terms of use. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not use existing assets. 
+ 
+
+- • 
+ 
+
+The authors should cite the original paper that produced the code package or dataset. 
+ 
+
+- • 
+ 
+
+The authors should state which version of the asset is used and, if possible, include a URL. 
+ 
+
+- • 
+ 
+
+The name of the license (e.g., CC-BY 4.0) should be included for each asset. 
+ 
+
+- • 
+ 
+
+For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided. 
+ 
+
+- • 
+ 
+
+If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, paperswithcode.com/datasets has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset. 
+ 
+
+- • 
+ 
+
+For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided. 
+ 
+
+- • 
+ 
+
+If this information is not available online, the authors are encouraged to reach out to the asset’s creators. 
+ 
+ 
+ 
+
+- 13. 
+ 
+
+ New assets 
+ 
+
+- 
+ 
+
+Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets? 
+ 
+
+- 
+ 
+
+Answer: [N/A] 
+ 
+
+- 
+ 
+
+Justification: This paper does not release new datasets or code assets as part of the current submission. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not release new assets. 
+ 
+
+- • 
+ 
+
+Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc. 
+ 
+
+- • 
+ 
+
+The paper should discuss whether and how consent was obtained from people whose asset is used. 
+ 
+
+- • 
+ 
+
+At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file. 
+ 
+ 
+ 
+
+- 14. 
+ 
+
+ Crowdsourcing and research with human subjects 
+ 
+
+- 
+ 
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? 
+ 
+
+- 
+ 
+
+Answer: [N/A] 
+ 
+
+- 
+ 
+
+Justification: This work does not involve crowdsourcing nor research with human subjects. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. 
+ 
+
+- • 
+ 
+
+Including this information in the supplemental material is fine, but if the main contribution of the paper involves human subjects, then as much detail as possible should be included in the main paper. 
+ 
+
+- • 
+ 
+
+According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector. 
+ 
+ 
+ 
+
+- 15. 
+ 
+
+ Institutional review board (IRB) approvals or equivalent for research with human subjects 
+ 
+
+- 
+ 
+
+Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained? 
+ 
+
+- 
+ 
+
+Answer: [N/A] 
+ 
+
+- 
+ 
+
+Justification: This research does not involve human subjects. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. 
+ 
+
+- • 
+ 
+
+Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper. 
+ 
+
+- • 
+ 
+
+We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution. 
+ 
+
+- • 
+ 
+
+For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 
+ 
+ 
+ 
+
+- 16. 
+ 
+
+ Declaration of LLM usage 
+ 
+
+- 
+ 
+
+Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigor, or originality of the research, declaration is not required. 
+ 
+
+- 
+ 
+
+Answer: [N/A] 
+ 
+
+- 
+ 
+
+Justification: The core method in this research does not invovle LLMs as an important, original, or non-standard component. 
+ 
+
+- 
+ 
+
+Guidelines: 
+ 
+
+- • 
+ 
+
+The answer [N/A] means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. 
+ 
+
+- • 
+ 
+
+Please refer to our LLM policy in the NeurIPS handbook for what should or should not be described. 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ langley00 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Experimental support, please
+ view the build logs 
+ for errors. Generated by
+ 
+ 
+ L
+ A 
+ T
+ E 
+ 
+ xml 
+ 
+ .
+ 
+ 
+ 
+
+### Instructions for reporting errors
+
+ 
+
+We are continuing to improve HTML versions of papers, and your feedback helps enhance accessibility and mobile
+ support. To report errors in the HTML that will help us improve conversion and rendering, choose any of the
+ methods listed below: 
+ 
+ 
+- Click the "Report Issue" ( 
+ 
+
+ ) button, located in the page header. 
+ 
+ 
+
+ Tip: You can select the relevant text first, to include it in your report. 
+ 
+
+Our team has already identified the following issues . We appreciate your time reviewing and reporting rendering errors we
+ may not have found yet. Your efforts will help us improve the HTML versions for all readers, because disability
+ should not be a barrier to accessing research. Thank you for your continued support in championing open access for
+ all. 
+ 
+
+Have a free development cycle? Help support accessibility at arXiv! Our collaborators at LaTeXML maintain a list of packages that need conversion , and welcome developer contributions . 
+ 
+ 
+ 
+ 
+ 
+ We gratefully acknowledge support from
+ our major funders ,
+ member institutions , ,
+ and all contributors.
+ 
+ 
+ About 
+ · 
+ Help 
+ · 
+ Contact 
+ · 
+ Subscribe 
+ · 
+ Copyright 
+ · 
+ Privacy 
+ · 
+ Accessibility 
+ · 
+ Operational Status (opens in new tab) 
+ 
+ 
+
+ 
+ Major funding support from 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 

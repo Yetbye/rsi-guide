@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520">
+<defs>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#C15B36" stop-opacity="0.22"/>
+    <stop offset="100%" stop-color="#C15B36" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="glow2" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#2F6E75" stop-opacity="0.18"/>
+    <stop offset="100%" stop-color="#2F6E75" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="wash" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#F3EADB"/><stop offset="100%" stop-color="#E8D9C2"/>
+  </linearGradient>
+</defs>
+<rect width="1200" height="520" fill="url(#wash)"/>
+<ellipse cx="260" cy="180" rx="320" ry="200" fill="url(#glow)"/>
+<ellipse cx="900" cy="380" rx="340" ry="220" fill="url(#glow2)"/>
+<ellipse cx="760" cy="160" rx="240" ry="150" fill="url(#glow)"/>
+
+<!-- faint grid lines (wasserstein flow hint) -->
+<g stroke="#B5893F" stroke-width="1" opacity="0.18">
+  <path d="M0 400 Q 300 360 600 380 T 1200 340"/>
+  <path d="M0 440 Q 300 410 600 430 T 1200 400"/>
+  <path d="M0 360 Q 300 320 600 340 T 1200 300"/>
+</g>
+
+<!-- LEFT: scattered modality features (m_k) -->
+<g>
+  <circle cx="180" cy="180" r="18" fill="#2F6E75" opacity="0.9"/>
+  <text x="180" y="185" text-anchor="middle" font-family="Georgia,serif" font-size="14" fill="#fff" font-weight="bold">m₁</text>
+  <circle cx="280" cy="140" r="15" fill="#C15B36" opacity="0.9"/>
+  <text x="280" y="145" text-anchor="middle" font-family="Georgia,serif" font-size="12" fill="#fff" font-weight="bold">m₂</text>
+  <circle cx="140" cy="280" r="14" fill="#B5893F" opacity="0.9"/>
+  <text x="140" y="285" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="#fff" font-weight="bold">m₃</text>
+  <circle cx="260" cy="320" r="13" fill="#7A3B2E" opacity="0.9"/>
+  <text x="260" y="325" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="#fff" font-weight="bold">m₄</text>
+  <circle cx="380" cy="220" r="16" fill="#2F6E75" opacity="0.9"/>
+  <text x="380" y="225" text-anchor="middle" font-family="Georgia,serif" font-size="12" fill="#fff" font-weight="bold">m₅</text>
+</g>
+
+<!-- transport lines converging to barycenter -->
+<g stroke="#7A3B2E" stroke-width="2" opacity="0.55" stroke-dasharray="6 5">
+  <path d="M180 180 Q 380 160 520 260"/>
+  <path d="M280 140 Q 420 180 520 260"/>
+  <path d="M140 280 Q 340 300 520 260"/>
+  <path d="M260 320 Q 400 300 520 260"/>
+  <path d="M380 220 Q 450 240 520 260"/>
+</g>
+
+<!-- RIGHT: barycenter simplex -->
+<g transform="translate(520,260)">
+  <!-- gap vectors from origin to modality proxies -->
+  <line x1="0" y1="0" x2="180" y2="-120" stroke="#2F6E75" stroke-width="2.5"/>
+  <line x1="0" y1="0" x2="220" y2="-40" stroke="#C15B36" stroke-width="2.5"/>
+  <line x1="0" y1="0" x2="160" y2="80" stroke="#B5893F" stroke-width="2.5"/>
+  <line x1="0" y1="0" x2="80" y2="130" stroke="#7A3B2E" stroke-width="2.5"/>
+  <!-- simplex faces (triangles) -->
+  <polygon points="0,0 180,-120 220,-40" fill="#2F6E75" opacity="0.16"/>
+  <polygon points="0,0 220,-40 160,80" fill="#C15B36" opacity="0.16"/>
+  <polygon points="0,0 160,80 80,130" fill="#B5893F" opacity="0.16"/>
+  <!-- barycenter apex -->
+  <circle cx="0" cy="0" r="22" fill="#7A3B2E"/>
+  <circle cx="0" cy="0" r="30" fill="none" stroke="#B5893F" stroke-width="2" opacity="0.7"/>
+  <text x="0" y="5" text-anchor="middle" font-family="Georgia,serif" font-size="16" fill="#fff" font-weight="bold">b</text>
+  <!-- modality proxies at endpoints -->
+  <circle cx="180" cy="-120" r="11" fill="#2F6E75"/>
+  <circle cx="220" cy="-40" r="11" fill="#C15B36"/>
+  <circle cx="160" cy="80" r="11" fill="#B5893F"/>
+  <circle cx="80" cy="130" r="11" fill="#7A3B2E"/>
+</g>
+
+<!-- title hint -->
+<text x="600" y="470" text-anchor="middle" font-family="Georgia,serif" font-size="22" fill="#7A3B2E" font-weight="bold" opacity="0.85">Wasserstein Barycenter</text>
+<text x="600" y="500" text-anchor="middle" font-family="Georgia,serif" font-size="15" fill="#5F4B3B" opacity="0.75">Multimodal Binding · Barycenter Simplex</text>
+</svg>

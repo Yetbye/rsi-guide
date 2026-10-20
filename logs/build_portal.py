@@ -110,6 +110,13 @@ PAPERS = [
          desc="把 gated MLP 的 W_down 就地当快权重：chunk-wise 闭式更新 + 显式 NTP 对齐，CP 原生的测试时训练。",
          meta="10 章 · 4 图 · 9 法证批判 · 5 科研问题",
          sw=["#4F46E5", "#34D399", "#F97316"], cover="blogs/inplace-ttt/assets/hero_cover.jpg", monogram="IPT"),
+    dict(slug="barybind", roman="XIII", group="F",
+         cn="BaryBind 深度解读", en="Binding Multiple Modalities via Multimodal Wasserstein Barycenter",
+         venue="NeurIPS 2026 Oral · arXiv 2609.33800",
+         pdfname="barybind",
+         desc="用最优传输求出各模态分布的 Wasserstein 重心作锚点，再用重心单纯形体积做高阶全局对齐——消除模态偏差。",
+         meta="20 章 · 4 图 · 8 法证批判 · 5 科研问题 · 理论发散版",
+         sw=["#7A3B2E", "#2F6E75", "#C15B36"], cover="blogs/barybind/assets/hero_cover.svg", monogram="BB"),
 ]
 
 GROUPS = [
@@ -133,6 +140,12 @@ GROUPS = [
                     points=["TTT-E2E：NTP 内环 + grad-of-grad 元学习外环，损失 scaling 与全注意力同轨。",
                             "In-Place TTT：W_down 就地当快权重，chunk-wise 闭式更新换来 CP 原生并行。",
                             "核心问句：内环做到多非线性、目标怎么对齐，才不牺牲召回与效率？"])),
+    dict(key="F", letter="Ϛʹ", name="表示对齐 · 最优传输", tag="REPRESENTATION ALIGNMENT · OPTIMAL TRANSPORT",
+         note="不改参数也不生成参数，而是重选「中心」：用 Wasserstein 重心当锚点，消除模态偏差。",
+         aside=dict(title="容器 · Ϛʹ", lead="锚点选择的偏差是多模态绑定的老问题；最优传输给出不偏向任何模态的几何共识中心。",
+                    points=["BaryBind：Wasserstein 重心 + 重心单纯形体积，高阶全局对齐。",
+                            "发散：Kantorovich 对偶、Sion 极小极大、W₂ 正曲率与重心唯一性。",
+                            "核心问句：重心是「共识」还是「插值器」——决定它能否反向做生成？"])),
 ]
 
 MU_REPOS = [
@@ -240,23 +253,25 @@ def build():
          [("δ-mem", "delmem"), ("UniMem", "unimem")], 2),
         ("Εʹ", "测试时梯度", "内环学习", "#0D9488",
          [("E2E TTT", "ttt-e2e"), ("In-Place TTT", "inplace-ttt")], 2),
+        ("Ϛʹ", "表示对齐", "最优传输", "#7A3B2E",
+         [("BaryBind", "barybind")], 1),
     ]
-    W, H = 1180, 560
-    cx0, dx = 128, 236
-    svg = [f'<svg class="astrolabe" viewBox="0 0 {W} {H}" role="img" aria-label="五容器谱系星图：ICL、静态参数、生成参数、在线状态、测试时梯度">']
-    svg.append(f'<circle cx="590" cy="272" r="252" fill="none" stroke="#C09A54" stroke-width="1" opacity="0.35"/>')
-    svg.append(f'<circle cx="590" cy="272" r="196" fill="none" stroke="#C09A54" stroke-width="1" opacity="0.18" stroke-dasharray="2 6"/>')
-    svg.append(f'<circle cx="590" cy="272" r="132" fill="none" stroke="#4A3A28" stroke-width="1" opacity="0.08"/>')
+    W, H = 1480, 580
+    cx0, dx = 140, 240
+    svg = [f'<svg class="astrolabe" viewBox="0 0 {W} {H}" role="img" aria-label="六容器谱系星图：ICL、静态参数、生成参数、在线状态、测试时梯度">']
+    svg.append(f'<circle cx="740" cy="280" r="262" fill="none" stroke="#C09A54" stroke-width="1" opacity="0.35"/>')
+    svg.append(f'<circle cx="740" cy="280" r="204" fill="none" stroke="#C09A54" stroke-width="1" opacity="0.18" stroke-dasharray="2 6"/>')
+    svg.append(f'<circle cx="740" cy="280" r="138" fill="none" stroke="#4A3A28" stroke-width="1" opacity="0.08"/>')
     # ticks
     import math
     for i in range(48):
         a = i * math.pi / 24
         r1, r2 = 252, 240 if i % 2 else 232
-        x1, y1 = 590 + r1 * math.cos(a), 272 + r1 * math.sin(a)
-        x2, y2 = 590 + r2 * math.cos(a), 272 + r2 * math.sin(a)
+        x1, y1 = 740 + r1 * math.cos(a), 280 + r1 * math.sin(a)
+        x2, y2 = 740 + r2 * math.cos(a), 280 + r2 * math.sin(a)
         svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#4A3A28" stroke-width="1" opacity="0.18"/>')
     # stars
-    for sx, sy, r in [(178, 96, 1.6), (966, 120, 1.4), (420, 470, 1.5), (812, 452, 1.4), (612, 66, 1.3), (1042, 300, 1.6)]:
+    for sx, sy, r in [(178, 96, 1.6), (1166, 120, 1.4), (420, 490, 1.5), (1012, 472, 1.4), (712, 66, 1.3), (1342, 320, 1.6), (250, 430, 1.3)]:
         svg.append(f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="#C09A54" opacity="0.7"/>')
     # columns
     for i, (letter, name, sub, color, chips, _n) in enumerate(cols):
@@ -287,9 +302,9 @@ def build():
         svg.append(f'<line x1="{x1}" y1="{ym}" x2="{x2-6}" y2="{ym}" stroke="#B85C38" stroke-width="1.3" opacity="0.6" stroke-dasharray="5 4"/>')
         svg.append(f'<path d="M{x2-6} {ym} l-7 -4 v8 z" fill="#B85C38" opacity="0.6"/>')
     # caption
-    svg.append(f'<text x="590" y="512" text-anchor="middle" font-size="14.5" fill="#5D5344" '
+    svg.append(f'<text x="740" y="530" text-anchor="middle" font-size="14.5" fill="#5D5344" '
                f'font-family="Palatino Linotype, Georgia, serif">所有方法都在回答同一个问题：新知识住在哪里？—— 上下文 · 权重 · 生成器 · 在线状态 · 测试时梯度</text>')
-    svg.append(f'<text x="112" y="540" text-anchor="start" font-size="11.5" fill="#94876F" font-family="Consolas, monospace">2018 — 2026 · OPENALEX 趋势：长上下文与上下文管理迅猛增长，持续性参数学习仍处新兴</text>')
+    svg.append(f'<text x="120" y="558" text-anchor="start" font-size="11.5" fill="#94876F" font-family="Consolas, monospace">2018 — 2026 · OPENALEX 趋势：长上下文与上下文管理迅猛增长，持续性参数学习仍处新兴</text>')
     svg.append('</svg>')
     constellation = "\n".join(svg)
 
@@ -313,7 +328,7 @@ def build():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MHML · RSI 深读指南 | 自改进之路 · Twelve Tomes</title>
-<meta name="description" content="Yetbye 的 RSI 论文深读笔记：12 篇从模型编辑、参数生成、在线记忆到测试时训练的深度解读，沿 In-Parameter Learning 的问题线索展开。">
+<meta name="description" content="Yetbye 的 RSI 论文深读笔记：13 篇从模型编辑、参数生成、在线记忆、测试时训练到表示对齐的深度解读，沿 In-Parameter Learning 的问题线索展开。">
 <style>
 /* ============================================================
    VENUS / Palette C — Hellenic Gold（希腊暖金）
@@ -554,7 +569,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
   <div class="nav-inner">
     <span class="nav-brand"><span class="gr">ΓΝΩΘΙ</span> ΣΑΥΤΟΝ · MHML 深读指南</span>
     <a class="nav-link" href="#guide">卷一 · 深读四艺</a>
-    <a class="nav-link" href="#scrolls">卷二 · 十二卷</a>
+    <a class="nav-link" href="#scrolls">卷二 · 十三卷</a>
     <a class="nav-link" href="#constellation">卷三 · 谱系星图</a>
     <a class="nav-link" href="#lab">卷四 · 问题从哪来</a>
   </div>
@@ -604,20 +619,20 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
   <div class="hero-inner">
     <span class="hero-tag">RECURSIVE SELF-IMPROVEMENT · A READING GUIDE</span>
     <h1><span class="hl">RSI</span> 深读指南</h1>
-    <p class="hero-sub2">自改进之径 · 十二篇论文 · 五个容器</p>
-    <p class="hero-desc">这是我读 RSI（递归自改进）方向的深度笔记：<b>新知识该住在哪里</b>——上下文、权重、生成器、在线状态，还是测试时的梯度？十二篇论文，一条从<b>模型编辑</b>走到<b>测试时训练</b>的路。每篇都拆公式、逐表读数，把我读到的矛盾、和我还想追的问题，一并写下来。</p>
+    <p class="hero-sub2">自改进之径 · 十三篇论文 · 六个容器</p>
+    <p class="hero-desc">这是我读 RSI（递归自改进）方向的深度笔记：<b>新知识该住在哪里</b>——上下文、权重、生成器、在线状态，还是测试时的梯度？十三篇论文，一条从<b>模型编辑</b>走到<b>表示对齐</b>的路。每篇都拆公式、逐表读数，把我读到的矛盾、和我还想追的问题，一并写下来。</p>
     <div class="hero-cta">
-      <a class="btn btn-primary" href="#scrolls">开启十二卷</a>
+      <a class="btn btn-primary" href="#scrolls">开启十三卷</a>
       <a class="btn btn-outline" href="#lab">问题从哪来</a>
     </div>
     <p class="motto">ΓΝΩΘΙ ΣΑΥΤΟΝ<small>「认识你自己」——自改进研究的起点</small></p>
     <div class="stats" role="list">
       <div class="stats-grid">
-        <div class="stat" role="listitem"><b>12</b><span>篇论文深读</span></div>
-        <div class="stat" role="listitem"><b>157</b><span>个章节</span></div>
-        <div class="stat" role="listitem"><b>12</b><span>份论文原文</span></div>
+        <div class="stat" role="listitem"><b>13</b><span>篇论文深读</span></div>
+        <div class="stat" role="listitem"><b>177</b><span>个章节</span></div>
+        <div class="stat" role="listitem"><b>13</b><span>份论文原文</span></div>
         <div class="stat" role="listitem"><b>45+</b><span>组内联图表</span></div>
-        <div class="stat" role="listitem"><b>5</b><span>大容器谱系</span></div>
+        <div class="stat" role="listitem"><b>6</b><span>大容器谱系</span></div>
       </div>
     </div>
   </div>
@@ -684,8 +699,8 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
   <div class="container">
     <div class="section-head reveal">
       <span class="section-tag">Volume II · ΙΒ ΤΟΜΟΙ</span>
-      <h2 class="section-title">十二卷</h2>
-      <p class="section-sub">按五容器谱系分组：静态参数 → 生成参数 → 在线状态 → 测试时梯度。每篇都能独立读，也可以顺着谱系一路读下去。</p>
+      <h2 class="section-title">十三卷</h2>
+      <p class="section-sub">按六容器谱系分组：静态参数 → 生成参数 → 在线状态 → 测试时梯度。每篇都能独立读，也可以顺着谱系一路读下去。</p>
       <div class="classical-line" aria-hidden="true"></div>
     </div>
 {cards_block}
@@ -698,7 +713,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
     <div class="section-head reveal">
       <span class="section-tag">Volume III · ΑΣΤΡΟΛΑΒΟΣ</span>
       <h2 class="section-title">谱系星图</h2>
-      <p class="section-sub">五个容器，一张星图——所有方法都在回答同一个问题：新知识住在哪里？</p>
+      <p class="section-sub">六个容器，一张星图——所有方法都在回答同一个问题：新知识住在哪里？</p>
       <div class="classical-line" aria-hidden="true"></div>
     </div>
     <div class="constellation-wrap reveal">
@@ -753,7 +768,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
             <li><b>上下文有硬上限</b>：终身经验的保守估计也超出当前百万 token 前沿数个数量级。</li>
             <li><b>长度 scaling 有三重障碍</b>：计算、数据与架构层面的根本性困难。</li>
             <li><b>参数学习抬高能力天花板</b>：把新知识固化进权重——累积增长、更好泛化、推理开销更低。</li>
-            <li><b>ICL 与 IPL 互补而非竞争</b>：这套笔记的十二篇，就是沿这个框架对「参数更新容器」做的一次全景测绘。</li>
+            <li><b>ICL 与 IPL 互补而非竞争</b>：这套笔记的十三篇，就是沿这个框架对「参数更新容器」做的一次全景测绘。</li>
           </ul>
         </div>
         <div>
@@ -788,7 +803,7 @@ html.no-js .reveal, body.anim-off .reveal{{opacity:1;transform:none}}
   <p class="foot-motto">ΓΝΩΘΙ ΣΑΥΤΟΝ</p>
   <p class="foot-sub">MHML · RSI 深读指南 · Yetbye 的阅读笔记 · 2026</p>
   <div class="foot-links">
-    <a href="#guide">深读四艺</a><a href="#scrolls">十二卷</a><a href="#constellation">谱系星图</a>
+    <a href="#guide">深读四艺</a><a href="#scrolls">十三卷</a><a href="#constellation">谱系星图</a>
     <a href="#lab">参照坐标</a>
     <a href="https://github.com/MuLabPKU" target="_blank" rel="noopener">github.com/MuLabPKU</a>
   </div>
